@@ -7,8 +7,9 @@ from Frames_inference.final_decision import result
 video_path = './videos/v2.mov'
 # 关键帧保存目录
 output_dir   = 'output2'
-model_name = "qwen2.5-vl-72b-instruct"
-use_api = True
+model_name = "Qwen/Qwen2.5-VL-7B-Instruct"
+#model_name = "openbmb/MiniCPM-V-2_6"
+use_api = False
 # step1: 获取与模版匹配的帧
 keyframe_extract(video_path, output_dir)
 keyframe_paths = [os.path.join(output_dir, f) for f in os.listdir(output_dir) if f.endswith(('.png', '.jpg', '.jpeg'))]

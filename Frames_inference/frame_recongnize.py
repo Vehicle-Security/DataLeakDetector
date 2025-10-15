@@ -5,6 +5,7 @@ from llm.api_video_inference import *
 from prompt.prompt import *
 from Frames_inference.final_decision import *
 from llm.local_video_inference import local_inference_video
+from llm.vllm_video_inference import local_inference_video_alternative
 
 def image_to_base64(image_path):
     """将图像文件转换为Base64编码字符串"""
@@ -30,7 +31,8 @@ def process_directory(directory, model_name, use_api=False):
         if use_api:
             res = api_inference_video(model_name, image_prompt, image_base64s)
         else:
-            res = local_inference_video(model_name,image_prompt, image_base64s)
+            #res = local_inference_video(model_name,image_prompt, image_base64s)
+            res = local_inference_video_alternative(model_name,image_prompt, image_base64s)
 
 
 
