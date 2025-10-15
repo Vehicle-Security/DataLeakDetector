@@ -142,27 +142,49 @@ def group_and_select(frames, ssim_threshold, output_dir):
 
 
 def extract_frames_around_keyframes(output_dir, video_path, keyframe_paths):
+    """提取关键帧前后 5s、3s、当前帧（共 5 张）"""
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
     for keyframe_path in tqdm(keyframe_paths, desc='提取上下文帧'):
-        time_str = os.path.splitext(os.path.basename(keyframe_path))[0].split('_')[-1].replace('s', '')
-        keyframe_time = float(time_str)
+        filename = os.path.basename(keyframe_path)
+
+        # ✅ 正确提取时间戳
+        match = re.search(r'_(\d+\.\d+)s_', filename)
+        if not match:
+            print(f"⚠️ 文件名格式不匹配，跳过: {filename}")
+            continue
+
+        keyframe_time = float(match.group(1))
         keyframe_idx = int(keyframe_time * fps)
-        context_dir = os.path.join(output_dir, os.path.basename(keyframe_path).replace('.', '_'))
+
+        # ✅ 合理命名上下文目录
+        context_dir = os.path.join(output_dir, os.path.splitext(filename)[0])
         os.makedirs(context_dir, exist_ok=True)
+
+        # ✅ 提取附近帧索引（5秒前、3秒前、当前、3秒后、5秒后）
         nearby = [
-            max(0, keyframe_idx - 5 * fps),
-            max(0, keyframe_idx - 3 * fps),
-            keyframe_idx,
-            min(total_frames - 1, keyframe_idx + 3 * fps),
-            min(total_frames - 1, keyframe_idx + 5 * fps)
+            max(0, int(keyframe_idx - 5 * fps)),
+            max(0, int(keyframe_idx - 3 * fps)),
+            int(keyframe_idx),
+            min(total_frames - 1, int(keyframe_idx + 3 * fps)),
+            min(total_frames - 1, int(keyframe_idx + 5 * fps)),
         ]
+
+        extracted = 0
         for idx in nearby:
             cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
             ret, frame = cap.read()
             if ret:
-                frame_path = os.path.join(context_dir, f'frame_{int(idx):06d}.jpg')
+                frame_path = os.path.join(context_dir, f'frame_{idx:06d}.jpg')
                 cv2.imwrite(frame_path, frame)
+                extracted += 1
+
+        if extracted == 0:
+            print(f"⚠️ 未成功提取任何帧: {filename}")
+        else:
+            print(f"✅ {filename} → 提取 {extracted} 张帧")
+
     cap.release()
-    print('上下文帧提取完成')
+    print('🎯 上下文帧提取完成')
