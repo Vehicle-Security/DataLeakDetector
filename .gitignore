@@ -1,0 +1,17 @@
+**/__pycache__/
+**/.vscode/
+
+
+**/doc/
+
+**/gradio_temp/
+**/inputs/
+**/outputs/
+
+**/data/memory.json
+**/logs/
+**/test/
+**/checkMemory.py
+
+**/.env
+**/*.log
