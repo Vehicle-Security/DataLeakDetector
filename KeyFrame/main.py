@@ -7,7 +7,7 @@ from boundary_detector import extend_operation_boundaries
 
 def main():
     # 步骤1: 直接处理整个视频
-    video_path = "/home/tjl/projects/video/12.mov"
+    video_path = "/home/tjl/projects/video/26.mov"
     output_dir = "./output"
     
     if os.path.exists(output_dir):
