@@ -15,3 +15,6 @@
 
 **/.env
 **/*.log
+**/.idea/
+**/output/
+**/tests/
