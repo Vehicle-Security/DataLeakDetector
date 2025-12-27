@@ -1,0 +1,7 @@
+*/target
+/target
+Cargo.lock
+*.DS_Store
+*.logarchive
+test*.zip
+tests/test_data

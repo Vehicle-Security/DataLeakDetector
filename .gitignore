@@ -1,20 +1,48 @@
+# Python
 **/__pycache__/
+
+# IDE
 **/.vscode/
+**/.idea/
+*.swp
+*.swo
 
-
+# 文档
 **/doc/
 
+# 临时文件
 **/gradio_temp/
 **/inputs/
 **/outputs/
+**/output/
 
+# 数据文件
 **/data/memory.json
 **/logs/
 **/test/
+**/tests/
 **/checkMemory.py
 
+# 环境变量
 **/.env
+**/.env.local
+
+# 日志
 **/*.log
-**/.idea/
-**/output/
-**/tests/
+
+# Node.js
+**/node_modules/
+**/dist/
+**/.next/
+
+# 录制文件
+**/recordings/
+
+# Rust
+**/target/
+*.rs.bk
+Cargo.lock
+
+# macOS
+.DS_Store
+*.bak
