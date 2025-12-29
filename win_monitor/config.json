@@ -1,0 +1,196 @@
+{
+  "monitor_settings": {
+    "scan_interval": 1.0,
+    "file_open_monitor_interval": 2.0,
+    "max_log_size": 10485760,
+    "log_rotation": "hourly",
+    "debounce_seconds": 0.5,
+    "same_file_cooldown": 2.0,
+    "file_open_cooldown": 1.0,
+    "batch_processing_enabled": true,
+    "batch_size": 50,
+    "batch_interval_ms": 1000,
+    "max_retry_count": 3,
+    "error_cooldown_seconds": 10
+  },
+  "filters": {
+    "excluded_extensions": [
+      ".tmp",
+      ".temp",
+      ".log",
+      ".etl",
+      ".ini",
+      ".dat",
+      ".sys",
+      ".dll",
+      ".cache",
+      ".pyc",
+      ".pyo",
+      ".swp",
+      "~",
+      ".bak~",
+      ".autosave",
+      ".journal",
+      ".lock",
+      ".pid",
+      ".idx",
+      ".pack"
+    ],
+    "excluded_paths": [
+      "\\AppData\\Local\\Temp",
+      "\\AppData\\Roaming\\Temp",
+      "\\AppData\\Local\\Microsoft\\Edge\\",
+      "\\AppData\\Local\\Google\\Chrome\\",
+      "\\AppData\\Local\\Microsoft\\Windows\\",
+      "\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\",
+      "\\AppData\\Local\\top.gydi.clashverge\\",
+      "\\$RECYCLE.BIN\\",
+      "\\.git\\",
+      "\\.idea\\",
+      "\\__pycache__\\",
+      "\\node_modules\\",
+      "\\.vscode\\",
+      "\\.cache\\",
+      "\\.lingma\\",
+      "\\User Data\\Default\\",
+      "\\JetBrains\\consentOptions\\",
+      "\\EBWebView\\",
+      "\\Cache\\",
+      "\\Code Cache\\",
+      "\\GPUCache\\",
+      "\\Service Worker\\",
+      "\\Session Storage\\",
+      "\\Local Storage\\",
+      "\\IndexedDB\\"
+    ],
+    "excluded_filenames": [
+      "desktop.ini",
+      "thumbs.db",
+      ".DS_Store",
+      "~$",
+      "Preferences",
+      "Local State",
+      "Cookies",
+      "Cookies-journal",
+      "QuotaManager",
+      "QuotaManager-journal",
+      "TransportSecurity",
+      "CURRENT",
+      "LOCK",
+      "LOG",
+      "MANIFEST",
+      "bak.txt"
+    ],
+    "included_extensions": [
+      ".doc",
+      ".docx",
+      ".xls",
+      ".xlsx",
+      ".ppt",
+      ".pptx",
+      ".pdf",
+      ".txt",
+      ".md",
+      ".py",
+      ".js",
+      ".java",
+      ".cpp",
+      ".html",
+      ".css",
+      ".jpg",
+      ".png",
+      ".zip",
+      ".rar"
+    ],
+    "min_file_size_bytes": 0,
+    "max_file_size_bytes": 104857600,
+    "enable_path_pattern_matching": true
+  },
+  "resource_management": {
+    "max_handles_per_process": 1000,
+    "handle_cache_timeout": 300,
+    "recent_paths_size": 1000,
+    "recent_paths_cleanup_interval": 60,
+    "max_thread_pool_size": 4,
+    "memory_limit_mb": 512
+  },
+  "error_handling": {
+    "enable_error_tracking": true,
+    "error_log_file": "errors.log",
+    "max_error_log_size": 1048576,
+    "error_display_level": "warning",
+    "auto_recovery_enabled": true,
+    "recovery_check_interval": 30
+  },
+  "log_enrichment": {
+    "include_user_info": true,
+    "include_process_info": true,
+    "include_system_info": true,
+    "include_metadata": true,
+    "enable_console_colors": true,
+    "show_full_paths": true
+  },
+  "advanced": {
+    "enable_debug_logging": false,
+    "monitor_buffer_size": 1024,
+    "event_queue_size": 5000,
+    "handle_check_timeout_ms": 500,
+    "enable_statistics": true,
+    "statistics_report_interval": 300,
+    "enable_handle_tracking": false
+  },
+  "upload_detection": {
+    "enabled": true,
+    "enable_dialog_detection": true,
+    "dialog_check_interval": 0.5,
+    "monitored_apps": {
+      "qq_weixin": {
+        "enabled": true,
+        "display_name": "微信/QQ",
+        "process_names": [
+          "Weixin.exe",
+          "QQ.exe",
+          "QQScLauncher.exe",
+          "QQGuild.exe"
+        ],
+        "temp_directories": [
+          "%USERPROFILE%\\Documents\\WeChat Files",
+          "%USERPROFILE%\\Documents\\xwechat_files",
+          "%USERPROFILE%\\Documents\\Tencent Files",
+          "%APPDATA%\\Tencent\\Weixin",
+          "%APPDATA%\\Tencent\\QQ",
+          "%TEMP%"
+        ],
+        "upload_type": "instant_messaging"
+      },
+      "doubao": {
+        "enabled": true,
+        "display_name": "豆包",
+        "process_names": [
+          "doubao.exe",
+          "Doubao.exe"
+        ],
+        "temp_directories": [
+          "%APPDATA%\\doubao",
+          "%LOCALAPPDATA%\\doubao",
+          "%TEMP%"
+        ],
+        "upload_type": "ai_assistant"
+      },
+      "quark": {
+        "enabled": true,
+        "display_name": "夸克网盘",
+        "process_names": [
+          "quark.exe",
+          "Quark.exe"
+        ],
+        "temp_directories": [
+          "%LOCALAPPDATA%\\Quark",
+          "%APPDATA%\\Quark",
+          "%TEMP%\\Quark"
+        ],
+        "upload_type": "cloud_storage"
+      }
+    }
+  }
+}

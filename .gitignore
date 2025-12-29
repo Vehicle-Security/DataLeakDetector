@@ -3,6 +3,9 @@
 **/.vscode/
 **/*.pyc
 **/*.pyo
+**/.idea/
+*.swp
+*.swo
 
 # 忽略文档
 **/doc/
@@ -15,16 +18,38 @@
 **/*.log
 **/video/
 
+# 数据文件
 # 忽略数据文件
 **/data/memory.json
 **/logs/
 **/test/
+**/tests/
 **/checkMemory.py
 
 #忽略配置文件
 **/.env
+**/.env.local
+
+# 日志
 **/.gitignore
 
 # 忽略旧的无用开发文件
 unknown_threat_agent/
 Image_Agent/
+
+# Node.js
+**/node_modules/
+**/dist/
+**/.next/
+
+# 录制文件
+**/recordings/
+
+# Rust
+**/target/
+*.rs.bk
+Cargo.lock
+
+# macOS
+.DS_Store
+*.bak

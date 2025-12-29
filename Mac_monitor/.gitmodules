@@ -1,0 +1,3 @@
+[submodule "macos-UnifiedLogs"]
+	path = macos-UnifiedLogs
+	url = https://github.com/mandiant/macos-UnifiedLogs.git

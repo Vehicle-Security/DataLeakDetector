@@ -7,7 +7,22 @@ from boundary_detector import extend_operation_boundaries
 
 def main():
     # 步骤1: 直接处理整个视频
-    video_path = "/home/tjl/projects/video/26.mov"
+    # 步骤1: 查找并处理视频
+    video_files = [f for f in os.listdir('.') if f.lower().endswith(('.mov', '.mp4', '.avi', '.mkv'))]
+    if not video_files:
+        print("❌ 未找到视频文件 (支持 .mov, .mp4, .avi, .mkv)")
+        print("请将视频文件放入当前目录: " + os.getcwd())
+        # 提供手动输入选项
+        video_path = input("\n或者输入视频文件的完整路径 (留空退出): ").strip()
+        if not video_path:
+             return
+        if not os.path.exists(video_path):
+             print(f"❌ 文件不存在: {video_path}")
+             return
+    else:
+        print(f"找到 {len(video_files)} 个视频文件, 默认使用第一个: {video_files[0]}")
+        video_path = video_files[0]
+
     output_dir = "./output"
     
     if os.path.exists(output_dir):
