@@ -3,9 +3,13 @@ import json
 import re
 import os
 import glob
+from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
 from state import AgentState
 from nodes import reason_node, act_node, observation_node
+
+# 加载环境变量
+load_dotenv()
 
 def should_continue(state: AgentState):
     """
@@ -114,19 +118,18 @@ def load_frames_from_folder(folder_path):
 # --- 主程序运行入口 ---
 if __name__ == "__main__":
 
-    # 配置：关键帧文件夹路径
-    keyframe_folder = "../KeyFrame/output/scene_keyframes/scene_02_豆包_上传文件"
+    # 从环境变量读取配置
+    keyframe_folder = os.getenv("KEYFRAME_FOLDER", "../KeyFrame/output/scene_keyframes/scene_02_豆包_上传文件")
+    log_file_path = os.getenv("LOG_FILE_PATH", "../logs/log_1.json")
     
     # 自动加载关键帧和时间戳
     frame_paths, timestamps = load_frames_from_folder(keyframe_folder)
-    
     if not frame_paths:
         print("❌ 错误：未找到关键帧文件，程序退出")
         exit(1)
 
     # 加载系统日志
     system_logs = None
-    log_file_path = "../logs/log_1.json"
     try:
         with open(log_file_path, 'r', encoding='utf-8') as f:
             system_logs = json.load(f)

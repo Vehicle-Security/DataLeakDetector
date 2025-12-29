@@ -1,17 +1,20 @@
 import re
 import json
+import os
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from state import AgentState
 from tools import run_vlm_analysis, analyze_system_logs
 
-# TODO: 将环境变量单独环境文件里，通过from dotenv import load_dotenv load_dotenv()来导入环境变量
+# 加载环境变量
+load_dotenv()
 
 reasoning_llm = ChatOpenAI(
-    model="qwen2-vl-72b-instruct", 
-    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-    api_key="sk-ff8d074c45cc4863869b230d1aec51f1", 
-    temperature=0.01, 
+    model=os.getenv("MODEL_NAME", "qwen2-vl-72b-instruct"),
+    base_url=os.getenv("OPENAI_BASE_URL"),
+    api_key=os.getenv("OPENAI_API_KEY"),
+    temperature=float(os.getenv("TEMPERATURE", "0.01")),
     streaming=False
 )
 

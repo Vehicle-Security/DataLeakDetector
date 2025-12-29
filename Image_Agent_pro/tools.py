@@ -3,14 +3,17 @@ import base64
 import os
 import json
 from datetime import datetime
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
+# 加载环境变量
+load_dotenv()
 
 vlm_llm = ChatOpenAI(
-    model="qwen2-vl-72b-instruct",
-    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-    api_key="sk-ff8d074c45cc4863869b230d1aec51f1", 
+    model=os.getenv("MODEL_NAME", "qwen2-vl-72b-instruct"),
+    base_url=os.getenv("OPENAI_BASE_URL"),
+    api_key=os.getenv("OPENAI_API_KEY"),
     temperature=0.1,
     streaming=False,
 )

@@ -1,17 +1,30 @@
-**/__pycache__/
+# 忽略无关文件
+*/__pycache__/
 **/.vscode/
+**/*.pyc
+**/*.pyo
 
-
+# 忽略文档
 **/doc/
 
+# 忽略输入输出
 **/gradio_temp/
 **/inputs/
 **/outputs/
+**/output/
+**/*.log
+**/video/
 
+# 忽略数据文件
 **/data/memory.json
 **/logs/
 **/test/
 **/checkMemory.py
 
+#忽略配置文件
 **/.env
-**/*.log
+**/.gitignore
+
+# 忽略旧的无用开发文件
+unknown_threat_agent/
+Image_Agent/
