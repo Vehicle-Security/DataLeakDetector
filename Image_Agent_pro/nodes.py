@@ -7,6 +7,12 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from state import AgentState
 from tools import run_vlm_analysis, analyze_system_logs
 
+#工具列表
+tools = {
+    "analyze_gui_frames": run_vlm_analysis,
+    "analyze_system_logs": analyze_system_logs,
+}
+
 # 加载环境变量
 load_dotenv()
 
@@ -16,7 +22,7 @@ reasoning_llm = ChatOpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     temperature=float(os.getenv("TEMPERATURE", "0.01")),
     streaming=False
-)
+).bind_tools(tools)
 
 SYSTEM_PROMPT = """
 你是一名数据防泄漏安全分析专家。你的任务是基于提供的"关键帧列表"和"系统日志"分析用户敏感操作的关键信息。
