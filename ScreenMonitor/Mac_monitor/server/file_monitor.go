@@ -39,35 +39,40 @@ type FileMonitor struct {
 
 // 关注的操作
 var fileOperationMap = map[string]string{
-	"open":   "opened",
-	"openat": "opened",
-	"create": "created",
-	"mkdir":  "created",
-	"mkdirat": "created",
-	"rename": "renamed",
+	"open":     "opened",
+	"openat":   "opened",
+	"create":   "created",
+	"mkdir":    "created",
+	"mkdirat":  "created",
+	"rename":   "renamed",
 	"renameat": "renamed",
-	"unlink": "deleted",
+	"unlink":   "deleted",
 	"unlinkat": "deleted",
-	"rmdir":  "deleted",
-	"write":  "modified",
-	"modify": "modified",
-	"pwrite": "modified",
+	"rmdir":    "deleted",
+	"write":    "modified",
+	"modify":   "modified",
+	"pwrite":   "modified",
 }
 
 // 忽略的系统路径前缀
 var fileIgnorePrefixes = []string{
 	"/dev/",
 	"/sys",
-	"/private/var",
-	"/private/tmp",
+	"/private/var/",
+	"/private/tmp/",
 	"/bin/",
 	"/usr/",
 	"/sbin/",
 	"/System/",
+	"/System/Library/",
 	"/tmp/",
 	"/opt/",
 	"/Library/",
 	"/Applications/",
+	"/.DocumentRevisions-V100/",
+	"/.Spotlight-V100/",
+	"/.fseventsd/",
+	"/Volumes/",
 }
 
 // NewFileMonitor 创建文件监控器
@@ -75,14 +80,14 @@ func NewFileMonitor(recordsDir string, windowMonitor *WindowMonitor) *FileMonito
 	homeDir := os.Getenv("HOME")
 	username := "unknown"
 	hostname := "unknown"
-	
+
 	if currentUser, err := user.Current(); err == nil {
 		if currentUser.HomeDir != "" {
 			homeDir = currentUser.HomeDir
 		}
 		username = currentUser.Username
 	}
-	
+
 	if h, err := os.Hostname(); err == nil {
 		hostname = h
 	}
@@ -188,7 +193,7 @@ func (fm *FileMonitor) Start(outputPath string) error {
 				fm.mutex.Unlock()
 
 				// 打印日志
-				log.Printf("📄 [%s] %s %s -> %s", 
+				log.Printf("📄 [%s] %s %s -> %s",
 					event.EventType, event.AppName, event.FileName, event.FilePath)
 			}
 		}
@@ -273,11 +278,37 @@ func (fm *FileMonitor) parseAndFilter(line string) *LogEntry {
 		processName = processName[:idx]
 	}
 
-	// 过滤系统噪音进程
+	// 过滤系统噪音进程（纯后台服务）
+	// 注意：保留 filecoordinationd 和 quicklookd 用于后续关联分析
 	systemProcesses := []string{
-		"mdworker", "mds", "git", "notifyd", "bird", "com.apple", 
+		// 原有核心系统进程
+		"mdworker", "mds", "git", "notifyd", "bird", "com.apple",
 		"kernel_task", "ffmpeg", "fs_usage", "monitor_server",
 		"spotlight", "mds_stores", "coreaudiod", "bluetoothd", "WindowServer", "touchbar",
+		// 新增：macOS 系统守护进程（高噪音）
+		"cfprefsd",              // 配置服务
+		"BiomeAgent",            // 生物特征代理
+		"analyticsd",            // 分析服务
+		"cloudd",                // iCloud 同步服务
+		"nsurlsessiond",         // 网络会话服务（系统级）
+		"trustd",                // 证书信任服务
+		"symptomsd",             // 系统症状服务
+		"logd",                  // 日志服务
+		"syslogd",               // 系统日志
+		"configd",               // 配置守护进程
+		"diskarbitrationd",      // 磁盘仲裁
+		"coreduetd",             // 核心预测
+		"contextstored",         // 上下文存储
+		"powerd",                // 电源管理
+		"timed",                 // 时间服务
+		"locationd",             // 位置服务
+		"tccd",                  // 透明度同意控制
+		"sharingd",              // 系统级共享（非用户共享）
+		"rapportd",              // 设备连接
+		"suggestd",              // Siri 建议
+		"remindd",               // 提醒事项后台
+		"CalendarAgent",         // 日历代理
+		"AddressBookSourceSync", // 通讯录同步
 	}
 	for _, sp := range systemProcesses {
 		if processName == sp || strings.Contains(processName, sp) {
@@ -377,7 +408,7 @@ func (fm *FileMonitor) parseAndFilter(line string) *LogEntry {
 	appName, category, _ := fm.normalizeProcessName(baseProcessName, windowTitle)
 
 	// Check for sensitive/upload
-	var isSensitive bool 
+	var isSensitive bool
 	// Re-implement or reuse isKeyEvent logic check
 	// But actually we have checkSensitiveFile in log_capturer!
 	// I should probably have checkSensitiveFile as helper in file_monitor too or util.
@@ -393,9 +424,9 @@ func (fm *FileMonitor) parseAndFilter(line string) *LogEntry {
 	var uploadInfo *UploadDetection
 	if isSensitive {
 		uploadInfo = &UploadDetection{
-			IsUpload: true,
-			AppName: appName,
-			UploadType: "Sensitive Access", 
+			IsUpload:     true,
+			AppName:      appName,
+			UploadType:   "Sensitive Access",
 			OriginalFile: fullPathStr,
 		}
 	}
@@ -427,7 +458,7 @@ func (fm *FileMonitor) parseAndFilter(line string) *LogEntry {
 		UploadInfo: uploadInfo,
 		Extra: map[string]interface{}{
 			"raw_operation": cleanOp,
-			"category": category,
+			"category":      category,
 		},
 	}
 

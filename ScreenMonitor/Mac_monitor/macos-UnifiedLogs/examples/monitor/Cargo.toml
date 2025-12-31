@@ -16,3 +16,4 @@ simplelog = "0.12"
 clap = { version = "4.0", features = ["derive"] }
 regex = "1.10"
 ctrlc = "3.4"
+percent-encoding = "2.3"
