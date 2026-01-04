@@ -1,5 +1,6 @@
 # 忽略无关文件
 */__pycache__/
+**/__init__.py
 **/.vscode/
 **/*.pyc
 **/*.pyo
