@@ -12,7 +12,6 @@ from tools import (
     trace_resource_flow,
 )
 
-# 加载环境变量
 load_dotenv()
 
 # 工具映射
@@ -21,7 +20,6 @@ tools_map = {
     "trace_resource_flow": trace_resource_flow,
 }
 
-# 初始化 LLM
 reasoning_llm = ChatOpenAI(
     model=os.getenv("MODEL_NAME"),
     base_url=os.getenv("OPENAI_BASE_URL"),

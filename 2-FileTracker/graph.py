@@ -16,7 +16,7 @@ from nodes import (
     finalize_node,
 )
 
-# 加载环境变量
+
 load_dotenv()
 
 
@@ -32,22 +32,18 @@ def should_continue(state: TrackerState) -> str:
     last_message = state["messages"][-1]
     content = last_message.content
     
-    # 检查是否输出了 Final Answer
     if "Final Answer" in content or "Final Answer:" in content:
         print("📋 检测到 Final Answer，准备终结...")
         return "finalize"
-    
-    # 检查是否有工具调用
+
     if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
         print("🔧 检测到工具调用...")
         return "action"
     
-    # 检查文本格式的 Action
     if "Action:" in content and "Action Input:" in content:
         print("🔧 检测到文本格式的工具调用...")
         return "action"
     
-    # 默认继续推理
     return "continue"
 
 
@@ -77,27 +73,21 @@ def after_finalize(state: TrackerState) -> str:
         return "reason"
 
 
-# ============================================
 # 构建 LangGraph 工作流
-# ============================================
-
 def build_evidence_tracer_graph():
     """
     构建 EvidenceTracer 的状态图
     """
     workflow = StateGraph(TrackerState)
     
-    # 添加节点
     workflow.add_node("initialize", initialize_node)
     workflow.add_node("reason", reasoning_node)
     workflow.add_node("action", action_node)
     workflow.add_node("observe", observation_node)
     workflow.add_node("finalize", finalize_node)
     
-    # 设置入口点
     workflow.set_entry_point("initialize")
     
-    # 添加边
     # initialize -> reason
     workflow.add_edge("initialize", "reason")
     
@@ -128,16 +118,12 @@ def build_evidence_tracer_graph():
         }
     )
     
-    # 编译图
     app = workflow.compile()
     
     return app
 
 
-# ============================================
 # 主执行函数
-# ============================================
-
 def run_evidence_tracer(input_operations: list, max_iterations: int = 20):
     """
     运行 EvidenceTracer 分析
@@ -199,7 +185,6 @@ def run_evidence_tracer(input_operations: list, max_iterations: int = 20):
                 break
         
         if not result:
-            # 尝试从最后的消息中提取
             print("\n⚠️  未找到 final_output，尝试从消息中提取...")
             result = {
                 "status": "incomplete",
@@ -223,10 +208,6 @@ def run_evidence_tracer(input_operations: list, max_iterations: int = 20):
             "error": str(e)
         }
 
-
-# ============================================
-# 单独导出编译后的应用
-# ============================================
 
 app = build_evidence_tracer_graph()
 graph_png = app.get_graph().draw_mermaid_png()

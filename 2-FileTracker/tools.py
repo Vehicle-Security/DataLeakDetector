@@ -7,10 +7,8 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from dotenv import load_dotenv
 
-# 加载环境变量
 load_dotenv()
 
-# 初始化 LLM（用于工具内部调用）
 tool_llm = ChatOpenAI(
     model=os.getenv("MODEL_NAME"),
     base_url=os.getenv("OPENAI_BASE_URL"),

@@ -24,80 +24,6 @@ RiskSieve (录屏分析) → EvidenceTracer (资源追踪) → ThreatHunter (威
 
 ### 核心组件
 
-#### 1. **状态定义 (state.py)**
-定义了工作流中的数据结构：
-- `SensitiveOperation`: 敏感操作片段
-- `Resource`: 被追踪的敏感资源
-- `EvidenceChain`: 证据链路
-- `TrackerState`: 整体运行状态
-
-#### 2. **工具函数 (tools.py)**
-提供 4 个核心工具供 LLM 调用：
-
-| 工具名称 | 功能 | 使用场景 |
-|---------|------|---------|
-| `identify_additional_resources` | 从描述中发现额外资源 | 识别"将A压缩为B"中的源文件A |
-| `analyze_operation_type` | 分析操作类型，识别风险指标 | 检测重命名、加密等隐蔽行为 |
-| `find_resource_relationships` | 查找资源关联关系 | 在所有操作中查找派生关系 |
-| `build_evidence_chain` | 构建完整证据链路 | 重建资源流转完整路径 |
-
-**设计说明**：
-- ✅ 优先使用 RiskSieve 输出的结构化字段（`resource_name`, `operation_type`）
-- ✅ 只在需要补充信息时才深入分析 `raw_description`
-- ✅ 避免重复识别已经结构化的信息
-
-#### 3. **节点函数 (nodes.py)**
-实现工作流的各个处理节点：
-- `initialize_node`: 初始化状态，构建初始提示
-- `reasoning_node`: LLM 推理，决定下一步行动
-- `action_node`: 解析并执行工具调用
-- `observation_node`: 将工具输出反馈给 LLM
-- `finalize_node`: 提取并格式化最终结果
-
-#### 4. **图结构 (graph.py)**
-定义 LangGraph 工作流：
-
-```
-┌─────────────┐
-│ Initialize  │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│  Reasoning  │◄────────┐
-└──────┬──────┘         │
-       │                │
-       ▼                │
-  ┌─────────┐           │
-  │ Action? │           │
-  └────┬────┘           │
-       │                │
-    Yes│   No           │
-       ▼    │           │
-┌───────────┐│           │
-│  Action   ││           │
-└─────┬─────┘│           │
-      │      │           │
-      ▼      │           │
-┌───────────┐│           │
-│  Observe  │├───────────┘
-└───────────┘│
-       │     │
-       └─────┘
-       
-       Final Answer
-       │
-       ▼
-┌─────────────┐
-│  Finalize   │
-└──────┬──────┘
-       │
-       ▼
-     [END]
-```
-
----
-
 ## 🚀 使用方法
 
 ### 安装依赖
@@ -157,7 +83,7 @@ input_operations = [
 ]
 
 # 运行分析
-result = run_evidence_tracer(input_operations, max_iterations=20)
+result = run_evidence_tracer(input_operations, max_iterations=10)
 
 # 输出结果
 print(result)
@@ -260,16 +186,6 @@ print(result)
 
 ---
 
-## ⚙️ 配置参数
-
-### LLM 配置
-- `MODEL_NAME`: 推理模型（建议 GPT-4 或同等能力模型）
-- `TEMPERATURE`: 温度参数（0.0-1.0，建议 0.1 保证稳定性）
-
-### 工作流配置
-- `max_iterations`: 最大迭代次数（默认 20，防止无限循环）
-
----
 
 ## 🧪 测试
 
