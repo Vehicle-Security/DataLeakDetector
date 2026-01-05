@@ -1,0 +1,16 @@
+{
+  "total_events": 3,
+  "event_types": {
+    "file_selected": 2,
+    "modified": 1
+  },
+  "file_extensions": {
+    ".docx": 1
+  },
+  "apps": {},
+  "upload_count": 0,
+  "time_range": {
+    "start": "2025-12-24T01:22:08.891000",
+    "end": "2025-12-24T01:22:08.891000"
+  }
+}

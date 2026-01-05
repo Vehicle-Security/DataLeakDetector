@@ -1,0 +1,48 @@
+[
+  {
+    "timestamp": 1766510227.441729,
+    "event_type": "file_selected",
+    "file_path": "D:\\code\\win_monitor\\test\\AAA公司服务合作合同.docx",
+    "file_name": "AAA公司服务合作合同.docx",
+    "app_name": "msedge.exe",
+    "window_title": "打开",
+    "detection_method": "file_dialog"
+  },
+  {
+    "timestamp": "2025-12-24T01:22:08.891",
+    "event_type": "modified",
+    "file_path": "D:\\test\\AAA公司服务合作合同.docx",
+    "file_name": "AAA公司服务合作合同.docx",
+    "file_size": 12297,
+    "file_extension": ".docx",
+    "process_info": {
+      "pid": 9888,
+      "process_name": "msedge.exe",
+      "process_path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+      "cmdline": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe --no-startup-window"
+    },
+    "window_info": {
+      "window_handle": "0x30572",
+      "window_title": "豆包 - 字节跳动旗下 AI 智能助手 和另外 2 个页面 - 个人 - Microsoft​ Edge",
+      "window_class": "Chrome_WidgetWin_1"
+    },
+    "user_info": {
+      "username": "zbn20",
+      "hostname": "zbn"
+    },
+    "disk_info": {
+      "drive_letter": "D:",
+      "disk_type": "Fixed"
+    },
+    "app_name": "豆包"
+  },
+  {
+    "timestamp": 1766510540.3801026,
+    "event_type": "file_selected",
+    "file_path": "D:\\code\\win_monitor\\test\\AAA公司服务合作合同.docx",
+    "file_name": "AAA公司服务合作合同.docx",
+    "app_name": "msedge.exe",
+    "window_title": "打开",
+    "detection_method": "file_dialog"
+  }
+]

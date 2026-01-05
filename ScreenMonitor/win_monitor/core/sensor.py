@@ -1,0 +1,91 @@
+# -*- coding: utf-8 -*-
+"""
+sensor.py - 窗口/进程传感器
+职责：获取原始数据（进程名、窗口标题）
+不做任何判断逻辑，只负责采集
+
+对应架构角色：Sensor（传感器）
+"""
+
+from dataclasses import dataclass
+from typing import Optional, Tuple
+
+try:
+    import win32gui
+    import win32process
+    import psutil
+except ImportError as e:
+    print(f"[ERROR] 缺少必要依赖: {e}")
+    print("请运行: pip install pywin32 psutil")
+    raise
+
+
+@dataclass
+class WindowData:
+    """窗口数据 - 传感器输出的原始数据"""
+    window_handle: int
+    window_title: str
+    window_class: str
+    process_id: int
+    process_name: str
+    process_path: str
+
+
+class Sensor:
+    """
+    传感器 - 获取当前活动窗口和进程信息
+    
+    只负责采集数据，不做任何规则判断
+    """
+    
+    def get_active_window(self) -> Optional[WindowData]:
+        """
+        获取当前活动窗口信息
+        
+        优化：只查询前台窗口的 PID，不遍历所有进程
+        
+        Returns:
+            WindowData 或 None（如果获取失败）
+        """
+        try:
+            # 获取前台窗口句柄
+            hwnd = win32gui.GetForegroundWindow()
+            if not hwnd:
+                return None
+            
+            # 获取窗口信息
+            window_title = win32gui.GetWindowText(hwnd)
+            window_class = win32gui.GetClassName(hwnd)
+            
+            # 获取窗口所属进程的 PID
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            
+            # 仅查询该 PID 的进程信息
+            process_name = ""
+            process_path = ""
+            try:
+                process = psutil.Process(pid)
+                process_name = process.name()
+                process_path = process.exe()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+            
+            return WindowData(
+                window_handle=hwnd,
+                window_title=window_title,
+                window_class=window_class,
+                process_id=pid,
+                process_name=process_name,
+                process_path=process_path
+            )
+        
+        except Exception:
+            return None
+    
+    def get_process_name(self, pid: int) -> str:
+        """根据 PID 获取进程名"""
+        try:
+            process = psutil.Process(pid)
+            return process.name()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return ""
