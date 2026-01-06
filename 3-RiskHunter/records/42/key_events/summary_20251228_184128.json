@@ -1,0 +1,57 @@
+{
+  "total_events": 411,
+  "event_types": {
+    "opened": 392,
+    "renamed": 19
+  },
+  "file_extensions": {
+    ".7sbumgj": 1,
+    ".alhckfr": 1,
+    ".bbr3blu": 1,
+    ".corespotlightd": 5,
+    ".dat google chrome helper": 4,
+    ".degbznb": 1,
+    ".docx": 4,
+    ".dzqbyte": 1,
+    ".elsqu5r": 1,
+    ".flcdwod": 1,
+    ".framework google": 1,
+    ".hqumjes": 1,
+    ".ibzu8w6": 1,
+    ".json": 2,
+    ".knmerrn": 1,
+    ".loqn817": 1,
+    ".lproj google chrome helper": 34,
+    ".lsd4txn": 1,
+    ".pdf": 2,
+    ".plist google": 10,
+    ".plist google chrome": 18,
+    ".plist google chrome helper": 51,
+    ".ssappinfocus": 2,
+    ".t5q62hm": 1,
+    ".teulxoe": 1,
+    ".ukzvs64": 1,
+    ".vhnmzps": 1,
+    ".vhsg5o8": 1,
+    ".x3r3i8a": 1,
+    ".xml": 7,
+    ".z5k6sgx": 1
+  },
+  "apps": {
+    "(Renderer)": 291,
+    "BiomeAgent": 7,
+    "Chrome": 12,
+    "Electron": 3,
+    "Helper": 66,
+    "QuickLookSatellite": 9,
+    "QuickLookUIService": 1,
+    "cfprefsd": 19,
+    "filecoordinationd": 2,
+    "quicklookd": 1
+  },
+  "upload_count": 0,
+  "time_range": {
+    "start": "2025-12-28T18:41:30.098",
+    "end": "2025-12-28T18:42:49.905"
+  }
+}

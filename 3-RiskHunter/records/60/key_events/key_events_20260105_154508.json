@@ -1,0 +1,2282 @@
+[
+  {
+    "timestamp": "2026-01-05T15:45:10.661",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.controlcenter.plist.BIwKXvH",
+    "file_name": "com.apple.controlcenter.plist.BIwKXvH",
+    "file_size": 0,
+    "file_extension": ".biwkxvh",
+    "process_info": {
+      "pid": "3243444",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.controlcenter.plist.BIwKXvH",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:10.661",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.xpc.activity2.plist.mma9DhO",
+    "file_name": "com.apple.xpc.activity2.plist.mma9DhO",
+    "file_size": 0,
+    "file_extension": ".mma9dho",
+    "process_info": {
+      "pid": "3243444",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.xpc.activity2.plist.mma9DhO",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:10.662",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.xGHMI6h",
+    "file_name": "com.apple.HIToolbox.plist.xGHMI6h",
+    "file_size": 0,
+    "file_extension": ".xghmi6h",
+    "process_info": {
+      "pid": "3243444",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.xGHMI6h",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:10.941",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:10.941",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_name": "com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_size": 0,
+    "file_extension": ".ssappinfocus",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:10.942",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:10.942",
+    "event_type": "opened",
+    "file_path": "/compute/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/client/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3243715",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/compute/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/client/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:10.944",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:10.944",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_name": "com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_size": 0,
+    "file_extension": ".ssappinfocus",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:10.944",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:14.407",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:14.408",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_name": "com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_size": 0,
+    "file_extension": ".ssappinfocus",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:14.412",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:14.417",
+    "event_type": "opened",
+    "file_path": "/compute/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/client/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3243720",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/compute/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/client/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:14.428",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:14.429",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_name": "com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_size": 0,
+    "file_extension": ".ssappinfocus",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:14.432",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:26.097",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.finder.plist.Z2p2xKt",
+    "file_name": "com.apple.finder.plist.Z2p2xKt",
+    "file_size": 0,
+    "file_extension": ".z2p2xkt",
+    "process_info": {
+      "pid": "3243806",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.finder.plist.Z2p2xKt",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:26.099",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/ContextStoreAgent.plist.Hemi8IM",
+    "file_name": "ContextStoreAgent.plist.Hemi8IM",
+    "file_size": 0,
+    "file_extension": ".hemi8im",
+    "process_info": {
+      "pid": "3243806",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/ContextStoreAgent.plist.Hemi8IM",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:26.100",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.TK66LTV",
+    "file_name": "com.apple.HIToolbox.plist.TK66LTV",
+    "file_size": 0,
+    "file_extension": ".tk66ltv",
+    "process_info": {
+      "pid": "3243806",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.TK66LTV",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:42.089",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.xpc.activity2.plist.NvE7PT1",
+    "file_name": "com.apple.xpc.activity2.plist.NvE7PT1",
+    "file_size": 0,
+    "file_extension": ".nve7pt1",
+    "process_info": {
+      "pid": "3244261",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.xpc.activity2.plist.NvE7PT1",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:42.091",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.TJi2XLr",
+    "file_name": "com.apple.HIToolbox.plist.TJi2XLr",
+    "file_size": 0,
+    "file_extension": ".tji2xlr",
+    "process_info": {
+      "pid": "3244261",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.TJi2XLr",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:45.171",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/com.apple.powerlogd.plist.dLFS3Yn",
+    "file_name": "com.apple.powerlogd.plist.dLFS3Yn",
+    "file_size": 0,
+    "file_extension": ".dlfs3yn",
+    "process_info": {
+      "pid": "3244682",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/com.apple.powerlogd.plist.dLFS3Yn",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:45.181",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/analyticsd.plist.1Yt5BbI",
+    "file_name": "analyticsd.plist.1Yt5BbI",
+    "file_size": 0,
+    "file_extension": ".1yt5bbi",
+    "process_info": {
+      "pid": "3244682",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/analyticsd.plist.1Yt5BbI",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:45.189",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/analyticsd.plist.PVoCkVQ",
+    "file_name": "analyticsd.plist.PVoCkVQ",
+    "file_size": 0,
+    "file_extension": ".pvockvq",
+    "process_info": {
+      "pid": "3244682",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/analyticsd.plist.PVoCkVQ",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:45.250",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3244412",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:45.261",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3244412",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:45.265",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3244412",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:45.321",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3244412",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:45.660",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3244412",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:45.665",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3244412",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:45.672",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3244412",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:46.059",
+    "event_type": "opened",
+    "file_path": "/CoreADI",
+    "file_name": "CoreADI",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3244597",
+      "process_name": "runningboardd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "runningboardd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "runningboardd",
+      "upload_type": "Sensitive Access",
+      "original_file": "/CoreADI",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:46.059",
+    "event_type": "opened",
+    "file_path": "/CoreADI",
+    "file_name": "CoreADI",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3244597",
+      "process_name": "runningboardd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "runningboardd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "runningboardd",
+      "upload_type": "Sensitive Access",
+      "original_file": "/CoreADI",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:46.425",
+    "event_type": "opened",
+    "file_path": "/PowerLog.framework/Versions/A/XPCServices/PerfPowerTelemetryClientRegistrationService.xpc/Contents/MacOS/PerfPowerTelemetryClientRegistrationService",
+    "file_name": "PerfPowerTelemetryClientRegistrationService",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3244599",
+      "process_name": "runningboardd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "runningboardd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "runningboardd",
+      "upload_type": "Sensitive Access",
+      "original_file": "/PowerLog.framework/Versions/A/XPCServices/PerfPowerTelemetryClientRegistrationService.xpc/Contents/MacOS/PerfPowerTelemetryClientRegistrationService",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:45:46.425",
+    "event_type": "opened",
+    "file_path": "/PowerLog.framework/Versions/A/XPCServices/PerfPowerTelemetryClientRegistrationService.xpc/Contents/MacOS/PerfPowerTelemetryClientRegistrationService",
+    "file_name": "PerfPowerTelemetryClientRegistrationService",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3244599",
+      "process_name": "runningboardd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "runningboardd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "runningboardd",
+      "upload_type": "Sensitive Access",
+      "original_file": "/PowerLog.framework/Versions/A/XPCServices/PerfPowerTelemetryClientRegistrationService.xpc/Contents/MacOS/PerfPowerTelemetryClientRegistrationService",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:02.882",
+    "event_type": "created",
+    "file_path": "/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_StYEE7",
+    "file_name": "NSIRD_chronod_StYEE7",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3245120",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_StYEE7",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "mkdir"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:02.882",
+    "event_type": "created",
+    "file_path": "/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_dFrYO5",
+    "file_name": "NSIRD_chronod_dFrYO5",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3245120",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_dFrYO5",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "mkdir"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:02.882",
+    "event_type": "opened",
+    "file_path": "/TemporaryItems/NSIRD_chronod_dFrYO5/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "3245120",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/TemporaryItems/NSIRD_chronod_dFrYO5/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:02.882",
+    "event_type": "renamed",
+    "file_path": "/T/com.apple.chrono/TemporaryItems/NSIRD_chronod_dFrYO5/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "3245120",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/T/com.apple.chrono/TemporaryItems/NSIRD_chronod_dFrYO5/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "rename"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:02.883",
+    "event_type": "deleted",
+    "file_path": "/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_dFrYO5",
+    "file_name": "NSIRD_chronod_dFrYO5",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3245120",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_dFrYO5",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "rmdir"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:02.883",
+    "event_type": "opened",
+    "file_path": "//TemporaryItems/NSIRD_chronod_StYEE7/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "3245120",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "//TemporaryItems/NSIRD_chronod_StYEE7/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:02.883",
+    "event_type": "opened",
+    "file_path": "//TemporaryItems/NSIRD_chronod_StYEE7/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "3245120",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "//TemporaryItems/NSIRD_chronod_StYEE7/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:03.765",
+    "event_type": "deleted",
+    "file_path": "/SystemData/com.apple.chrono/timelines/com.apple.weather/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "3245120",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/SystemData/com.apple.chrono/timelines/com.apple.weather/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "unlink"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:03.766",
+    "event_type": "renamed",
+    "file_path": "/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_StYEE7/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "3245120",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_StYEE7/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "rename"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:03.766",
+    "event_type": "opened",
+    "file_path": "/com.apple.chrono/timelines/com.apple.weather/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "3245120",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/com.apple.chrono/timelines/com.apple.weather/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:03.773",
+    "event_type": "opened",
+    "file_path": "/com.apple.chrono/timelines/com.apple.weather/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "3234129",
+      "process_name": "NotificationCenter",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "NotificationCenter",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "NotificationCenter",
+      "upload_type": "Sensitive Access",
+      "original_file": "/com.apple.chrono/timelines/com.apple.weather/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:04.846",
+    "event_type": "renamed",
+    "file_path": "/Users/tujiali/Documents/项目3prd设计.docx",
+    "file_name": "项目3prd设计.docx",
+    "file_size": 0,
+    "file_extension": ".docx",
+    "process_info": {
+      "pid": "3244808",
+      "process_name": "Finder",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Finder",
+    "extra": {
+      "category": "",
+      "raw_operation": "rename"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:04.867",
+    "event_type": "opened",
+    "file_path": "/Users/tujiali/Documents/计划.docx",
+    "file_name": "计划.docx",
+    "file_size": 21526,
+    "file_extension": ".docx",
+    "process_info": {
+      "pid": "3242227",
+      "process_name": "Finder",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Finder",
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:04.878",
+    "event_type": "opened",
+    "file_path": "/Users/tujiali/Documents/计划.docx",
+    "file_name": "计划.docx",
+    "file_size": 21526,
+    "file_extension": ".docx",
+    "process_info": {
+      "pid": "3242227",
+      "process_name": "Finder",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Finder",
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:04.883",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.R98uC2x",
+    "file_name": "com.apple.HIToolbox.plist.R98uC2x",
+    "file_size": 0,
+    "file_extension": ".r98uc2x",
+    "process_info": {
+      "pid": "3244261",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.R98uC2x",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:09.818",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.muC5t8o",
+    "file_name": "com.apple.HIToolbox.plist.muC5t8o",
+    "file_size": 0,
+    "file_extension": ".muc5t8o",
+    "process_info": {
+      "pid": "3244604",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.muC5t8o",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:09.828",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:09.830",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_name": "com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_size": 0,
+    "file_extension": ".ssappinfocus",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:09.833",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:09.836",
+    "event_type": "opened",
+    "file_path": "/compute/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/client/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3245368",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/compute/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/client/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:09.845",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:09.845",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_name": "com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_size": 0,
+    "file_extension": ".ssappinfocus",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:46:09.847",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3242339",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  }
+]
