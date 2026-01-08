@@ -14,7 +14,17 @@ import re
 import prompts  
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
-
+from datetime import datetime, timedelta
+import logging  
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  
+        logging.FileHandler("analysis.log", encoding='utf-8')  
+    ]
+)
+logger = logging.getLogger(__name__)
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 resnet_base = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
@@ -28,38 +38,71 @@ resnet_transform = transforms.Compose([
 reader = easyocr.Reader(['ch_sim', 'en'], gpu=(DEVICE == 'cuda'))
 
 
-def analyze_video_behavior(target_keywords, video_path, output_dir, similarity_threshold=0.98, sample_interval=1.0):
+def analyze_video_behavior(rec_start_time_str, search_start_time_str, search_end_time_str, target_keywords, video_path, similarity_threshold=0.98, sample_interval=1.0):
     """
     针对视频进行行为检索与分析
-    :param target_keywords: 关键词列表，如 ['AAA公司员工守则']
+    :param rec_start_time_str: 录屏开始的时刻 (格式: "2026-01-06 17:00:00")
+    :param search_start_time_str: 想要开始搜索的时刻 (格式: "2026-01-06 17:30:00")
+    :param search_end_time_str: 搜索范围-结束时刻
+    :param target_keywords: 目标关键词列表
     :param video_path: 视频文件路径
     :param output_dir: 结果输出目录
     :param similarity_threshold: 画面变化阈值
     :param sample_interval: 采样间隔（秒）
     """
+    video_filename = os.path.basename(video_path) 
+    video_name_only = os.path.splitext(video_filename)[0] 
+    output_dir = f"./output_{video_name_only}/"
     
+    t_fmt = "%Y-%m-%d %H:%M:%S"
+    t_rec = datetime.strptime(rec_start_time_str, t_fmt)
+    t_s_start = datetime.strptime(search_start_time_str, t_fmt)
+    t_s_end = datetime.strptime(search_end_time_str, t_fmt)
     
+   
+    start_offset = (t_s_start - t_rec).total_seconds()
+    end_offset = (t_s_end - t_rec).total_seconds()
+
+    if start_offset < 0:
+        logger.warning(f"搜索开始时间早于录屏开始时间，重置为 0s。")
+        start_offset = 0
+    
+    if end_offset <= start_offset:
+        logger.error("错误：搜索结束时间必须晚于搜索开始时间。")
+        return
+
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        print(f"❌ 错误: 无法打开视频 {video_path}")
+        logger.error(f"无法打开视频: {video_path}")
         return
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    
+    start_frame_idx = int(start_offset * fps)
+    end_frame_idx = min(int(end_offset * fps), total_frames)
+
+    if start_frame_idx >= total_frames:
+        logger.error(f"定位失败：搜索起始点 {search_start_time_str} 已超过视频总长度。")
+        return
+
+    logger.info(f"📍 范围定位：从 {search_start_time_str} 到 {search_end_time_str} (持续 {end_offset - start_offset} 秒)")
+
     step = int(fps * sample_interval)
     filtered_frames_data = []
 
     
     candidate_indices = []
     prev_feature = None
-    pbar_feat = tqdm(total=total_frames, desc="🚀 阶段 1/3: 画面特征提取")
+    pbar_feat = tqdm(total=end_frame_idx - start_frame_idx, desc="🚀 阶段 1/3: 范围特征提取")
     
-    curr_idx = 0
-    while curr_idx < total_frames:
+    curr_idx = start_frame_idx
+    while curr_idx < end_frame_idx: 
         cap.set(cv2.CAP_PROP_POS_FRAMES, curr_idx)
         ret, frame = cap.read()
         if not ret: break
@@ -70,106 +113,188 @@ def analyze_video_behavior(target_keywords, video_path, output_dir, similarity_t
         with torch.no_grad():
             curr_feat = feature_model(img_t).flatten()
             
-        if prev_feature is None:
+        if prev_feature is None or torch.nn.functional.cosine_similarity(prev_feature.unsqueeze(0), curr_feat.unsqueeze(0)).item() < similarity_threshold:
             candidate_indices.append(curr_idx)
             prev_feature = curr_feat
-        else:
-            sim = torch.nn.functional.cosine_similarity(prev_feature.unsqueeze(0), curr_feat.unsqueeze(0)).item()
-            if sim < similarity_threshold:
-                candidate_indices.append(curr_idx)
-                prev_feature = curr_feat
         
         curr_idx += step
         pbar_feat.update(step)
     pbar_feat.close()
 
     
+    
+    filtered_frames_data = []
+    last_hit_idx = -1  
     pbar_ocr = tqdm(total=len(candidate_indices), desc="🔍 阶段 2/3: 关键词文本过滤")
+    
     for idx in candidate_indices:
         cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
         ret, frame = cap.read()
         if not ret: continue
         
         results = reader.readtext(frame, detail=0)
-        found = any(any(kw in text for kw in target_keywords) for text in results)
+        found = False
+        for text in results:
+            text_cleaned = text.replace(" ", "") 
+            if any(kw in text_cleaned for kw in target_keywords):
+                found = True
+                break
         
         if found:
+            last_hit_idx = idx 
+            current_wall_time = (t_rec + timedelta(seconds=idx / fps)).strftime(t_fmt)
             save_path = os.path.join(output_dir, f"frame_{idx:06d}.jpg")
             cv2.imwrite(save_path, frame)
-            filtered_frames_data.append({
-                'frame': frame,
-                'frame_index': idx,
-                'timestamp': idx / fps
-            })
+            filtered_frames_data.append({'frame': frame, 'frame_index': idx, 'wall_clock_time': current_wall_time})
         pbar_ocr.update(1)
     pbar_ocr.close()
+
+    
+    if last_hit_idx != -1:
+        logger.info(f"⏳ 检测到最后匹配帧 {last_hit_idx}，正在延伸 3 秒上下文...")
+        
+        extension_seconds = [3, 8, 13, 18]
+        
+        for sec in extension_seconds:
+            ext_idx = last_hit_idx + int(sec * fps)
+            
+            
+            if ext_idx >= total_frames:
+                logger.warning(f"延伸帧索引 {ext_idx} 已超过视频总长度，跳过。")
+                continue
+            
+            cap.set(cv2.CAP_PROP_POS_FRAMES, ext_idx)
+            ret, frame = cap.read()
+            if ret:
+                ext_wall_time = (t_rec + timedelta(seconds=ext_idx / fps)).strftime(t_fmt)
+                
+                save_path = os.path.join(output_dir, f"frame_ext_{sec}s_{ext_idx:06d}.jpg")
+                cv2.imwrite(save_path, frame)
+                
+                filtered_frames_data.append({
+                    'frame': frame, 
+                    'frame_index': ext_idx, 
+                    'wall_clock_time': ext_wall_time,
+                    'is_extended': True  
+                })
+    
     cap.release()
 
-    print(f"\n🎯 过滤完成！保留了 {len(filtered_frames_data)} 帧关键画面。")
-
-   
     if not filtered_frames_data:
-        print("📭 未发现相关关键帧，停止 VLM 分析。")
+        logger.warning(f"📭 在时间范围内未发现关键词。")
         return
 
-    print(f"🧠 启动阶段 3/3: Qwen2.5-VL 多模态行为溯源...")
+    
+    
+    filtered_frames_data.sort(key=lambda x: x['frame_index'])
+    
+    logger.info(f"🧠 阶段 3/3: 全量分析开始，共识别到 {len(filtered_frames_data)} 帧关键画面")
     
     llm = ChatOpenAI(
         model="qwen2.5-vl-72b-instruct",
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         api_key="sk-62823ac2c480482084d040855d2e5a15",
-        streaming=False,
     )
 
+    table_rows = [f"{i+1:^8} | {f['frame_index']:^10} | {f['wall_clock_time']:^20}" for i, f in enumerate(filtered_frames_data)]
+    table_str = "输入顺序 | 原始帧索引 | 现实时间戳 (%Y-%m-%d %H:%M:%S)\n" + "-"*60 + "\n" + "\n".join(table_rows)
+
+    final_prompt = prompts.RETRIEVE_FRAMES_PROMPT.format(
+        target_keywords=", ".join(target_keywords),
+        frame_count=len(filtered_frames_data),
+        frame_info_table=table_str
+    )
+
+    contents = [{"type": "text", "text": final_prompt}]
+    for f in filtered_frames_data:
+        _, buffer = cv2.imencode('.jpg', f['frame'], [cv2.IMWRITE_JPEG_QUALITY, 75])
+        img_b64 = base64.b64encode(buffer).decode('utf-8')
+        contents.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}
+        })
+
     all_events = []
+    try:
+        logger.info(f"🚀 正在向模型发送全量数据（共 {len(filtered_frames_data)} 张图片）...")
+        resp = llm.invoke([HumanMessage(content=contents)])
+        clean_text = re.sub(r'```json\n?|```', '', resp.content).strip()
+        batch_data = json.loads(clean_text)
+        if "events" in batch_data:
+            all_events = batch_data["events"]
+    except Exception as e:
+        logger.error(f"❌ 全量分析失败: {e}")
 
-    for start_idx in range(0, len(filtered_frames_data), 5):
-        batch = filtered_frames_data[start_idx : start_idx + 5]
-        print(f"📦 分析批次 {start_idx//5 + 1}...")
-
-        
-        table_rows = [f"{i+1:^8} | {f['frame_index']:^10} | {f['timestamp']:^10.1f}" for i, f in enumerate(batch)]
-        table_str = "输入顺序 | 原始帧索引 | 时间戳(秒)\n" + "-"*40 + "\n" + "\n".join(table_rows)
-
-        # 2. 填充 Prompt
-        final_prompt = prompts.RETRIEVE_FRAMES_PROMPT.format(
-            target_keywords=", ".join(target_keywords),
-            frame_count=len(batch),
-            frame_info_table=table_str
-        )
-
-        
-        contents = [{"type": "text", "text": final_prompt}]
-        for f in batch:
-            _, buffer = cv2.imencode('.jpg', f['frame'], [cv2.IMWRITE_JPEG_QUALITY, 75])
-            img_b64 = base64.b64encode(buffer).decode('utf-8')
-            contents.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}
-            })
-
-        
-        try:
-            resp = llm.invoke([HumanMessage(content=contents)])
-            clean_text = re.sub(r'```json\n?|```', '', resp.content).strip()
-            batch_data = json.loads(clean_text)
-            if "events" in batch_data:
-                all_events.extend(batch_data["events"])
-        except Exception as e:
-            print(f"  ⚠️ 批次 {start_idx//5 + 1} 分析失败: {e}")
-
+    result_data = {
+        "search_range": {"start": search_start_time_str, "end": search_end_time_str}, 
+        "total_events": len(all_events), 
+        "events": all_events
+    }
     
     report_file = os.path.join(output_dir, "behavior_analysis_report.json")
     with open(report_file, 'w', encoding='utf-8') as f:
-        json.dump({"total_events": len(all_events), "events": all_events}, f, ensure_ascii=False, indent=4)
+        json.dump(result_data, f, ensure_ascii=False, indent=4)
     
-    print(f"\n✨ 任务完成！分析报告已保存至: {report_file}")
+    logger.info(f"✨ 任务完成！分析报告已保存至: {report_file}")
+    return result_data
 
 
 if __name__ == "__main__":
     # 使用示例
-    analyze_video_behavior(
-        target_keywords=['AAA公司员工守则'],
-        video_path="../video/1.mov",
-        output_dir="./output_final/"
+
+    # 1. 43:文件压缩
+    logger.info("开始分析视频 43.mp4 的行为...")
+    analysis_results = analyze_video_behavior(
+        rec_start_time_str='2025-12-28 18:55:36',    # 录屏开始时间
+        search_start_time_str='2025-12-28 18:55:46', # 搜索起始时间点
+        search_end_time_str='2025-12-28 18:56:05',   # 搜索结束时间点
+        target_keywords=['项目1详细规划'],
+        video_path="../video/43.mp4"
     )
+    events = analysis_results.get("events", [])
+    first_event = events[0]
+    logger.info(f"第一个事件的应用名称是: {first_event.get('app_name', '未知')}")
+    logger.info(f"第一个事件的操作类型是: {first_event.get('operation_type', '未知')}")
+    logger.info(f"第一个事件的行为类别是: {first_event.get('behavior_category', '未知')}")
+    logger.info(f"第一个事件的变更前文件名是: {first_event.get('original_filename', '未知')}")
+    logger.info(f"第一个事件的变更后文件名是: {first_event.get('modified_filename', '未知')}")
+    logger.info(f"第一个事件的描述是: {first_event.get('description', '无')}")
+
+    # 2. 42: 文件格式转换
+    logger.info("开始分析视频 42.mp4 的行为...")
+    analysis_results = analyze_video_behavior(
+        rec_start_time_str='2025-12-28 18:41:28',    
+        search_start_time_str='2025-12-28 18:41:53', 
+        search_end_time_str='2025-12-28 18:42:10',   
+        target_keywords=['项目2需求分析'],
+        video_path="../video/42.mp4"
+    )
+    events = analysis_results.get("events", [])
+    first_event = events[0]
+    logger.info(f"第一个事件的应用名称是: {first_event.get('app_name', '未知')}")
+    logger.info(f"第一个事件的操作类型是: {first_event.get('operation_type', '未知')}")
+    logger.info(f"第一个事件的行为类别是: {first_event.get('behavior_category', '未知')}")
+    logger.info(f"第一个事件的变更前文件名是: {first_event.get('original_filename', '未知')}")
+    logger.info(f"第一个事件的变更后文件名是: {first_event.get('modified_filename', '未知')}")
+    logger.info(f"第一个事件的描述是: {first_event.get('description', '无')}")
+
+    # 3. 60: 文件重命名
+    logger.info("开始分析视频 60.mp4 的行为...")
+    analysis_results = analyze_video_behavior(
+        rec_start_time_str='2026-01-05 15:45:08',    
+        search_start_time_str='2026-01-05 15:45:18', 
+        search_end_time_str='2026-01-05 15:45:50',   
+        target_keywords=['项目3prd设计'],
+        video_path="../video/60.mp4"
+    )
+    events = analysis_results.get("events", [])
+    first_event = events[0]
+    logger.info(f"第一个事件的应用名称是: {first_event.get('app_name', '未知')}")
+    logger.info(f"第一个事件的操作类型是: {first_event.get('operation_type', '未知')}")
+    logger.info(f"第一个事件的行为类别是: {first_event.get('behavior_category', '未知')}")
+    logger.info(f"第一个事件的变更前文件名是: {first_event.get('original_filename', '未知')}")
+    logger.info(f"第一个事件的变更后文件名是: {first_event.get('modified_filename', '未知')}")
+    logger.info(f"第一个事件的描述是: {first_event.get('description', '无')}")
+
+
+

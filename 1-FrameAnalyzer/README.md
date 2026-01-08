@@ -46,20 +46,27 @@ pip install opencv-python torch torchvision pillow tqdm easyocr langchain-openai
 
 ## 💻 使用示例
 
-### 场景 A：从视频中检索与文件名‘AAA公司员工守则’有关的帧并描述
+### 场景 A：从视频中检索与文件名‘项目2需求分析’有关的帧并描述
 
 Python
 
 ```
-from your_script_name import analyze_video_behavior
+analysis_results = analyze_video_behavior(
+        rec_start_time_str='2025-12-28 18:41:28',    
+        search_start_time_str='2025-12-28 18:41:53', 
+        search_end_time_str='2025-12-28 18:42:10',   
+        target_keywords=['项目2需求分析'],
+        video_path="../video/42.mp4"
+    )
+    events = analysis_results.get("events", [])
+    first_event = events[0]
+    logger.info(f"第一个事件的应用名称是: {first_event.get('app_name', '未知')}")
+    logger.info(f"第一个事件的操作类型是: {first_event.get('operation_type', '未知')}")
+    logger.info(f"第一个事件的行为类别是: {first_event.get('behavior_category', '未知')}")
+    logger.info(f"第一个事件的变更前文件名是: {first_event.get('original_filename', '未知')}")
+    logger.info(f"第一个事件的变更后文件名是: {first_event.get('modified_filename', '未知')}")
+    logger.info(f"第一个事件的描述是: {first_event.get('description', '无')}")
 
-analyze_video_behavior(
-    target_keywords=['AAA公司员工守则'],
-    video_path="office_surveillance.mp4",
-    output_dir="./analysis_result/",
-    similarity_threshold=0.98,
-    sample_interval=1.0  # 每秒采样一帧
-)
 
 ```
 
@@ -94,21 +101,28 @@ JSON
 
 ```
 {
-    "total_events": 2,
+    "search_range": {
+        "start": "2025-12-28 18:41:53",
+        "end": "2025-12-28 18:42:10"
+    },
+    "total_events": 1,
     "events": [
         {
-            "time_range": "46.2 - 57.0 (秒)",
-            "involved_timestamps": [46.2, 47.2, 48.2, 57.0],
-            "app_name": "QQ",
-            "operation_type": "邮件附件外发",
-            "description": "用户在QQ中选中了 'AAA公司员工守则.docx' 文件，并通过鼠标右键菜单选择了发送给联系人 '青山撞入怀'。从弹出的发送窗口到文件成功发送，整个过程在这些帧中被记录。"
-        },
-        {
-            "time_range": "112.1 - 128.8 (秒)",
-            "involved_timestamps": [112.1, 121.0, 122.0, 128.8],
-            "app_name": "Kimi",
-            "operation_type": "文档上传与查看",
-            "description": "用户在Kimi应用中上传了名为'AAA公司员工守则'的Word文档，并在AI对话框中查看了该文档的内容。从点击上传到查看文档内容，整个过程覆盖了多个连续帧。"
+            "time_range": "2025-12-28 18:41:54 - 2025-12-28 18:42:16",
+            "involved_timestamps": [
+                "2025-12-28 18:41:54",
+                "2025-12-28 18:41:58",
+                "2025-12-28 18:42:01",
+                "2025-12-28 18:42:06",
+                "2025-12-28 18:42:11",
+                "2025-12-28 18:42:16"
+            ],
+            "app_name": "iLovePDF",
+            "behavior_category": "潜在隐藏行为",
+            "operation_type": "格式转换",
+            "original_filename": "项目2需求分析.docx",
+            "modified_filename": "项目2需求分析.pdf",
+            "description": "用户在 iLovePDF 网站上将 '项目2需求分析.docx' 文件转换为 PDF 格式。从选择文件到完成转换的整个过程被记录下来。"
         }
     ]
 }
