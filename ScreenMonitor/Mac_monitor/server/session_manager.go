@@ -295,8 +295,6 @@ func (sm *SessionManager) generateIndex() error {
 
 ### Original Logs
 - `+"`%s`"+` - Complete monitoring log
-// - `+"`%s`"+` - Window events log
-// - `+"`%s`"+` - Clipboard data log
 
 ### Key Events
 - `+"`%s`"+` - Extracted key events
@@ -311,8 +309,6 @@ func (sm *SessionManager) generateIndex() error {
 		sm.currentSession.RiskEvents,
 		sm.currentSession.VideoFile,
 		sm.currentSession.LogFile,
-		// sm.currentSession.WindowLogFile,
-		// sm.currentSession.ClipboardFile,
 		sm.currentSession.KeyEventsFile,
 		sm.currentSession.SummaryFile,
 	)

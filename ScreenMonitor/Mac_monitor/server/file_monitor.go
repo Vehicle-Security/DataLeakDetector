@@ -604,3 +604,56 @@ func (fm *FileMonitor) GetRiskEvents() int {
 	defer fm.mutex.Unlock()
 	return len(fm.keyEvents)
 }
+
+// AddUploadDetectedEvent 添加上传检测事件
+// 当通过启发式分析检测到文件正在被上传时调用
+func (fm *FileMonitor) AddUploadDetectedEvent(filePath, appName, uploadType, windowTitle string) {
+	fm.mutex.Lock()
+	defer fm.mutex.Unlock()
+
+	baseName := filepath.Base(filePath)
+	var fileSize int64 = 0
+	if info, err := os.Stat(filePath); err == nil {
+		fileSize = info.Size()
+	}
+
+	event := LogEntry{
+		Timestamp:     time.Now().Format("2006-01-02T15:04:05.000"),
+		EventType:     "upload_detected",
+		FilePath:      filePath,
+		FileName:      baseName,
+		FileSize:      fileSize,
+		FileExtension: filepath.Ext(filePath),
+		AppName:       appName,
+		WindowInfo: WindowInfo{
+			WindowTitle: windowTitle,
+		},
+		UploadInfo: &UploadDetection{
+			IsUpload:     true,
+			AppName:      appName,
+			UploadType:   uploadType,
+			OriginalFile: filePath,
+		},
+		Extra: map[string]interface{}{
+			"detection_method": "upload_detection",
+		},
+		UserInfo: UserInfo{
+			Username: fm.currentUser,
+			Hostname: fm.hostname,
+		},
+	}
+
+	fm.events = append(fm.events, event)
+
+	// 上传检测事件始终是关键事件
+	fm.keyEvents = append(fm.keyEvents, fm.toKeyEvent(&event))
+
+	// 写入日志文件
+	if fm.logFile != nil {
+		data, _ := json.Marshal(event)
+		fm.logFile.Write(data)
+		fm.logFile.WriteString("\n")
+	}
+
+	log.Printf("⬆️ 上传检测: %s 正在上传 %s (%s)", appName, baseName, uploadType)
+}

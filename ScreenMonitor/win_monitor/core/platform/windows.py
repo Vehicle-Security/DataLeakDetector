@@ -7,7 +7,7 @@ import win32gui
 import win32process
 import psutil
 from .base import PlatformBase
-from core.file_dialog_detector import get_file_dialog_detector
+from core.detection.file_dialog_detector import get_file_dialog_detector
 
 class WindowsPlatform(PlatformBase):
     def __init__(self):

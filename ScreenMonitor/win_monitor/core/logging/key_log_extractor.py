@@ -30,7 +30,7 @@ class KeyLogExtractor:
         )
         self.include_events = self.config.get("log_extraction", {}).get(
             "include_events",
-            ["created", "modified", "upload_detected"]
+            ["opened", "created", "modified", "deleted", "renamed", "file_selected", "upload_detected"]
         )
     
     def extract_key_events(self, log_file_path):

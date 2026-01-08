@@ -86,6 +86,10 @@ func (r *ScreenRecorder) Start(outputPath string, fps int) error {
 		return fmt.Errorf("已经在录制中")
 	}
 
+	// 重新创建 channel（因为上次 Stop 时可能已关闭）
+	r.stopChan = make(chan bool, 1)
+	r.eventBuffer = make(chan *LogEntry, 1000)
+
 	// 检查 ffmpeg 是否可用
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		return fmt.Errorf("ffmpeg 未安装，请运行: brew install ffmpeg")
@@ -175,11 +179,16 @@ func (r *ScreenRecorder) Stop() error {
 		return fmt.Errorf("没有正在进行的录制")
 	}
 
-	// 发送停止信号
-	r.stopChan <- true
+	// 发送停止信号（非阻塞）
+	select {
+	case r.stopChan <- true:
+	default:
+	}
 
-	// 关闭事件缓冲区
-	close(r.eventBuffer)
+	// 安全关闭事件缓冲区
+	if r.eventBuffer != nil {
+		close(r.eventBuffer)
+	}
 
 	// 发送 SIGINT 信号让 ffmpeg 优雅退出（保存文件）
 	if r.cmd.Process != nil {

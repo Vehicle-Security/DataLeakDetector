@@ -12,7 +12,7 @@ try:
 except ImportError:
     auto = None
 
-from core.recent_file_tracker import get_recent_file_tracker
+from .recent_file_tracker import get_recent_file_tracker
 
 class FileDialogDetector:
     """监测文件选择对话框并记录选中的文件"""

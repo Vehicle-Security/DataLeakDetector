@@ -29,7 +29,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from services.config_loader import ConfigLoader
 from services.recorder_service import RecorderService
-from core.engine import Engine
+from core.monitors.engine import Engine
+from core.monitors.file_system_monitor import FileSystemMonitor, get_file_system_monitor
 
 # Flask 应用
 app = Flask(__name__, 
@@ -40,6 +41,9 @@ CORS(app)
 # 全局引擎实例
 _engine: Engine = None
 _engine_lock = threading.Lock()
+
+# 全局文件系统监控器
+_fs_monitor: FileSystemMonitor = None
 
 # 会话目录（支持多个位置）
 SESSION_DIRS = []
@@ -191,6 +195,7 @@ def session_detail_page(session_id):
 @app.route('/api/start', methods=['POST'])
 def api_start():
     """启动监控"""
+    global _fs_monitor
     engine = get_engine()
     
     if engine.running:
@@ -201,6 +206,17 @@ def api_start():
     
     result = engine.start_monitoring()
     
+    # 启动文件系统监控
+    if result:
+        try:
+            _fs_monitor = get_file_system_monitor(
+                event_callback=lambda e: print(f"[FS] {e['event_type']}: {e['file_name']}")
+            )
+            _fs_monitor.start()
+            print("[FS_MONITOR] 文件系统监控已启动")
+        except Exception as e:
+            print(f"[FS_MONITOR] 启动失败: {e}")
+    
     return jsonify({
         "success": result,
         "message": "监控已启动" if result else "启动失败"
@@ -210,6 +226,7 @@ def api_start():
 @app.route('/api/stop', methods=['POST'])
 def api_stop():
     """停止监控"""
+    global _fs_monitor
     engine = get_engine()
     
     if not engine.running:
@@ -217,6 +234,14 @@ def api_stop():
             "success": False,
             "message": "监控未在运行"
         }), 400
+    
+    # 停止文件系统监控
+    if _fs_monitor and _fs_monitor.is_running:
+        try:
+            _fs_monitor.stop()
+            print("[FS_MONITOR] 文件系统监控已停止")
+        except Exception as e:
+            print(f"[FS_MONITOR] 停止失败: {e}")
     
     result = engine.stop_monitoring()
     

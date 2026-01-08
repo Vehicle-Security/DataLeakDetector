@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from services.config_loader import ConfigLoader
 from services.recorder_service import RecorderService
-from core.engine import Engine
+from core.monitors.engine import Engine
 
 
 def main():
