@@ -1,0 +1,395 @@
+# worklist_manager.py
+"""
+Worklist 管理模块
+用于维护敏感文件事件的动态工作列表，供模块3调用
+"""
+
+from typing import List, Dict, Any, Set, Optional
+from dataclasses import dataclass, field
+from datetime import datetime
+import json
+from pathlib import Path
+
+
+@dataclass()
+class SensitiveFileEvent:
+    """
+    敏感文件事件类
+    
+    Attributes:
+        event_id: 事件唯一标识
+        original_file: 原始敏感文件路径
+        current_file: 当前文件路径（可能经过重命名/复制等）
+        event_type: 事件类型（opened, renamed, copied, compressed等）
+        process_info: 关联进程信息
+        timestamp: 事件时间戳
+        is_hidden: 是否为隐藏操作（重命名、压缩等）
+        raw_event: 原始事件数据
+    """
+    event_id: str
+    original_file: str
+    current_file: str
+    event_type: str
+    process_info: Dict[str, Any]
+    timestamp: str
+    is_hidden: bool = False
+    raw_event: Dict[str, Any] = field(default_factory=dict)
+    
+    def __hash__(self):
+        return hash(self.event_id)
+    
+    def __eq__(self, other):
+        if isinstance(other, SensitiveFileEvent):
+            return self.event_id == other.event_id
+        return False
+
+
+class WorklistManager:
+    """
+    工作列表管理器
+    
+    主要功能：
+    1. 维护敏感文件列表
+    2. 查询某个文件是否是敏感文件
+    3. 扫描日志事件并生成工作列表
+    4. 动态更新工作列表
+    """
+    
+    def __init__(self, sensitive_files: Optional[List[str]] = None):
+        """
+        初始化工作列表管理器
+        
+        Args:
+            sensitive_files: 初始敏感文件路径列表
+        """
+        # 敏感文件集合（原始文件路径）
+        self.sensitive_files: Set[str] = set(sensitive_files or [])
+        
+        # 工作列表（待处理的敏感文件事件）
+        self.worklist: List[SensitiveFileEvent] = []
+        
+        # 文件映射关系：当前文件 -> 原始文件（用于追踪重命名、复制等）
+        self.file_mapping: Dict[str, str] = {}
+        
+        # 已加入工作列表的事件ID集合（避免重复处理）
+        self.processed_events: Set[str] = set()
+    
+    def add_sensitive_file(self, file_path: str) -> None:
+        """
+        添加敏感文件到监控列表
+        
+        Args:
+            file_path: 文件路径
+        """
+        self.sensitive_files.add(self._normalize_path(file_path))
+    
+    def add_sensitive_files(self, file_paths: List[str]) -> None:
+        """
+        批量添加敏感文件
+        
+        Args:
+            file_paths: 文件路径列表
+        """
+        for path in file_paths:
+            self.add_sensitive_file(path)
+    
+    def is_sensitive_file(self, file_path: str) -> bool:
+        """
+        查询某个文件是否是敏感文件
+        
+        Args:
+            file_path: 文件路径
+            
+        Returns:
+            是否为敏感文件
+        """
+        normalized_path = self._normalize_path(file_path)
+        
+        # 直接检查是否在敏感文件集合中
+        if normalized_path in self.sensitive_files:
+            return True
+        
+        # 检查是否是某个敏感文件的派生文件（重命名、复制等）
+        if normalized_path in self.file_mapping:
+            original = self.file_mapping[normalized_path]
+            return original in self.sensitive_files
+        
+        return False
+    
+    def get_original_file(self, file_path: str) -> Optional[str]:
+        """
+        获取文件的原始路径（如果是派生文件）
+        
+        Args:
+            file_path: 当前文件路径
+            
+        Returns:
+            原始文件路径，如果没有则返回None
+        """
+        normalized_path = self._normalize_path(file_path)
+        return self.file_mapping.get(normalized_path)
+    
+    def scan_and_build_worklist(self, log_events: List[Dict[str, Any]]) -> int:
+        """
+        扫描日志事件，构建工作列表
+        
+        Args:
+            log_events: 日志事件列表（JSON格式）
+            
+        Returns:
+            新增的敏感事件数量
+        """
+        added_count = 0
+        
+        for event in log_events:
+            # 提取事件信息
+            event_type = event.get("event_type", "")
+            file_path = event.get("file_path", "")
+            timestamp = event.get("timestamp", "")
+            process_info = event.get("process_info", {})
+            
+            # 生成事件ID（基于时间戳、文件路径、事件类型）
+            event_id = self._generate_event_id(timestamp, file_path, event_type)
+            
+            # 跳过已处理的事件
+            if event_id in self.processed_events:
+                continue
+            
+            # 检查是否涉及敏感文件
+            if self._is_sensitive_event(event):
+                sensitive_event = self._create_sensitive_event(event, event_id)
+                self.worklist.append(sensitive_event)
+                self.processed_events.add(event_id)
+                added_count += 1
+        
+        return added_count
+    
+    def get_next_event(self) -> Optional[SensitiveFileEvent]:
+        """
+        从工作列表中获取下一个待处理事件
+        
+        Returns:
+            下一个敏感文件事件，如果列表为空则返回None
+        """
+        if self.worklist:
+            return self.worklist.pop(0)
+        return None
+    
+    def peek_next_event(self) -> Optional[SensitiveFileEvent]:
+        """
+        查看下一个待处理事件但不移除
+        
+        Returns:
+            下一个敏感文件事件，如果列表为空则返回None
+        """
+        if self.worklist:
+            return self.worklist[0]
+        return None
+    
+    def add_event(self, event: SensitiveFileEvent) -> None:
+        """
+        手动添加事件到工作列表
+        
+        Args:
+            event: 敏感文件事件
+        """
+        if event.event_id not in self.processed_events:
+            self.worklist.append(event)
+            self.processed_events.add(event.event_id)  # 标记为已加入，避免重复添加
+    
+    def is_empty(self) -> bool:
+        """
+        检查工作列表是否为空
+        
+        Returns:
+            工作列表是否为空
+        """
+        return len(self.worklist) == 0
+    
+    def size(self) -> int:
+        """
+        获取工作列表大小
+        
+        Returns:
+            工作列表中的事件数量
+        """
+        return len(self.worklist)
+    
+    def update_file_mapping(self, original_file: str, new_file: str) -> None:
+        """
+        更新文件映射关系（用于追踪重命名、复制等操作）
+        
+        Args:
+            original_file: 原始文件路径
+            new_file: 新文件路径
+        """
+        original_normalized = self._normalize_path(original_file)
+        new_normalized = self._normalize_path(new_file)
+        
+        # 如果原始文件本身是派生文件，追溯到最初的源文件
+        if original_normalized in self.file_mapping:
+            root_file = self.file_mapping[original_normalized]
+            self.file_mapping[new_normalized] = root_file
+        else:
+            self.file_mapping[new_normalized] = original_normalized
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """
+        获取工作列表统计信息
+        
+        Returns:
+            统计信息字典
+        """
+        return {
+            "sensitive_files_count": len(self.sensitive_files),
+            "worklist_size": len(self.worklist),
+            "processed_events_count": len(self.processed_events),
+            "file_mappings_count": len(self.file_mapping),
+            "event_types": self._count_event_types()
+        }
+    
+    def clear_worklist(self) -> None:
+        """
+        清空工作列表（不清空敏感文件列表）
+        """
+        self.worklist.clear()
+    
+    def reset(self) -> None:
+        """
+        重置所有状态
+        """
+        self.sensitive_files.clear()
+        self.worklist.clear()
+        self.file_mapping.clear()
+        self.processed_events.clear()
+    
+    # ==================== 私有方法 ====================
+    
+    def _normalize_path(self, file_path: str) -> str:
+        """
+        规范化文件路径（去除多余的斜杠等）
+        
+        Args:
+            file_path: 原始文件路径
+            
+        Returns:
+            规范化后的路径
+        """
+        # 去除多余的斜杠
+        normalized = file_path.replace("//", "/")
+        # 统一使用 / 作为分隔符
+        normalized = normalized.replace("\\", "/")
+        return normalized
+    
+    def _generate_event_id(self, timestamp: str, file_path: str, event_type: str) -> str:
+        """
+        生成事件唯一ID
+        
+        Args:
+            timestamp: 时间戳
+            file_path: 文件路径
+            event_type: 事件类型
+            
+        Returns:
+            事件ID
+        """
+        return f"{timestamp}_{event_type}_{hash(file_path)}"
+    
+    def _is_sensitive_event(self, event: Dict[str, Any]) -> bool:
+        """
+        判断事件是否涉及敏感文件
+        
+        Args:
+            event: 事件数据
+            
+        Returns:
+            是否为敏感事件
+        """
+        file_path = event.get("file_path", "")
+        event_type = event.get("event_type", "")
+        
+        # Worklist 目前关注所有下面日志的事件类型
+        """ # 只关注文件打开、修改、重命名、复制、转换格式等操作
+        relevant_types = ["opened", "modified", "renamed", "copied", "deleted", "moved", "upload_detected", "file_selected", "compressed", "converted"]
+        
+        日志event_type           说明	
+        created	             文件创建
+        opened               文件打开	
+        modified	         文件修改/访问
+        deleted	             文件删除	
+        moved                文件移动	
+        renamed	             文件重命名	
+        upload_detected      检测到上传行为	
+        file_selected        用户通过文件对话框选择文件	
+        app_switch           应用切换（切换到黑名单桌面应用）	
+        website_visit	     访问黑名单网站
+        
+        if event_type not in relevant_types:
+            return False
+         """
+        
+        # 检查是否为敏感文件
+        return self.is_sensitive_file(file_path)
+    
+    def _create_sensitive_event(
+        self, 
+        event: Dict[str, Any], 
+        event_id: str
+    ) -> SensitiveFileEvent:
+        """
+        从原始事件创建敏感文件事件对象
+        
+        Args:
+            event: 原始事件数据
+            event_id: 事件ID
+            
+        Returns:
+            敏感文件事件对象
+        """
+        file_path = event.get("file_path", "")
+        normalized_path = self._normalize_path(file_path)
+        
+        # 确定原始文件
+        original_file = self.get_original_file(file_path) or normalized_path
+        
+        # 隐藏行为判断由 behavior_analysis_graph 模块完成
+        # 此处创建事件时默认不标记为隐藏
+        is_hidden = False
+        
+        return SensitiveFileEvent(
+            event_id=event_id,
+            original_file=original_file,
+            current_file=normalized_path,
+            event_type=event.get("event_type", ""),
+            process_info=event.get("process_info", {}),
+            timestamp=event.get("timestamp", ""),
+            is_hidden=is_hidden,
+            raw_event=event
+        )
+    
+    def _count_event_types(self) -> Dict[str, int]:
+        """
+        统计工作列表中各类型事件的数量
+        
+        Returns:
+            事件类型统计
+        """
+        type_counts = {}
+        for event in self.worklist:
+            event_type = event.event_type
+            type_counts[event_type] = type_counts.get(event_type, 0) + 1
+        return type_counts
+
+
+def load_log_from_json(json_file: str) -> List[Dict[str, Any]]:
+    """
+    从JSON文件加载日志事件
+    
+    Args:
+        json_file: JSON文件路径
+        
+    Returns:
+        事件列表
+    """
+    with open(json_file, 'r', encoding='utf-8') as f:
+        return json.load(f)

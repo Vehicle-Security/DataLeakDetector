@@ -10,6 +10,7 @@
 
 # 忽略文档
 **/doc/
+**/docs/
 
 # 忽略输入输出
 **/gradio_temp/
@@ -18,6 +19,7 @@
 **/output/
 **/*.log
 **/video/
+**/output*/
 
 # 数据文件
 # 忽略数据文件
@@ -37,6 +39,7 @@
 # 忽略旧的无用开发文件
 unknown_threat_agent/
 Image_Agent/
+**/earlyCode/
 
 # Node.js
 **/node_modules/
