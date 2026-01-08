@@ -250,6 +250,11 @@
             color: var(--accent-blue);
         }
 
+        .event-badge.renamed {
+            background: rgba(163, 113, 247, 0.2);
+            color: #a371f7;
+        }
+
         .file-col {
             color: var(--text-secondary);
             font-family: monospace;
@@ -427,14 +432,21 @@
                 return;
             }
 
-            tbody.innerHTML = filtered.map(log => `
+            tbody.innerHTML = filtered.map(log => {
+                // 对于重命名事件，显示 原路径 -> 新名称
+                let filePath = log.file_path || log.file_name || '-';
+                if (log.event_type === 'renamed' && log.destination_name) {
+                    filePath = `${log.file_name} → ${log.destination_name}`;
+                }
+
+                return `
                 <tr>
                     <td class="time-col">${formatTime(log.timestamp)}</td>
                     <td class="process-col" title="${log.process_info?.process_name || ''}">${log.process_info?.process_name || 'N/A'}</td>
                     <td><span class="event-badge ${log.event_type}">${log.event_type || 'unknown'}</span></td>
-                    <td class="file-col" title="${log.file_path || ''}">${log.file_path || log.file_name || '-'}</td>
+                    <td class="file-col" title="${log.destination_path || log.file_path || ''}">${filePath}</td>
                 </tr>
-            `).join('');
+            `}).join('');
         }
 
         function formatTime(ts) {

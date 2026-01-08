@@ -10,7 +10,7 @@ rule_matcher.py - 规则匹配器
 from dataclasses import dataclass
 from typing import Optional
 
-from .sensor import WindowData
+from ..monitors.sensor import WindowData
 
 
 @dataclass

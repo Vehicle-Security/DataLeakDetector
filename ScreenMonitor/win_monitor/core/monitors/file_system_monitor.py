@@ -183,7 +183,9 @@ class FileSystemMonitorHandler(FileSystemEventHandler):
     def _build_event(self, event_type, src_path, dest_path=None):
         """构建统一格式的事件（带进程关联）"""
         try:
-            file_size = os.path.getsize(src_path) if os.path.exists(src_path) else 0
+            # 对于重命名事件，获取目标文件的大小
+            check_path = dest_path if dest_path and os.path.exists(dest_path) else src_path
+            file_size = os.path.getsize(check_path) if os.path.exists(check_path) else 0
         except:
             file_size = 0
         
@@ -214,8 +216,13 @@ class FileSystemMonitorHandler(FileSystemEventHandler):
             "detection_method": "watchdog_fs_monitor"
         }
         
+        # 重命名事件：添加目标路径和文件名
         if dest_path:
+            dest_basename = os.path.basename(dest_path)
+            _, dest_ext = os.path.splitext(dest_path)
             event["destination_path"] = dest_path
+            event["destination_name"] = dest_basename
+            event["destination_extension"] = dest_ext
         
         return event
     
@@ -291,6 +298,148 @@ class FileSystemMonitorHandler(FileSystemEventHandler):
         """文件移动/重命名事件"""
         if not event.is_directory:
             self._emit_event(EventType.RENAMED, event.src_path, event.dest_path)
+    
+    def on_opened(self, event: FileSystemEvent):
+        """
+        文件打开事件 - 需要 watchdog 3.0+ 或 Windows ReadDirectoryChangesW
+        注意: 标准 watchdog 可能不会触发此事件
+        """
+        if not event.is_directory:
+            self._emit_event(EventType.OPENED, event.src_path)
+
+
+class RecentFilesMonitor:
+    """监控 Windows 最近文件夹来检测文件打开事件"""
+    
+    def __init__(self, event_callback=None):
+        self.event_callback = event_callback
+        self.is_running = False
+        self._monitor_thread = None
+        self._known_files = set()
+        self._recent_path = os.path.join(os.environ.get("APPDATA", ""), 
+                                          "Microsoft", "Windows", "Recent")
+        self.username = os.environ.get("USERNAME", "Unknown")
+        self.hostname = socket.gethostname()
+    
+    def start(self):
+        """启动监控"""
+        if self.is_running:
+            return
+        
+        if not os.path.exists(self._recent_path):
+            print(f"[RECENT_MONITOR] Recent folder not found: {self._recent_path}")
+            return
+        
+        # 初始化已知文件列表
+        self._known_files = set(os.listdir(self._recent_path))
+        
+        self.is_running = True
+        self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self._monitor_thread.start()
+        print(f"[RECENT_MONITOR] Started watching: {self._recent_path}")
+    
+    def stop(self):
+        """停止监控"""
+        self.is_running = False
+        if self._monitor_thread:
+            self._monitor_thread.join(timeout=2)
+        print("[RECENT_MONITOR] Stopped")
+    
+    def _monitor_loop(self):
+        """监控循环"""
+        while self.is_running:
+            try:
+                current_files = set(os.listdir(self._recent_path))
+                new_files = current_files - self._known_files
+                
+                for lnk_file in new_files:
+                    if lnk_file.endswith('.lnk'):
+                        self._process_lnk_file(lnk_file)
+                
+                self._known_files = current_files
+            except Exception as e:
+                print(f"[RECENT_MONITOR] Error: {e}")
+            
+            time.sleep(1)
+    
+    def _process_lnk_file(self, lnk_filename):
+        """处理 .lnk 快捷方式文件，提取原始文件路径"""
+        try:
+            import pythoncom
+            from win32com.shell import shell
+            
+            lnk_path = os.path.join(self._recent_path, lnk_filename)
+            
+            pythoncom.CoInitialize()
+            try:
+                shortcut = pythoncom.CoCreateInstance(
+                    shell.CLSID_ShellLink, None,
+                    pythoncom.CLSCTX_INPROC_SERVER,
+                    shell.IID_IShellLink
+                )
+                shortcut.QueryInterface(pythoncom.IID_IPersistFile).Load(lnk_path)
+                target_path = shortcut.GetPath(0)[0]
+                
+                if target_path and os.path.isfile(target_path):
+                    self._emit_opened_event(target_path)
+            finally:
+                pythoncom.CoUninitialize()
+                
+        except ImportError:
+            # pywin32 not available, extract from filename
+            original_name = lnk_filename[:-4]  # Remove .lnk
+            print(f"[RECENT_MONITOR] Opened (name only): {original_name}")
+        except Exception as e:
+            print(f"[RECENT_MONITOR] Failed to resolve lnk: {e}")
+    
+    def _emit_opened_event(self, file_path):
+        """发送文件打开事件"""
+        if not self.event_callback:
+            return
+        
+        try:
+            file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+        except:
+            file_size = 0
+        
+        basename = os.path.basename(file_path)
+        _, ext = os.path.splitext(file_path)
+        drive = os.path.splitdrive(file_path)[0]
+        
+        event = {
+            "timestamp": datetime.now().isoformat(timespec='milliseconds'),
+            "event_type": EventType.OPENED,
+            "file_path": file_path,
+            "file_name": basename,
+            "file_size": file_size,
+            "file_extension": ext,
+            "process_info": {
+                "pid": "",
+                "process_name": "",
+                "process_path": "",
+                "cmdline": ""
+            },
+            "window_info": {
+                "window_handle": "",
+                "window_title": "",
+                "window_class": ""
+            },
+            "user_info": {
+                "username": self.username,
+                "hostname": self.hostname
+            },
+            "disk_info": {
+                "drive_letter": drive,
+                "disk_type": "Fixed"
+            },
+            "detection_method": "recent_folder_monitor"
+        }
+        
+        try:
+            self.event_callback(event)
+            print(f"📂 [opened] {basename}")
+        except Exception as e:
+            print(f"[RECENT_MONITOR] Callback error: {e}")
 
 
 class FileSystemMonitor:
@@ -302,6 +451,9 @@ class FileSystemMonitor:
         self.stats = stats
         self.observer = None
         self.is_running = False
+        
+        # 添加最近文件监控器用于检测文件打开
+        self.recent_monitor = RecentFilesMonitor(event_callback=event_callback)
         
         # 默认监控路径
         self.watch_paths = self._get_watch_paths()
@@ -352,6 +504,10 @@ class FileSystemMonitor:
         
         self.observer.start()
         self.is_running = True
+        
+        # 启动文件打开检测
+        self.recent_monitor.start()
+        
         print(f"[FS_MONITOR] Started with {len(self.watch_paths)} paths")
     
     def stop(self):
@@ -363,6 +519,9 @@ class FileSystemMonitor:
             self.observer.stop()
             self.observer.join(timeout=3)
             self.observer = None
+        
+        # 停止文件打开检测
+        self.recent_monitor.stop()
         
         self.is_running = False
         print("[FS_MONITOR] Stopped")
