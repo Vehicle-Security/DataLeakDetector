@@ -10,7 +10,6 @@ from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from langchain_core.tools import tool
 
-# 添加模块1到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), "../1-FrameAnalyzer"))
 from relavance_frame import analyze_video_behavior
 
@@ -41,17 +40,14 @@ def analyze_frame_behavior(
     print(f"   - 文件: {current_file}")
     
     try:
-        # 从 INDEX.md 读取录屏开始时间
         rec_start_time = _read_recording_start_time(index_path)
         print(f"   - 录屏开始时间: {rec_start_time}")
         
-        # 计算搜索时间范围
         event_dt = datetime.strptime(event_timestamp, "%Y-%m-%dT%H:%M:%S.%f")
         search_start_time = event_dt.strftime("%Y-%m-%d %H:%M:%S")
         search_end_dt = event_dt + timedelta(seconds=search_duration)
         search_end_time = search_end_dt.strftime("%Y-%m-%d %H:%M:%S")
         
-        # 从文件路径提取文件名作为关键词（去掉扩展名）
         filename = os.path.splitext(os.path.basename(current_file))[0]
         target_keywords = [filename]
         
@@ -139,7 +135,6 @@ def extract_hidden_operations(frame_analysis_result: Dict[str, Any]) -> Dict[str
         for event in events:
             behavior_category = event.get("behavior_category", "")
             
-            # 只处理"潜在隐藏行为"
             if behavior_category == "潜在隐藏行为":
                 original_filename = event.get("original_filename", "")
                 modified_filename = event.get("modified_filename", "")
@@ -157,7 +152,6 @@ def extract_hidden_operations(frame_analysis_result: Dict[str, Any]) -> Dict[str
                     }
                     hidden_operations.append(operation)
                     
-                    # 建立文件映射
                     file_mappings.append({
                         "original": original_filename,
                         "derived": modified_filename,

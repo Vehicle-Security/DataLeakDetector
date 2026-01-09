@@ -105,7 +105,6 @@ class WorklistManager:
         """
         normalized_path = self._normalize_path(file_path)
         
-        # 直接检查是否在敏感文件集合中
         if normalized_path in self.sensitive_files:
             return True
         
@@ -142,20 +141,16 @@ class WorklistManager:
         added_count = 0
         
         for event in log_events:
-            # 提取事件信息
             event_type = event.get("event_type", "")
             file_path = event.get("file_path", "")
             timestamp = event.get("timestamp", "")
             process_info = event.get("process_info", {})
             
-            # 生成事件ID（基于时间戳、文件路径、事件类型）
             event_id = self._generate_event_id(timestamp, file_path, event_type)
             
-            # 跳过已处理的事件
             if event_id in self.processed_events:
                 continue
             
-            # 检查是否涉及敏感文件
             if self._is_sensitive_event(event):
                 sensitive_event = self._create_sensitive_event(event, event_id)
                 self.worklist.append(sensitive_event)
@@ -275,9 +270,7 @@ class WorklistManager:
         Returns:
             规范化后的路径
         """
-        # 去除多余的斜杠
         normalized = file_path.replace("//", "/")
-        # 统一使用 / 作为分隔符
         normalized = normalized.replace("\\", "/")
         return normalized
     
@@ -328,7 +321,6 @@ class WorklistManager:
             return False
          """
         
-        # 检查是否为敏感文件
         return self.is_sensitive_file(file_path)
     
     def _create_sensitive_event(
@@ -349,11 +341,9 @@ class WorklistManager:
         file_path = event.get("file_path", "")
         normalized_path = self._normalize_path(file_path)
         
-        # 确定原始文件
         original_file = self.get_original_file(file_path) or normalized_path
         
         # 隐藏行为判断由 behavior_analysis_graph 模块完成
-        # 此处创建事件时默认不标记为隐藏
         is_hidden = False
         
         return SensitiveFileEvent(

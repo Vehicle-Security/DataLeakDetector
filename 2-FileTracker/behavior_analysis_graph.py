@@ -38,7 +38,6 @@ class BehaviorAnalysisGraph:
         """
         self.worklist_manager = worklist_manager
         
-        # 初始化 LLM
         self.llm = ChatOpenAI(
             model=os.getenv("MODEL_NAME", "gpt-4"),
             base_url=os.getenv("OPENAI_BASE_URL"),
@@ -47,7 +46,6 @@ class BehaviorAnalysisGraph:
             streaming=False
         )
         
-        # 构建图
         self.graph = self._build_graph()
     
     def _build_graph(self) -> StateGraph:
@@ -56,7 +54,6 @@ class BehaviorAnalysisGraph:
         """
         workflow = StateGraph(BehaviorAnalysisState)
         
-        # 添加节点
         workflow.add_node("initialize", self._initialize_node)
         workflow.add_node("analyze_frames", self._analyze_frames_node)
         workflow.add_node("extract_operations", self._extract_operations_node)
@@ -64,10 +61,8 @@ class BehaviorAnalysisGraph:
         workflow.add_node("update_worklist", self._update_worklist_node)
         workflow.add_node("finalize", self._finalize_node)
         
-        # 设置入口
         workflow.set_entry_point("initialize")
         
-        # 添加边
         workflow.add_edge("initialize", "analyze_frames")
         workflow.add_edge("analyze_frames", "extract_operations")
         workflow.add_conditional_edges(
@@ -101,10 +96,8 @@ class BehaviorAnalysisGraph:
         if os.path.isabs(filename) or filename.startswith('/'):
             full_path = filename
         else:
-            # 拼接基础目录和文件名
             full_path = os.path.join(base_dir, filename) if base_dir else filename
         
-        # 标准化路径：统一使用 / 分隔符，去除多余的斜杠
         full_path = full_path.replace("\\", "/")
         full_path = full_path.replace("//", "/")
         
@@ -130,7 +123,6 @@ class BehaviorAnalysisGraph:
         if not log_events:
             return ""
         
-        # 解析时间范围
         start_time, end_time = datetime.min, datetime.max
         try:
             time_parts = time_range.split(" - ")
@@ -140,26 +132,20 @@ class BehaviorAnalysisGraph:
         except:
             pass
         
-        # 预计算目标文件的不带扩展名版本
         target_name_no_ext = os.path.splitext(filename)[0]
         
-        # 记录候选匹配（用于不带扩展名的情况）
         no_ext_match = None
         no_ext_in_range = False
         
-        # 单次遍历日志
         for event in log_events:
             try:
-                # 检查文件路径
                 file_path = event.get("file_path", "")
                 if not file_path:
                     continue
                 
                 event_filename = os.path.basename(file_path)
                 
-                # 完全匹配（带扩展名）- 找到立即返回
                 if event_filename == filename:
-                    # 判断是否在时间范围内
                     in_time_range = False
                     event_time_str = event.get("timestamp", "")
                     if event_time_str:
@@ -177,13 +163,11 @@ class BehaviorAnalysisGraph:
                     print(f"      ✅ 带扩展名匹配文件路径（{range_info}）")
                     return file_path
                 
-                # 记录不带扩展名的匹配（作为备选）
                 if not no_ext_match:
                     event_name_no_ext = os.path.splitext(event_filename)[0]
                     if event_name_no_ext == target_name_no_ext:
                         no_ext_match = file_path
                         
-                        # 判断是否在时间范围内
                         event_time_str = event.get("timestamp", "")
                         if event_time_str:
                             try:
@@ -199,7 +183,6 @@ class BehaviorAnalysisGraph:
             except Exception as e:
                 continue
         
-        # 遍历完成，如果有不带扩展名的匹配就返回
         if no_ext_match:
             range_info = "在时间范围内" if no_ext_in_range else "不在时间范围内"
             print(f"      ✅ 不带扩展名匹配文件路径（{range_info}）")
@@ -230,7 +213,6 @@ class BehaviorAnalysisGraph:
         """
         print(f"\n🔍 [BehaviorAnalysis] 开始分析事件: {event.event_id}")
         
-        # 初始化状态
         initial_state = {
             "current_event": event,
             "index_path": index_path,
@@ -250,7 +232,6 @@ class BehaviorAnalysisGraph:
         with open("behavior_analysis_graph.png", "wb") as f:
             f.write(graph_png)
         
-        # 运行图
         result = self.graph.invoke(initial_state)
         
         return result
@@ -269,7 +250,6 @@ class BehaviorAnalysisGraph:
         print(f"   - 时间: {event.timestamp}")
         print(f"   - 事件类型: {event.event_type}")
         
-        # 初始化消息
         messages = [
             SystemMessage(content=BEHAVIOR_ANALYSIS_SYSTEM_PROMPT)
         ]
@@ -287,7 +267,6 @@ class BehaviorAnalysisGraph:
         event = state["current_event"]
         
         try:
-            # 调用工具分析帧
             result = analyze_frame_behavior.invoke({
                 "event_timestamp": event.timestamp,
                 "current_file": event.current_file,
@@ -328,7 +307,6 @@ class BehaviorAnalysisGraph:
             }
         
         try:
-            # 调用工具提取隐藏操作
             extraction_result = extract_hidden_operations.invoke({
                 "frame_analysis_result": frame_result
             })
@@ -372,7 +350,6 @@ class BehaviorAnalysisGraph:
             operation_type = op["operation_type"]
             time_range = op.get("time_range", "")
             
-            # 获取当前文件的目录
             current_dir = os.path.dirname(current_event.current_file)
             
             # 方案1：先尝试从日志中查找文件的实际路径（处理跨目录情况）
@@ -393,10 +370,9 @@ class BehaviorAnalysisGraph:
                 new_file_path = self._infer_full_path(current_dir, new_filename)
                 print(f"   📍 推断路径（同目录）: {new_file_path}")
             
-            # 使用隐藏行为的实际发生时间（从involved_timestamps取中间那个）
+            # 使用隐藏行为的实际发生时间（从involved_timestamps取中间时间戳作为事件发生时间）
             involved_timestamps = op.get("involved_timestamps", [])
             if involved_timestamps:
-                # 使用中间时间戳作为事件发生时间
                 mid_index = len(involved_timestamps) // 2
                 timestamp_str = involved_timestamps[mid_index]
                 # 转换为ISO格式（如果需要）
@@ -406,7 +382,6 @@ class BehaviorAnalysisGraph:
                 except:
                     timestamp = timestamp_str if 'T' in timestamp_str else timestamp_str.replace(' ', 'T') + '.000000'
             else:
-                # 如果没有时间戳，使用原事件的时间戳
                 timestamp = current_event.timestamp
             
             event_id = f"derived_{operation_type}_{hash(new_file_path)}_{timestamp}"
@@ -444,21 +419,16 @@ class BehaviorAnalysisGraph:
         current_event = state["current_event"]
         current_dir = os.path.dirname(current_event.current_file)
         
-        # 添加新事件到 worklist 并将派生文件加入敏感文件列表
         new_sensitive_files = []
         for event in new_events:
             self.worklist_manager.add_event(event)
             print(f"   ✅ 添加到 worklist: {event.current_file}")
             
-            # 将派生文件加入敏感文件列表
             if event.current_file not in self.worklist_manager.sensitive_files:
                 self.worklist_manager.add_sensitive_file(event.current_file)
                 new_sensitive_files.append(event.current_file)
                 print(f"   ✅ 添加到敏感文件列表: {event.current_file}")
             
-            # 直接使用 new_event 中已推断好的路径更新文件映射
-            # original_file: 追溯的原始文件路径
-            # current_file: 派生后的新文件路径（可能来自日志查找或同目录推断）
             self.worklist_manager.update_file_mapping(
                 original_file=event.original_file,
                 new_file=event.current_file
@@ -468,8 +438,6 @@ class BehaviorAnalysisGraph:
         # 如果有新的敏感文件，重新扫描日志
         if new_sensitive_files:
             print(f"\n   🔄 重新扫描日志以查找新敏感文件的相关操作...")
-            # 从 state 中获取原始日志（如果有的话）
-            # 注意：这需要在初始化时将日志数据传入state
             # TODO:这里先输出提示，具体实现需要调整工作流
             print(f"   ⚠️ 提示：发现 {len(new_sensitive_files)} 个新敏感文件，建议重新扫描完整日志")
         

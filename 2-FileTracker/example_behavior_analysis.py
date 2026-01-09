@@ -42,7 +42,6 @@ def main():
         "D:\\dingxinyao\\desktop\\智能图像增强系统技术设计文档.docx" # 64 重命名(windows)
     ]
     
-    # 查找日志文件（匹配 key_events_*.json）
     log_files = glob.glob(f"{base_path}/key_events/key_events_*.json")
     if not log_files:
         print(f"❌ 错误: 在 {base_path}/key_events/ 中找不到 key_events_*.json 文件")
@@ -50,13 +49,11 @@ def main():
     log_file = log_files[0]  # 取第一个匹配的文件
     print(f"📄 使用日志文件: {os.path.basename(log_file)}")
     
-    # INDEX.md 路径（包含录屏开始时间）
     index_path = f"{base_path}/INDEX.md"
     if not os.path.exists(index_path):
         print(f"❌ 错误: INDEX.md 不存在: {index_path}")
         return
     
-    # 查找视频文件（匹配 *.mp4）
     video_files = glob.glob(f"{base_path}/video/*.mp4")
     if not video_files:
         print(f"❌ 错误: 在 {base_path}/video/ 中找不到 .mp4 文件")
@@ -84,7 +81,6 @@ def main():
     except Exception as e:
         print(f"   ❌ 扫描日志失败: {e}")
     
-    # 显示初始统计
     stats = manager.get_statistics()
     print(f"\n📊 初始 Worklist 统计:")
     print(f"   - Worklist 大小: {stats['worklist_size']}")
@@ -101,7 +97,6 @@ def main():
     while not manager.is_empty() and iteration < max_iterations:
         iteration += 1
         
-        # 获取下一个事件
         event = manager.get_next_event()
         if not event:
             break
@@ -118,7 +113,7 @@ def main():
         print(f"\n   🔍 调用隐藏行为分析...")
         
         try:
-            # 这里会调用模块1分析视频帧
+            # 调用模块1分析视频帧
             # 并自动更新 worklist（如果发现新的派生文件）
             result = analyze_sensitive_event_behavior(
                 event=event,
@@ -128,7 +123,6 @@ def main():
                 log_events=log_events  # 传递日志事件以支持跨目录文件查找
             )
             
-            # 显示分析结果
             if result.get("has_hidden_behavior"):
                 print(f"   ⚠️ 发现隐藏行为!")
                 operations = result.get("hidden_operations", [])
@@ -157,7 +151,6 @@ def main():
             import traceback
             traceback.print_exc()
         
-        # 显示当前 worklist 状态
         current_size = manager.size()
         print(f"\n   📊 当前 Worklist 大小: {current_size}")
     
@@ -174,7 +167,6 @@ def main():
     print(f"   - 文件映射关系: {final_stats['file_mappings_count']}")
     print(f"   - Worklist 剩余: {final_stats['worklist_size']}")
     
-    # 显示文件映射关系
     if manager.file_mapping:
         print(f"\n📁 文件映射关系:")
         for derived, original in manager.file_mapping.items():
