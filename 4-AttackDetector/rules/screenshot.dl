@@ -1,0 +1,56 @@
+// screenshot.dl - 截图检测规则
+// 检测截图操作及后续的发送行为
+
+#include "schema.dl"
+
+// ============================================
+// 截图事实声明（需要监控模块提供）
+// ============================================
+
+// 截图事件
+.decl screenshot(process: Process, filepath: FilePath, timestamp: Timestamp)
+.input screenshot
+
+// IM应用定义
+.decl im_app(app: symbol)
+.input im_app
+
+// ============================================
+// 规则: 截图后发送到IM
+// ============================================
+
+// 截图后通过IM发送
+.decl screenshot_leak(
+    screenshot_file: FilePath,
+    target_app: Process,
+    screenshot_time: Timestamp,
+    send_time: Timestamp
+)
+.output screenshot_leak
+
+screenshot_leak(File, Target, T1, T2) :-
+    screenshot(_, File, T1),
+    app_switch(_, Target, T2),
+    im_app(Target),
+    T2 > T1,
+    T2 - T1 < 180.  // 3分钟内
+
+// ============================================
+// 规则: 敏感文档打开时截图
+// ============================================
+
+// 在敏感文档打开期间进行截图
+.decl sensitive_screenshot(
+    doc_file: FilePath,
+    screenshot_file: FilePath,
+    doc_open_time: Timestamp,
+    screenshot_time: Timestamp
+)
+.output sensitive_screenshot
+
+sensitive_screenshot(Doc, Screenshot, T1, T2) :-
+    open_file(_, Doc, T1),
+    is_sensitive_file(Doc),
+    screenshot(_, Screenshot, T2),
+    T2 > T1,
+    T2 - T1 < 600.  // 打开文档后10分钟内截图
