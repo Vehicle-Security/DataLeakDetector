@@ -31,7 +31,7 @@ cd "$SCRIPT_DIR"
 # 总是重新编译以确保最新更改生效
 echo "📦 正在编译后端服务..."
 cd server
-go build -o ../monitor_server .
+go build -o ../mac_monitor_server .
 cd ..
 
 # 检查前端依赖
@@ -63,7 +63,7 @@ if [ ! -z "$PID_3000" ]; then
 fi
 
 # 清理遗留的监控进程
-pkill -f "monitor_server" 2>/dev/null
+pkill -f "mac_monitor_server" 2>/dev/null
 pkill -f "fs_usage" 2>/dev/null
 
 echo "✅ 端口清理完成"
@@ -75,7 +75,7 @@ echo ""
 
 # 启动后端服务
 echo "📡 启动后端服务 (端口 8081)..."
-./monitor_server &
+./mac_monitor_server &
 BACKEND_PID=$!
 
 # 等待后端启动

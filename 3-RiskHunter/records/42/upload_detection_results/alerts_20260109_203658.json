@@ -1,0 +1,203 @@
+{
+  "record_id": 42,
+  "timestamp": "20260109_203658",
+  "total_alerts": 6,
+  "alerts": [
+    {
+      "event_id": "2025-12-28T18:42:03.826_opened_3008376445513834160",
+      "timestamp": "2025-12-28T18:42:03.826",
+      "file_path": "/Users/tujiali/Documents/项目2需求分析.docx",
+      "file_name": "项目2需求分析.docx",
+      "original_file": "/Users/tujiali/Documents/项目2需求分析.docx",
+      "app_name": "Google Gemini",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "AI对话过程中发送",
+      "time_range": "2025-12-28 18:42:38 - 2025-12-28 18:42:43",
+      "involved_timestamps": [
+        "2025-12-28 18:42:38",
+        "2025-12-28 18:42:43"
+      ],
+      "description": "用户在 Google Gemini 应用中通过 AI 对话框发送了 '项目2需求分析.pdf' 文件。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 'Google Gemini' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2025-12-28 18:42:38 - 2025-12-28 18:42:43",
+        "involved_timestamps": [
+          "2025-12-28 18:42:38",
+          "2025-12-28 18:42:43"
+        ],
+        "app_name": "Google Gemini",
+        "behavior_category": "直接外发",
+        "operation_type": "AI对话过程中发送",
+        "original_filename": "项目2需求分析.pdf",
+        "modified_filename": "未知",
+        "description": "用户在 Google Gemini 应用中通过 AI 对话框发送了 '项目2需求分析.pdf' 文件。"
+      }
+    },
+    {
+      "event_id": "2025-12-28T18:42:03.884_opened_3008376445513834160",
+      "timestamp": "2025-12-28T18:42:03.884",
+      "file_path": "/Users/tujiali/Documents/项目2需求分析.docx",
+      "file_name": "项目2需求分析.docx",
+      "original_file": "/Users/tujiali/Documents/项目2需求分析.docx",
+      "app_name": "Google Gemini",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "AI对话过程中发送",
+      "time_range": "2025-12-28 18:42:38 - 2025-12-28 18:42:43",
+      "involved_timestamps": [
+        "2025-12-28 18:42:38",
+        "2025-12-28 18:42:43"
+      ],
+      "description": "用户在 Google Gemini 应用中上传并发送了 '项目2需求分析.pdf' 文件，进行 AI 对话。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 'Google Gemini' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2025-12-28 18:42:38 - 2025-12-28 18:42:43",
+        "involved_timestamps": [
+          "2025-12-28 18:42:38",
+          "2025-12-28 18:42:43"
+        ],
+        "app_name": "Google Gemini",
+        "behavior_category": "直接外发",
+        "operation_type": "AI对话过程中发送",
+        "original_filename": "项目2需求分析.pdf",
+        "modified_filename": "未知",
+        "description": "用户在 Google Gemini 应用中上传并发送了 '项目2需求分析.pdf' 文件，进行 AI 对话。"
+      }
+    },
+    {
+      "event_id": "2025-12-28T18:42:03.893_opened_3008376445513834160",
+      "timestamp": "2025-12-28T18:42:03.893",
+      "file_path": "/Users/tujiali/Documents/项目2需求分析.docx",
+      "file_name": "项目2需求分析.docx",
+      "original_file": "/Users/tujiali/Documents/项目2需求分析.docx",
+      "app_name": "Google Gemini",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "AI对话过程中发送",
+      "time_range": "2025-12-28 18:42:38 - 2025-12-28 18:42:43",
+      "involved_timestamps": [
+        "2025-12-28 18:42:38",
+        "2025-12-28 18:42:43"
+      ],
+      "description": "用户在 Google Gemini 应用中上传并发送了 '项目2需求分析.pdf' 文件进行分析。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 'Google Gemini' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2025-12-28 18:42:38 - 2025-12-28 18:42:43",
+        "involved_timestamps": [
+          "2025-12-28 18:42:38",
+          "2025-12-28 18:42:43"
+        ],
+        "app_name": "Google Gemini",
+        "behavior_category": "直接外发",
+        "operation_type": "AI对话过程中发送",
+        "original_filename": "项目2需求分析.pdf",
+        "modified_filename": "未知",
+        "description": "用户在 Google Gemini 应用中上传并发送了 '项目2需求分析.pdf' 文件进行分析。"
+      }
+    },
+    {
+      "event_id": "derived_格式转换_-5453375104756655472_2025-12-28T18:42:28.000000",
+      "timestamp": "2025-12-28T18:42:28.000000",
+      "file_path": "/Users/tujiali/Downloads/项目2需求分析.pdf",
+      "file_name": "项目2需求分析.pdf",
+      "original_file": "/Users/tujiali/Documents/项目2需求分析.docx",
+      "app_name": "Google Gemini",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "AI对话过程中发送文件",
+      "time_range": "2025-12-28 18:42:35 - 2025-12-28 18:42:46",
+      "involved_timestamps": [
+        "2025-12-28 18:42:35",
+        "2025-12-28 18:42:43",
+        "2025-12-28 18:42:46"
+      ],
+      "description": "用户在Google Gemini中上传并发送了名为'项目2需求分析.pdf'的文件，通过AI对话框进行操作。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 'Google Gemini' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2025-12-28 18:42:35 - 2025-12-28 18:42:46",
+        "involved_timestamps": [
+          "2025-12-28 18:42:35",
+          "2025-12-28 18:42:43",
+          "2025-12-28 18:42:46"
+        ],
+        "app_name": "Google Gemini",
+        "behavior_category": "直接外发",
+        "operation_type": "AI对话过程中发送文件",
+        "original_filename": "项目2需求分析.pdf",
+        "modified_filename": "未知",
+        "description": "用户在Google Gemini中上传并发送了名为'项目2需求分析.pdf'的文件，通过AI对话框进行操作。"
+      }
+    },
+    {
+      "event_id": "2025-12-28T18:42:48.996_opened_-5453375104756655472",
+      "timestamp": "2025-12-28T18:42:48.996",
+      "file_path": "/Users/tujiali/Downloads/项目2需求分析.pdf",
+      "file_name": "项目2需求分析.pdf",
+      "original_file": "/Users/tujiali/Documents/项目2需求分析.docx",
+      "app_name": "Google Gemini",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "AI对话过程中发送",
+      "time_range": "2025-12-28 18:42:47 - 2025-12-28 18:42:47",
+      "involved_timestamps": [
+        "2025-12-28 18:42:47"
+      ],
+      "description": "用户在Google Gemini中选择了'项目2需求分析.pdf'文件，并点击了'分析这个文档'按钮，准备通过AI对话框进行分析。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 'Google Gemini' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2025-12-28 18:42:47 - 2025-12-28 18:42:47",
+        "involved_timestamps": [
+          "2025-12-28 18:42:47"
+        ],
+        "app_name": "Google Gemini",
+        "behavior_category": "直接外发",
+        "operation_type": "AI对话过程中发送",
+        "original_filename": "项目2需求分析.pdf",
+        "modified_filename": "未知",
+        "description": "用户在Google Gemini中选择了'项目2需求分析.pdf'文件，并点击了'分析这个文档'按钮，准备通过AI对话框进行分析。"
+      }
+    },
+    {
+      "event_id": "2025-12-28T18:42:48.998_opened_-5453375104756655472",
+      "timestamp": "2025-12-28T18:42:48.998",
+      "file_path": "/Users/tujiali/Downloads/项目2需求分析.pdf",
+      "file_name": "项目2需求分析.pdf",
+      "original_file": "/Users/tujiali/Documents/项目2需求分析.docx",
+      "app_name": "Google Gemini",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "AI对话过程中发送",
+      "time_range": "2025-12-28 18:42:47 - 2025-12-28 18:42:47",
+      "involved_timestamps": [
+        "2025-12-28 18:42:47"
+      ],
+      "description": "用户在Google Gemini中选择了'项目2需求分析.pdf'文件，并点击了'分析这个文档'按钮，准备通过AI对话框进行分析。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 'Google Gemini' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2025-12-28 18:42:47 - 2025-12-28 18:42:47",
+        "involved_timestamps": [
+          "2025-12-28 18:42:47"
+        ],
+        "app_name": "Google Gemini",
+        "behavior_category": "直接外发",
+        "operation_type": "AI对话过程中发送",
+        "original_filename": "项目2需求分析.pdf",
+        "modified_filename": "未知",
+        "description": "用户在Google Gemini中选择了'项目2需求分析.pdf'文件，并点击了'分析这个文档'按钮，准备通过AI对话框进行分析。"
+      }
+    }
+  ]
+}

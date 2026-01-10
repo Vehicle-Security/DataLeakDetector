@@ -51,49 +51,57 @@ macOS 数据泄露行为监控系统是一个综合性的行为审计平台,提�
 - Node.js 16+
 - FFmpeg
 
-### 安装
+### 安装依赖
 
 ```bash
-# 1. 安装 FFmpeg
+# 1. 安装 FFmpeg (必须)
 brew install ffmpeg
 
-# 2. 进入项目目录
-cd Mac_monitor
+# 2. 安装 Go (如果未安装)
+brew install go
 
-# 3. 编译 Rust 监控代理
-cd macos-UnifiedLogs/examples/monitor
-cargo build --release
-cd ../../..
-
-# 4. 安装前端依赖
-cd frontend && npm install && cd ..
-
-# 5. 配置系统权限
-# 在 系统设置 > 隐私与安全性 中授予以下权限:
-# - 屏幕录制
-# - 辅助功能
-# - 完全磁盘访问
+# 3. 安装 Node.js (如果未安装)
+brew install node
 ```
 
-### 启动
+### 配置系统权限
+
+在 **系统设置 > 隐私与安全性** 中授予终端(Terminal)以下权限:
+- ✅ 屏幕录制
+- ✅ 辅助功能
+- ✅ 完全磁盘访问
+
+### 一键启动
 
 ```bash
-# 使用启动脚本 (推荐)
-chmod +x start.sh
-./start.sh
+# 进入项目目录
+cd Mac_monitor
 
-# 或手动启动
+# 运行启动脚本 (会自动请求 sudo 权限)
+./start.sh
+```
+
+脚本会自动完成:
+1. 编译后端 Go 代码
+2. 安装前端依赖 (首次运行)
+3. 清理占用的端口
+4. 启动后端服务 (http://localhost:8081)
+5. 启动前端服务 (http://localhost:3000)
+
+### 手动启动 (可选)
+
+```bash
 # 终端 1: 启动后端
-cd server && go build -o ../monitor_server . && cd ..
-sudo ./monitor_server
+cd server && go build -o ../mac_monitor_server . && cd ..
+sudo ./mac_monitor_server
 
 # 终端 2: 启动前端
-cd frontend && npm run dev
+cd frontend && npm install && npm run dev
 ```
 
 ### 访问
 
-打开浏览器访问: **http://localhost:5173**
+打开浏览器访问: **http://localhost:3000**
 
 ## 📸 界面预览
 
@@ -112,7 +120,8 @@ cd frontend && npm run dev
 ### 后端
 - **语言**: Go 1.19+
 - **框架**: 标准库 HTTP 服务器
-- **监控**: fs_usage、FFmpeg
+- **文件监控**: FSEvents API (实时时间戳) + fs_usage (进程信息)
+- **屏幕录制**: FFmpeg
 - **数据存储**: JSON 文件
 
 ### 前端

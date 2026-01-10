@@ -1,30 +1,119 @@
-# EvidenceTracer - 敏感资源跨过程追踪模块
+# 2-FileTracker 模块
 
-## 📌 模块简介
+## 概述
 
-**EvidenceTracer** 是 ScreenGuard 数据泄露检测系统的第二个核心模块，负责跨过程追踪敏感资源的流转和变化。
+FileTracker 是 DataLeakDetector 系统的第二个模块，负责追踪敏感文件的流转和隐藏操作。
 
-### 模块定位
-- **输入**：RiskSieve 输出的敏感操作片段（操作类型、对象、起止时间、关键帧）
-- **输出**：以资源为中心的操作链路与证据
-- **核心能力**：追踪文件重命名、压缩、加密、截图、格式转换等隐蔽操作，构建完整的数据流转证据链
+## 核心功能
 
-### 与其他模块的关系
+### 1. Worklist 管理
+
+动态维护敏感文件事件的工作列表，供模块3循环处理。
+
+**主要特性：**
+- ✅ 维护敏感文件列表
+- ✅ 查询文件是否敏感
+- ✅ 扫描日志构建 worklist
+- ✅ 动态更新 worklist
+- ✅ 追踪文件映射关系（原始 ↔ 派生）
+
+**使用示例：**
+```python
+from worklist_manager import WorklistManager, load_log_from_json
+
+# 初始化管理器
+manager = WorklistManager(sensitive_files=[
+    "/path/to/secret1.pdf",
+    "/path/to/secret2.docx"
+])
+
+# 扫描日志构建 worklist
+log_events = load_log_from_json("monitor_log.json")
+manager.scan_and_build_worklist(log_events)
+
+# 循环处理
+while not manager.is_empty():
+    event = manager.get_next_event()
+    # 处理事件...
 ```
-RiskSieve (录屏分析) → EvidenceTracer (资源追踪) → ThreatHunter (威胁判断)
+
+### 2. 隐藏行为分析
+
+基于 LangGraph 的智能分析工作流，检测和追踪敏感文件的隐藏操作。
+
+**识别的隐藏行为：**
+- 🔹 重命名：文件名被改变
+- 🔹 压缩：打包成压缩包（zip/rar）
+- 🔹 格式转换：格式改变（docx → pdf）
+- 🔹 目录移动：移动到隐蔽位置
+- 🔹 复制粘贴：复制到其他位置
+
+**工作原理：**
+1. 调用模块1分析视频帧
+2. 提取操作行为信息
+3. 识别文件名/格式变化
+4. 创建新的敏感事件
+5. 更新 worklist 和文件映射
+
+**使用示例：**
+```python
+from behavior_analysis_graph import analyze_sensitive_event_behavior
+
+# 分析单个事件
+result = analyze_sensitive_event_behavior(
+    event=sensitive_event,
+    index_path="INDEX.md",
+    video_path="recording.mp4",
+    worklist_manager=manager
+)
+
+if result.get("has_hidden_behavior"):
+    print("发现隐藏行为！")
+    for op in result["hidden_operations"]:
+        print(f"{op['operation_type']}: {op['original_file']} → {op['new_file']}")
 ```
 
-**注意**：EvidenceTracer 不直接与系统日志或视频交互，只处理 RiskSieve 的结构化输出。
+## 模块结构
 
----
+```
+2-FileTracker/
+├── worklist_manager.py              # Worklist 管理器（核心）
+├── behavior_analysis_graph.py       # 隐藏行为分析工作流（LangGraph）
+├── behavior_analysis_state.py       # 状态定义
+├── behavior_analysis_tools.py       # 分析工具
+├── behavior_analysis_prompts.py     # Prompt 模板
+├── example_behavior_analysis.py     # 完整使用示例
+├── BEHAVIOR_ANALYSIS.md             # 详细文档
+└── README.md                        # 本文件
+```
 
-## 🏗️ 架构设计
+## 与其他模块的集成
 
-本模块基于 **LangGraph** 构建，采用 ReAct (Reasoning-Acting-Observing) 模式，通过 LLM + Tools 实现智能资源追踪。
+### 与模块1（FrameAnalyzer）集成
 
-### 核心组件
+模块2调用模块1的 `analyze_video_behavior` 函数分析视频帧：
 
-## 🚀 使用方法
+```python
+from relavance_frame import analyze_video_behavior
+
+result = analyze_video_behavior(
+    rec_start_time_str='2026-01-05 17:48:33',
+    search_start_time_str='2026-01-05 17:48:50',
+    search_end_time_str='2026-01-05 17:49:20',
+    target_keywords=['敏感文件.pdf'],
+    video_path='recording.mp4'
+)
+```
+
+### 与模块3（RiskHunter）集成
+
+模块3作为主调用方：
+1. 提供敏感文件列表
+2. 提供日志、视频等资源
+3. 循环调用 worklist 处理事件
+4. 接收分析结果
+
+## 快速开始
 
 ### 安装依赖
 
@@ -32,218 +121,181 @@ RiskSieve (录屏分析) → EvidenceTracer (资源追踪) → ThreatHunter (威
 pip install langgraph langchain-openai python-dotenv
 ```
 
-### 环境配置
+### 配置环境变量
 
 创建 `.env` 文件：
 
-```env
+```bash
 MODEL_NAME=qwen2-vl-72b-instruct
 OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 OPENAI_API_KEY=your_api_key_here
 TEMPERATURE=0.01
 ```
 
-### 基本使用
+### 运行示例
 
-```python
-from graph import run_evidence_tracer
-
-# 准备输入：来自 RiskSieve 的操作片段
-input_operations = [
-    {
-        "operation_id": "op_001",
-        "operation_type": "file_access",
-        "resource_name": "机密报告.pdf",
-        "app_name": "Adobe Reader",
-        "start_time": "10:23:15",
-        "end_time": "10:23:45",
-        "keyframes": ["/path/to/frame1.jpg"],
-        "raw_description": "用户打开了机密报告.pdf并浏览内容"
-    },
-    {
-        "operation_id": "op_002",
-        "operation_type": "file_compress",
-        "resource_name": "report.zip",
-        "app_name": "7-Zip",
-        "start_time": "10:25:10",
-        "end_time": "10:25:20",
-        "keyframes": ["/path/to/frame2.jpg"],
-        "raw_description": "用户将机密报告.pdf压缩为report.zip并设置密码"
-    },
-    {
-        "operation_id": "op_003",
-        "operation_type": "file_upload",
-        "resource_name": "report.zip",
-        "app_name": "Chrome",
-        "start_time": "10:26:00",
-        "end_time": "10:26:30",
-        "keyframes": ["/path/to/frame3.jpg"],
-        "raw_description": "用户在Chrome中上传report.zip到云存储"
-    }
-]
-
-# 运行分析
-result = run_evidence_tracer(input_operations, max_iterations=10)
-
-# 输出结果
-print(result)
+```bash
+cd 2-FileTracker
+python example_behavior_analysis.py
 ```
 
-### 输出格式
+## 数据格式
+
+### 输入：日志事件格式
+
+```json
+[
+    {
+        "timestamp": "2026-01-05 17:48:50",
+        "event_type": "opened",
+        "file_path": "/Users/dxy/Documents/secret.pdf",
+        "process_info": {
+            "app_name": "Preview",
+            "pid": 12345
+        }
+    }
+]
+```
+
+**支持的 event_type：**
+- `created` - 文件创建
+- `opened` - 文件打开
+- `modified` - 文件修改
+- `deleted` - 文件删除
+- `moved` - 文件移动
+- `renamed` - 文件重命名
+- `upload_detected` - 检测到上传
+- `file_selected` - 文件选择
+- `app_switch` - 应用切换
+- `website_visit` - 网站访问
+
+### 输入：INDEX.md 格式
+
+```markdown
+**Recording Time**: 2026-01-05 17:48:33
+```
+
+### 输出：分析结果格式
 
 ```json
 {
-    "tracked_resources": [
+    "has_hidden_behavior": true,
+    "hidden_operations": [
         {
-            "resource_id": "res_001",
-            "resource_name": "机密报告.pdf",
-            "resource_type": "document",
-            "first_seen": "op_001",
-            "last_seen": "op_002",
-            "derived_resources": ["report.zip"]
-        },
-        {
-            "resource_id": "res_002",
-            "resource_name": "report.zip",
-            "resource_type": "archive",
-            "first_seen": "op_002",
-            "last_seen": "op_003",
-            "derived_resources": []
+            "operation_type": "格式转换",
+            "original_file": "项目文档.docx",
+            "new_file": "项目文档.pdf",
+            "app_name": "iLovePDF",
+            "time_range": "2026-01-05 17:49:00 - 17:49:20",
+            "description": "用户将文件转换为PDF格式"
         }
     ],
-    "evidence_chains": [
+    "file_mappings": [
         {
-            "chain_id": "chain_001",
-            "root_resource": "机密报告.pdf",
-            "operations": ["op_001", "op_002", "op_003"],
-            "risk_indicators": [
-                "file_obfuscation",
-                "encryption_before_transfer",
-                "cross_application_transfer"
-            ]
+            "original": "项目文档.docx",
+            "derived": "项目文档.pdf",
+            "relationship": "格式转换"
         }
     ],
-    "summary": "追踪到敏感文件从访问、压缩加密到上传的完整链路"
+    "new_events": [...]
 }
 ```
 
----
+## API 文档
 
-## 🔍 关键特性
+### WorklistManager
 
-### 1. 高效的资源识别
-- ✅ **直接使用结构化字段**：优先读取 `resource_name`，避免重复识别
-- ✅ **补充发现额外资源**：从描述中识别源文件、派生文件（如"将A压缩为B"中的A）
-- ✅ **处理边缘情况**：当 RiskSieve 未准确识别时，从描述中提取
-
-### 2. 操作类型深度分析
-自动识别以下操作类型：
-- ✅ 文件访问、复制、重命名
-- ✅ 文件压缩、加密
-- ✅ 截图、文本复制
-- ✅ 格式转换、导出
-- ✅ 文件上传、分享
-
-### 3. 风险指标检测
-- `file_obfuscation`: 文件脱敏（重命名、压缩）
-- `encryption_before_transfer`: 传输前加密
-- `format_change`: 格式转换
-- `content_extraction`: 内容提取（截图、复制）
-- `cross_application_transfer`: 跨应用传输
-
-### 4. 证据链构建
-- 广度优先搜索追踪资源流转
-- 自动识别派生资源
-- 时间序列重建
-
----
-
-## 📊 典型场景
-
-### 场景 1：文件重命名后上传
-```
-机密文件.pdf → 工作文档.pdf → 上传到个人邮箱
-```
-**检测能力**：通过文件基础名称匹配识别重命名关系
-
-### 场景 2：压缩加密后外发
-```
-敏感报告.docx → 压缩为 report.zip (加密) → 上传到云盘
-```
-**检测能力**：识别 `file_obfuscation` + `encryption_before_transfer` 风险指标
-
-### 场景 3：截图+文本复制
-```
-查看机密数据库 → 截图保存 → 复制文本 → 粘贴到外部应用
-```
-**检测能力**：追踪内容提取操作，建立源数据与派生内容的关联
-
-### 场景 4：格式转换链
-```
-源代码.py → 导出为 .txt → 重命名为 config.log → 上传
-```
-**检测能力**：识别多步转换，恢复完整流转路径
-
----
-
-
-## 🧪 测试
-
-运行内置测试用例：
-
-```bash
-python graph.py
-```
-
-这将执行一个包含文件访问→压缩加密→上传的完整测试场景。
-
----
-
-## 🔗 与其他模块集成
-
-### 从 RiskSieve 接收输入
+#### 构造函数
 ```python
-from risksieve import RiskSieveAnalyzer
-from graph import run_evidence_tracer
-
-# 第一步：RiskSieve 分析录屏
-risksieve_result = RiskSieveAnalyzer.analyze(video_path, system_logs)
-sensitive_operations = risksieve_result['operations']
-
-# 第二步：EvidenceTracer 追踪资源
-evidence_result = run_evidence_tracer(sensitive_operations)
+manager = WorklistManager(sensitive_files: Optional[List[str]] = None)
 ```
 
-### 输出给 ThreatHunter
+#### 主要方法
+
+**添加敏感文件：**
 ```python
-from threathunter import ThreatHunter
-
-# 第三步：ThreatHunter 风险判断
-threat_result = ThreatHunter.evaluate(evidence_result)
+manager.add_sensitive_file(file_path: str)
+manager.add_sensitive_files(file_paths: List[str])
 ```
 
----
+**查询敏感文件：**
+```python
+is_sensitive = manager.is_sensitive_file(file_path: str) -> bool
+original = manager.get_original_file(file_path: str) -> Optional[str]
+```
 
-## 📝 注意事项
+**构建和处理 worklist：**
+```python
+added_count = manager.scan_and_build_worklist(log_events: List[Dict]) -> int
+event = manager.get_next_event() -> Optional[SensitiveFileEvent]
+is_empty = manager.is_empty() -> bool
+size = manager.size() -> int
+```
 
-1. **不要直接处理原始日志和视频**  
-   EvidenceTracer 的设计哲学是只处理结构化的操作描述，保持模块职责单一。
+**更新映射关系：**
+```python
+manager.update_file_mapping(original_file: str, new_file: str)
+```
 
-2. **关注资源流转，而非风险判断**  
-   风险评估由 ThreatHunter 完成，本模块只负责客观记录和追踪证据。
+**统计信息：**
+```python
+stats = manager.get_statistics() -> Dict[str, Any]
+```
 
-3. **LLM 能力要求**  
-   需要支持 Function Calling 的模型（如 GPT-4、Claude 3+）。
+### BehaviorAnalysisGraph
 
-4. **迭代次数控制**  
-   对于复杂的多步操作链，可能需要调整 `max_iterations` 参数。
+#### 分析事件
+```python
+from behavior_analysis_graph import analyze_sensitive_event_behavior
 
----
+result = analyze_sensitive_event_behavior(
+    event: SensitiveFileEvent,
+    index_path: str,
+    video_path: str,
+    worklist_manager: WorklistManager
+) -> Dict[str, Any]
+```
 
-## 🛠️ 开发路线图
+## 典型工作流
 
-- [ ] 支持更多资源类型（音频、视频）
-- [ ] 优化文件相似度匹配算法
-- [ ] 添加可视化证据链展示
-- [ ] 支持增量分析（在线追踪）
-- [ ] 与数据库集成，持久化追踪结果
+```
+1. 模块3提供敏感文件列表和日志
+   ↓
+2. WorklistManager 扫描日志构建 worklist
+   ↓
+3. 循环处理 worklist 中的事件
+   ↓
+4. 对每个事件调用 BehaviorAnalysisGraph
+   ↓
+5. Graph 调用模块1分析视频帧
+   ↓
+6. 识别隐藏行为并提取新文件
+   ↓
+7. 创建新事件并更新 worklist（动态）
+   ↓
+8. 更新文件映射关系
+   ↓
+9. 返回处理下一个事件（循环）
+   ↓
+10. worklist 为空，处理完成
+```
+
+## 注意事项
+
+1. **文件路径格式**: 日志中的文件路径需要与敏感文件列表格式一致
+2. **视频分析性能**: 调用模块1需要分析视频，可能耗时较长
+3. **递归追踪**: 系统会递归追踪派生文件链（A→B→C）
+4. **去重机制**: 已处理的事件不会重复处理
+
+## 详细文档
+
+更多信息请参阅：
+- [BEHAVIOR_ANALYSIS.md](./BEHAVIOR_ANALYSIS.md) - 隐藏行为分析详细文档
+- [example_behavior_analysis.py](./example_behavior_analysis.py) - 完整使用示例
+
+## 开发者信息
+
+- 模块版本: 2.0.0
+- 依赖模块: 1-FrameAnalyzer
+- 被依赖: 3-RiskHunter
+- 技术栈: LangGraph, LangChain, OpenAI API
