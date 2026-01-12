@@ -57,6 +57,49 @@ RETRIEVE_FRAMES_PROMPT = """
 - 严禁包含代码块标记 (```json)，只输出纯文本 JSON。
 """
 
+# 检测复制粘贴操作
+COPY_PASTE_ANALYSIS_PROMPT = """
+你是一名精通计算机视觉与用户行为分析的专家。我会为你提供一组按时间顺序排列的视频关键帧。
+
+### 1. 目标分析文本 (Target Text)
+以下是你需要重点检测是否出现在屏幕操作中的大段文字内容：
+---
+{target_text}
+---
+
+### 2. 任务目标
+请分析这组图片，识别用户何时针对上述文本进行了【复制】或【粘贴】操作。
+
+### 3. 行为判定逻辑
+- **粘贴行为 (Paste)**：文本在某一时刻瞬间、完整地出现在某个输入框、文档或编辑器中。通常伴随鼠标右键菜单弹出或光标闪烁。
+- **复制行为 (Copy)**：用户通过鼠标拖拽选中了与目标文本一致的内容，并可能触发了右键菜单。
+- **上下文分析**：观察文字出现的“前一帧”和“后一帧”。如果前一帧为空，后一帧突然出现大段文字，则判定为粘贴。
+
+### 4. 辅助参考信息
+- 总图片数：{frame_count} 张
+- 帧信息对照表：
+{frame_info_table}
+
+### 5. 输出格式要求
+请必须返回标准的 JSON 格式，不要包含任何解释性文字。JSON 结构如下：
+{{
+  "events": [
+    {{
+      "event_id": 1,
+      "behavior_category": "文本粘贴",
+      "app_name": "目标应用程序名称",
+      "source_app": "文字来源应用(若可见，不可见则填'未知')",
+      "start_time": "YYYY-MM-DD HH:MM:SS",
+      "end_time": "YYYY-MM-DD HH:MM:SS",
+      "original_filename": "涉及的文件名(若有)",
+      "modified_filename": "涉及的文件名(若有)",
+      "description": "详细描述：例如'用户从浏览器复制了XX段落，粘贴到了记事本中'。",
+      "confidence": 0.95
+    }}
+  ]
+}}
+"""
+
 # 对操作详细分析
 SCENE_DEEP_DIVE_PROMPT = """
 你是一个专家级的安全审计分析师。下面是一组经过筛选的连续屏幕截图。
@@ -97,5 +140,47 @@ SCENE_DEEP_DIVE_PROMPT = """
     "hit_criteria": ["触碰的规则1", "触碰的规则2"]
   }},
   "final_intent": "推测用户的最终目的"
+}}
+"""
+
+BLACKLIST_WRAPPER_DETECTION_PROMPT = """
+你是一名网络安全与合规审计专家。你的任务是识别画面中是否出现了受限的【第三方 AI 套壳应用】或【API 客户端】。
+
+### 1. 重点监控对象 (黑名单形态)
+仅针对以下将 API 封装后二次分发的应用：
+- **独立客户端**：Chatbox, NextChat, LobeChat, Cherry Studio, TypingMind 等。
+- **AI 增强集成环境**：Cursor (独立的 AI 代码编辑器), Warp 终端中的 AI 助手。
+- **特征**：这些应用通常要求用户输入自己的 API Key，或者提供多个不同厂商（OpenAI, Anthropic, DeepSeek）的模型选择菜单。
+
+### 2. 严格排除对象 (白名单/合规)
+请勿将以下内容判定为违规：
+- **原生搜索引擎回答**：Google Search (SGE/Gemini 整合)的搜索结果页。
+- **公司内部合规工具**：企业内部集成好的 AI 助手图标。
+
+### 3. 核心视觉判定依据 (必须满足以下多项)
+- **模型切换器**：界面顶部或底部有下拉菜单，列出 `gpt-4o`, `claude-3.5-sonnet`, `deepseek-v3` 等模型 ID。
+- **设置按钮/API 配置**：界面中明显的“设置”图标，点击后可能出现 API Key, Endpoint 等配置项。
+- **典型布局**：左侧窄长条显示历史对话记录，右侧为主对话框。
+- **流式生成**：文字以一种非人类敲击键盘的速度和节奏（逐字流式）吐出。
+
+### 4. 分析任务
+- 共有 {frame_count} 张图片。参考下表：
+{frame_info_table}
+- **判定要求**：只有在确认画面中出现了“独立第三方套壳工具”时才生成事件。如果是普通的网页搜索或内部插件，请返回空的 events 列表。
+
+### 5. 输出格式 (纯 JSON)
+{{
+  "events": [
+    {{
+      "event_id": 1,
+      "app_name": "识别出的套壳应用名称",
+      "behavior_category": "第三方AI套壳应用",
+      "visual_evidence": "请描述你看到了哪些具体的套壳特征（如：模型选择下拉框、典型的Chatbox UI布局、API配置界面等）",
+      "detected_content": "用户与AI交流的具体业务逻辑或代码内容",
+      "start_time": "YYYY-MM-DD HH:MM:SS",
+      "end_time": "YYYY-MM-DD HH:MM:SS",
+      "confidence": 0.95
+    }}
+  ]
 }}
 """
