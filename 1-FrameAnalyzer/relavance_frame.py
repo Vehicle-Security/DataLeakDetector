@@ -11,7 +11,8 @@ import easyocr
 import base64
 import json
 import re
-import prompts  
+import prompts
+from dotenv import load_dotenv  
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from datetime import datetime, timedelta
@@ -25,6 +26,9 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# 加载环境变量
+load_dotenv()
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 resnet_base = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
@@ -193,7 +197,7 @@ def analyze_video_behavior(rec_start_time_str, search_start_time_str, search_end
     llm = ChatOpenAI(
         model="qwen2.5-vl-72b-instruct",
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-        api_key="sk-62823ac2c480482084d040855d2e5a15",
+        api_key=os.getenv("OPENAI_API_KEY"),
     )
 
     table_rows = [f"{i+1:^8} | {f['frame_index']:^10} | {f['wall_clock_time']:^20}" for i, f in enumerate(filtered_frames_data)]

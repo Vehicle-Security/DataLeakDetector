@@ -1,0 +1,25 @@
+// file_browser.dl - 文件-浏览器关联检测规则
+// 简化版：检测敏感文件操作后的浏览器活动
+
+#include "schema.dl"
+
+// ============================================
+// 规则: 敏感文件打开后访问上传站点
+// ============================================
+
+// 潜在数据泄露：打开敏感文件后访问AI/上传网站
+.decl potential_upload(
+    file: FilePath, 
+    url: URL, 
+    open_time: Timestamp, 
+    access_time: Timestamp
+)
+.output potential_upload
+
+potential_upload(File, URL, T1, T2) :-
+    open_file(_, File, T1),
+    is_sensitive_file(File),
+    browser_access(_, URL, T2),
+    is_upload_site(URL),
+    T2 > T1,
+    T2 - T1 < 300.  // 5分钟内

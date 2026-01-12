@@ -1,0 +1,115 @@
+// clipboard.dl - 剪贴板检测规则
+// 持续监控剪贴板，推理潜在的数据泄露
+
+#include "schema.dl"
+
+// ============================================
+// 剪贴板事实声明
+// ============================================
+
+// 剪贴板文本复制
+.decl clipboard_text(process: Process, content_hash: symbol, timestamp: Timestamp)
+.input clipboard_text
+
+// 剪贴板图片（包括截图）
+.decl clipboard_image(process: Process, image_hash: symbol, timestamp: Timestamp)
+.input clipboard_image
+
+// 剪贴板粘贴（任何内容）
+.decl clipboard_paste(process: Process, content_hash: symbol, timestamp: Timestamp)
+.input clipboard_paste
+
+// ============================================
+// 规则1: 剪贴板文本泄露到风险应用
+// ============================================
+
+// 文本复制后粘贴到浏览器/IM
+.decl text_leak(
+    src_app: Process,
+    dst_app: Process,
+    content_hash: symbol,
+    copy_time: Timestamp,
+    paste_time: Timestamp
+)
+.output text_leak
+
+text_leak(Src, Dst, Hash, T1, T2) :-
+    clipboard_text(Src, Hash, T1),
+    clipboard_paste(Dst, Hash, T2),
+    risky_app(Dst),
+    T2 > T1.
+
+// ============================================
+// 规则2: 截图后发送到风险应用
+// ============================================
+
+// 剪贴板出现图片后，粘贴到浏览器/IM
+.decl screenshot_leak(
+    src_app: Process,
+    dst_app: Process,
+    image_hash: symbol,
+    capture_time: Timestamp,
+    paste_time: Timestamp
+)
+.output screenshot_leak
+
+screenshot_leak(Src, Dst, Hash, T1, T2) :-
+    clipboard_image(Src, Hash, T1),
+    clipboard_paste(Dst, Hash, T2),
+    risky_app(Dst),
+    T2 > T1.
+
+// ============================================
+// 规则3: 截图后上传到网站
+// ============================================
+
+// 截图后访问上传站点（可能通过网页上传）
+.decl screenshot_upload(
+    image_hash: symbol,
+    url: URL,
+    capture_time: Timestamp,
+    access_time: Timestamp
+)
+.output screenshot_upload
+
+screenshot_upload(Hash, URL, T1, T2) :-
+    clipboard_image(_, Hash, T1),
+    browser_access(_, URL, T2),
+    is_upload_site(URL),
+    T2 > T1,
+    T2 - T1 < 300.  // 5分钟内
+
+// ============================================
+// 规则4: 敏感文件关联的剪贴板操作
+// ============================================
+
+// 打开敏感文件期间，有剪贴板操作（复制内容）
+.decl sensitive_file_copy(
+    file: FilePath,
+    content_hash: symbol,
+    file_time: Timestamp,
+    copy_time: Timestamp
+)
+.output sensitive_file_copy
+
+sensitive_file_copy(File, Hash, T1, T2) :-
+    open_file(Proc, File, T1),
+    is_sensitive_file(File),
+    clipboard_text(Proc, Hash, T2),
+    T2 > T1,
+    T2 - T1 < 600.  // 10分钟内
+
+// ============================================
+// 规则5: 所有剪贴板图片事件（截图记录）
+// ============================================
+
+// 记录所有截图事件用于审计
+.decl all_screenshots(
+    process: Process,
+    image_hash: symbol,
+    timestamp: Timestamp
+)
+.output all_screenshots
+
+all_screenshots(Proc, Hash, T) :-
+    clipboard_image(Proc, Hash, T).
