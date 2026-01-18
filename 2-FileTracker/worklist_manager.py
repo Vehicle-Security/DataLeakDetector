@@ -62,9 +62,6 @@ class WorklistManager:
         Args:
             sensitive_files: 初始敏感文件路径列表
         """
-        # 敏感文件集合（原始文件路径）
-        self.sensitive_files: Set[str] = set(sensitive_files or [])
-        
         # 工作列表（待处理的敏感文件事件）
         self.worklist: List[SensitiveFileEvent] = []
         
@@ -73,6 +70,12 @@ class WorklistManager:
         
         # 已加入工作列表的事件ID集合（避免重复处理）
         self.processed_events: Set[str] = set()
+        
+        # 敏感文件集合（规范化后的文件路径）
+        self.sensitive_files: Set[str] = set()
+        if sensitive_files:
+            for file_path in sensitive_files:
+                self.sensitive_files.add(self._normalize_path(file_path))
     
     def add_sensitive_file(self, file_path: str) -> None:
         """

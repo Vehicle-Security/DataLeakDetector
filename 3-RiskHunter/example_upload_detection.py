@@ -29,7 +29,10 @@ def main():
     
     # ========== 配置参数 ==========
     # 记录ID（可修改为不同的会话）
-    record_id = 42
+    # 可用ID：42
+    # 无用ID：43 46 47 48 49 50 60 61 62 63 64 65
+    # 待测ID: 
+    record_id = 46
     
     base_path = f"records/{record_id}"
     

@@ -17,7 +17,11 @@ class UploadDetectionConfig:
             "/Users/tujiali/Documents/项目3prd设计.docx", # 60 重命名
             "/Users/tujiali/Documents/项目1详细规划.docx", # 43 压缩zip
             "/Users/tujiali/Documents/项目2需求分析.docx", # 42 格式转换：导出为pdf
-            "D:\\dingxinyao\\desktop\\智能图像增强系统技术设计文档.docx", # 64 重命名(windows)
+            "D:\\dingxinyao\\desktop\\智能图像增强系统技术设计文档.docx", # 64 重命名(windows) 61 复制粘贴
+            "D:\\dingxinyao\\desktop\\公司合作合同.docx", # 46 蓝牙发送文件
+            "D:\\dingxinyao\\desktop\\2025年第一季度内部财务报表.docx", # 47 U盘拷贝
+            "D:\\dingxinyao\\desktop\\公司机密\\公司内部资料\\公司高层秘密会议纪要.docx", #61 复制粘贴
+            "D:\\dingxinyao\\desktop\\重点客户信息汇总表.docx", #62 截图泄露 65 云端上传泄露
         ]
         
         # ========== 黑名单应用 ==========
@@ -66,6 +70,7 @@ class UploadDetectionConfig:
             "115网盘", "115.exe", "115",
             "坚果云", "Nutstore.exe", "Nutstore", "jianguoyun.com",
             "gemini", "gemini.google.com",
+            "WPS云盘", 
 
         ]
         
@@ -80,6 +85,7 @@ class UploadDetectionConfig:
             "Outlook",
             "企业网盘",
             "企业云存储",
+            "WPS", "wpsdesktop.exe", "wps.exe", 
         ]
         
         # ========== 检测规则 ==========
@@ -154,7 +160,7 @@ class UploadDetectionConfig:
                 return "blacklist"
         
         for whitelist_app in self.whitelist_apps:
-            if whitelist_app.lower() == app_name_lower:#whitelist_app.lower() in app_name_lower or app_name_lower in whitelist_app.lower():
+            if whitelist_app.lower() in app_name_lower:# or app_name_lower in whitelist_app.lower():
                 return "whitelist"
         
         return "unknown"

@@ -1,0 +1,30 @@
+{
+  "total_events": 2268,
+  "event_types": {
+    "modified": 2266,
+    "created": 2
+  },
+  "file_extensions": {
+    ".parc": 122,
+    ".db": 614,
+    ".default": 13,
+    ".mmkv": 12,
+    ".statistic": 21,
+    ".mmap": 24,
+    ".monitor": 3,
+    ".ini": 12,
+    ".docx": 8,
+    ".baj": 11,
+    ".32_13412072620847734": 11,
+    ".hyb": 11,
+    ".txt": 6,
+    ".png": 1,
+    ".amr": 1
+  },
+  "apps": {},
+  "upload_count": 0,
+  "time_range": {
+    "start": "2026-01-05T17:12:10.343000",
+    "end": "2026-01-05T17:56:07.785000"
+  }
+}
