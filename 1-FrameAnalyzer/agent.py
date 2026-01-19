@@ -129,7 +129,6 @@ class VideoFileOperationAgent:
         table_str = "输入顺序 | 原始帧索引 | 现实时间戳 (%Y-%m-%d %H:%M:%S) | 类型\n" + "-"*75 + "\n" + "\n".join(table_rows)
 
         final_prompt = prompts.RETRIEVE_FRAMES_PROMPT.format(
-            target_keywords=", ".join(state.target_keywords),
             frame_count=len(state.hit_frames),
             frame_info_table=table_str
         )
@@ -147,14 +146,23 @@ class VideoFileOperationAgent:
             resp = llm.invoke([HumanMessage(content=contents)])
             clean_text = re.sub(r'```json\n?|```', '', resp.content).strip()
             batch_data = json.loads(clean_text)
-            all_events = batch_data["events"] if isinstance(batch_data, dict) and "events" in batch_data else batch_data
+            raw_events = batch_data["events"] if isinstance(batch_data, dict) and "events" in batch_data else batch_data
+            filtered_events = []
+            
+
+            for event in raw_events:
+                original_name = event.get("original_filename", "")
+                if any(kw.lower() in original_name.lower() for kw in state.target_keywords):
+                    filtered_events.append(event)
+                else:
+                    logger.info(f"🗑️ 剔除无关事件中")
             state.final_report = {
                 "search_range": {
                     "start": state.time_range['search_start'].strftime("%Y-%m-%d %H:%M:%S"), 
                     "end": state.time_range['search_end'].strftime("%Y-%m-%d %H:%M:%S")
                 },
-                "total_events": len(all_events),
-                "events": all_events,
+                "total_events": len(filtered_events),
+                "events": filtered_events,
                 "status": "success"
             }
         except Exception as e:
