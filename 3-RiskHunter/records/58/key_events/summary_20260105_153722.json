@@ -1,0 +1,39 @@
+{
+  "total_events": 95,
+  "event_types": {
+    "opened": 90,
+    "renamed": 5
+  },
+  "file_extensions": {
+    ".corespotlightd": 5,
+    ".dat google chrome helper": 1,
+    ".ihm1wd5": 1,
+    ".json": 3,
+    ".list": 2,
+    ".list microsoft": 1,
+    ".lnbip5a": 1,
+    ".lproj google chrome helper": 8,
+    ".m230ozl": 1,
+    ".mft92jq": 1,
+    ".plist google chrome helper": 12,
+    ".plist microsoft": 1,
+    ".png": 5,
+    ".ssappinfocus": 2,
+    ".tmp microsoft": 3
+  },
+  "apps": {
+    "(Renderer)": 69,
+    "BiomeAgent": 7,
+    "Finder": 2,
+    "ImageThumbnailExtension": 2,
+    "Word": 5,
+    "cfprefsd": 4,
+    "mediaanalysisd": 3,
+    "screencaptureui": 3
+  },
+  "upload_count": 0,
+  "time_range": {
+    "start": "2026-01-05T15:37:26.482",
+    "end": "2026-01-05T15:38:20.898"
+  }
+}

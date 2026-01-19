@@ -1,0 +1,63 @@
+{
+  "total_events": 203,
+  "event_types": {
+    "opened": 186,
+    "renamed": 17
+  },
+  "file_extensions": {
+    ".2qjxcws": 1,
+    ".8qhc2j9": 1,
+    ".autdhwi": 1,
+    ".be0bkv9": 1,
+    ".corespotlightd": 21,
+    ".dict microsoft": 1,
+    ".docx": 6,
+    ".docx microsoft": 10,
+    ".eyu7nxf": 1,
+    ".framework microsoft": 1,
+    ".gd9vbfk": 1,
+    ".json": 4,
+    ".kcjgshf": 1,
+    ".kliickj": 1,
+    ".loctable microsoft": 1,
+    ".odvd3y9": 1,
+    ".opudkg3": 1,
+    ".pak qq helper": 2,
+    ".plgvmsd": 1,
+    ".plist microsoft": 88,
+    ".plist qq helper": 2,
+    ".png": 2,
+    ".pptx": 4,
+    ".qcgzanp": 1,
+    ".qzbczj7": 1,
+    ".rqcx2g0": 1,
+    ".ssappinfocus": 9,
+    ".tfedgj7": 1,
+    ".tpg7qii": 1,
+    ".txt": 2,
+    ".v3po4og": 1,
+    ".xml": 20
+  },
+  "apps": {
+    "(Renderer)": 4,
+    "BiomeAgent": 30,
+    "CoreServicesUIAgent": 2,
+    "ImageThumbnailExtension": 2,
+    "IntelligencePlatformComputeServi": 4,
+    "OfficeThumbnailExtension": 24,
+    "Word": 105,
+    "XprotectService": 2,
+    "cfprefsd": 17,
+    "filecoordinationd": 1,
+    "fileproviderd": 4,
+    "launchd": 3,
+    "logd_helper": 1,
+    "secinitd": 3,
+    "syspolicyd": 1
+  },
+  "upload_count": 0,
+  "time_range": {
+    "start": "2026-01-05T15:32:23.046",
+    "end": "2026-01-05T15:33:07.557"
+  }
+}

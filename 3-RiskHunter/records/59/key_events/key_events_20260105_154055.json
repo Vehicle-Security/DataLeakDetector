@@ -1,0 +1,5026 @@
+[
+  {
+    "timestamp": "2026-01-05T15:40:57.772",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3223400",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:57.773",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_name": "com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_size": 0,
+    "file_extension": ".ssappinfocus",
+    "process_info": {
+      "pid": "3223400",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:57.774",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3223400",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:57.784",
+    "event_type": "opened",
+    "file_path": "/compute/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/client/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3232359",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/compute/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/client/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:57.787",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3223400",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:57.788",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_name": "com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+    "file_size": 0,
+    "file_extension": ".ssappinfocus",
+    "process_info": {
+      "pid": "3223400",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd/com.apple.corespotlightd.BiomeConsumer.SSAppInFocus",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:57.790",
+    "event_type": "opened",
+    "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+    "file_name": "com.apple.corespotlightd",
+    "file_size": 0,
+    "file_extension": ".corespotlightd",
+    "process_info": {
+      "pid": "3223400",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.090",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.090",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.090",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.090",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.090",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+    "file_name": "XPCServices Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.099",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents Google Chrome Helper",
+    "file_name": "Contents Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.099",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.099",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.099",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.099",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.099",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+    "file_name": "XPCServices Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.101",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+    "file_name": "Resources Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.103",
+    "event_type": "opened",
+    "file_path": "/var/db/timezone/tz/2025b.1.0/zoneinfo/Asia/Shanghai Google Chrome Helper",
+    "file_name": "Shanghai Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/db/timezone/tz/2025b.1.0/zoneinfo/Asia/Shanghai Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.103",
+    "event_type": "opened",
+    "file_path": "/var/db/timezone/tz/2025b.1.0/zoneinfo/posixrules Google Chrome Helper",
+    "file_name": "posixrules Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/db/timezone/tz/2025b.1.0/zoneinfo/posixrules Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.103",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+    "file_name": "Resources Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.103",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/en.lproj Google Chrome Helper",
+    "file_name": "en.lproj Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".lproj google chrome helper",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/en.lproj Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.103",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/Base.lproj Google Chrome Helper",
+    "file_name": "Base.lproj Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".lproj google chrome helper",
+    "process_info": {
+      "pid": "3232761",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/Base.lproj Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.106",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.106",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.106",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.107",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.107",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+    "file_name": "XPCServices Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.112",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents Google Chrome Helper",
+    "file_name": "Contents Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.112",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.112",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.112",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.112",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.112",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+    "file_name": "XPCServices Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.113",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+    "file_name": "Resources Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.116",
+    "event_type": "opened",
+    "file_path": "/var/db/timezone/tz/2025b.1.0/zoneinfo/Asia/Shanghai Google Chrome Helper",
+    "file_name": "Shanghai Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/db/timezone/tz/2025b.1.0/zoneinfo/Asia/Shanghai Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.116",
+    "event_type": "opened",
+    "file_path": "/var/db/timezone/tz/2025b.1.0/zoneinfo/posixrules Google Chrome Helper",
+    "file_name": "posixrules Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/db/timezone/tz/2025b.1.0/zoneinfo/posixrules Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.116",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+    "file_name": "Resources Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.116",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/en.lproj Google Chrome Helper",
+    "file_name": "en.lproj Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".lproj google chrome helper",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/en.lproj Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:40:59.116",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/Base.lproj Google Chrome Helper",
+    "file_name": "Base.lproj Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".lproj google chrome helper",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/Base.lproj Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:00.988",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.loginwindow.8300C585-81A6-5E6D-BF37-F4EC6EF22AB4.plist.l6cIqyT",
+    "file_name": "com.apple.loginwindow.8300C585-81A6-5E6D-BF37-F4EC6EF22AB4.plist.l6cIqyT",
+    "file_size": 0,
+    "file_extension": ".l6ciqyt",
+    "process_info": {
+      "pid": "3230274",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.loginwindow.8300C585-81A6-5E6D-BF37-F4EC6EF22AB4.plist.l6cIqyT",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:00.990",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/ContextStoreAgent.plist.e5MCZRL",
+    "file_name": "ContextStoreAgent.plist.e5MCZRL",
+    "file_size": 0,
+    "file_extension": ".e5mczrl",
+    "process_info": {
+      "pid": "3230274",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/ContextStoreAgent.plist.e5MCZRL",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:00.993",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.dock.plist.XvhD4B5",
+    "file_name": "com.apple.dock.plist.XvhD4B5",
+    "file_size": 0,
+    "file_extension": ".xvhd4b5",
+    "process_info": {
+      "pid": "3230274",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.dock.plist.XvhD4B5",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:00.995",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.spaces.plist.AdOjrab",
+    "file_name": "com.apple.spaces.plist.AdOjrab",
+    "file_size": 0,
+    "file_extension": ".adojrab",
+    "process_info": {
+      "pid": "3230274",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.spaces.plist.AdOjrab",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:01.000",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.microsoft.Word.plist.ZiUgPf7",
+    "file_name": "com.microsoft.Word.plist.ZiUgPf7",
+    "file_size": 0,
+    "file_extension": ".ziugpf7",
+    "process_info": {
+      "pid": "3230274",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.microsoft.Word.plist.ZiUgPf7",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:01.002",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.microsoft.shared.plist.wO6gqh0",
+    "file_name": "com.microsoft.shared.plist.wO6gqh0",
+    "file_size": 0,
+    "file_extension": ".wo6gqh0",
+    "process_info": {
+      "pid": "3230274",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.microsoft.shared.plist.wO6gqh0",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.100",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+    "file_name": "Google Chrome Helper Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232945",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.102",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+    "file_name": "Google Chrome Helper Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232945",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.106",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Info.plist Google Chrome",
+    "file_name": "Info.plist Google Chrome",
+    "file_size": 0,
+    "file_extension": ".plist google chrome",
+    "process_info": {
+      "pid": "3232945",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Info.plist Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.106",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+    "file_name": "Google Chrome Helper Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232946",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.107",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+    "file_name": "Google Chrome Helper Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232945",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.107",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/XPCServices Google Chrome",
+    "file_name": "XPCServices Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232945",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/XPCServices Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.107",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+    "file_name": "Google Chrome Helper Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232946",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.109",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Info.plist Google Chrome",
+    "file_name": "Info.plist Google Chrome",
+    "file_size": 0,
+    "file_extension": ".plist google chrome",
+    "process_info": {
+      "pid": "3232946",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Info.plist Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.109",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+    "file_name": "Google Chrome Helper Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232946",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.109",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/XPCServices Google Chrome",
+    "file_name": "XPCServices Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232946",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/XPCServices Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.118",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Info.plist Google Chrome",
+    "file_name": "Info.plist Google Chrome",
+    "file_size": 0,
+    "file_extension": ".plist google chrome",
+    "process_info": {
+      "pid": "3232946",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Info.plist Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.118",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Info.plist Google Chrome",
+    "file_name": "Info.plist Google Chrome",
+    "file_size": 0,
+    "file_extension": ".plist google chrome",
+    "process_info": {
+      "pid": "3232945",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Info.plist Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.118",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+    "file_name": "Google Chrome Helper Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232946",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.118",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+    "file_name": "Google Chrome Helper Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232945",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.118",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Info.plist Google Chrome",
+    "file_name": "Info.plist Google Chrome",
+    "file_size": 0,
+    "file_extension": ".plist google chrome",
+    "process_info": {
+      "pid": "3232946",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Info.plist Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.118",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Info.plist Google Chrome",
+    "file_name": "Info.plist Google Chrome",
+    "file_size": 0,
+    "file_extension": ".plist google chrome",
+    "process_info": {
+      "pid": "3232945",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Info.plist Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.118",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+    "file_name": "Google Chrome Helper Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232945",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.118",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+    "file_name": "Google Chrome Helper Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232946",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.118",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/XPCServices Google Chrome",
+    "file_name": "XPCServices Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232945",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/XPCServices Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.118",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/XPCServices Google Chrome",
+    "file_name": "XPCServices Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232946",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/XPCServices Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.123",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Resources Google Chrome",
+    "file_name": "Resources Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232945",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Resources Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:03.123",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Resources Google Chrome",
+    "file_name": "Resources Google Chrome",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3232946",
+      "process_name": "Helper",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "Helper",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "Helper",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper.app/Contents/Resources Google Chrome",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.559",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233108",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.563",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233108",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.575",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3233108",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.575",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233108",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.575",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+    "file_name": "XPCServices Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233108",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.609",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.610",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.611",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.611",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.611",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+    "file_name": "XPCServices Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.622",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents Google Chrome Helper",
+    "file_name": "Contents Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233108",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.622",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3233108",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.623",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233108",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.623",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3233108",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.623",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233108",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.623",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+    "file_name": "XPCServices Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233108",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.637",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents Google Chrome Helper",
+    "file_name": "Contents Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.637",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.638",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.638",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.638",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.638",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+    "file_name": "XPCServices Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.646",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+    "file_name": "Resources Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.653",
+    "event_type": "opened",
+    "file_path": "/var/db/timezone/tz/2025b.1.0/zoneinfo/Asia/Shanghai Google Chrome Helper",
+    "file_name": "Shanghai Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/db/timezone/tz/2025b.1.0/zoneinfo/Asia/Shanghai Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.653",
+    "event_type": "opened",
+    "file_path": "/var/db/timezone/tz/2025b.1.0/zoneinfo/posixrules Google Chrome Helper",
+    "file_name": "posixrules Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/db/timezone/tz/2025b.1.0/zoneinfo/posixrules Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.653",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+    "file_name": "Resources Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.653",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/en.lproj Google Chrome Helper",
+    "file_name": "en.lproj Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".lproj google chrome helper",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/en.lproj Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:07.653",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/Base.lproj Google Chrome Helper",
+    "file_name": "Base.lproj Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".lproj google chrome helper",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/Base.lproj Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:08.802",
+    "event_type": "opened",
+    "file_path": "/var/db/timezone/tz/2025b.1.0/icutz/icutz44l.dat Google Chrome Helper",
+    "file_name": "icutz44l.dat Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".dat google chrome helper",
+    "process_info": {
+      "pid": "3232784",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/db/timezone/tz/2025b.1.0/icutz/icutz44l.dat Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.407",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.413",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.416",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.416",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.416",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+    "file_name": "XPCServices Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.441",
+    "event_type": "opened",
+    "file_path": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents Google Chrome Helper",
+    "file_name": "Contents Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.442",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.442",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.442",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+    "file_name": "Info.plist Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".plist google chrome helper",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Info.plist Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.442",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_name": "Google Chrome Helper (Renderer) Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.442",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+    "file_name": "XPCServices Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/XPCServices Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.451",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+    "file_name": "Resources Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.459",
+    "event_type": "opened",
+    "file_path": "/var/db/timezone/tz/2025b.1.0/zoneinfo/Asia/Shanghai Google Chrome Helper",
+    "file_name": "Shanghai Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/db/timezone/tz/2025b.1.0/zoneinfo/Asia/Shanghai Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.459",
+    "event_type": "opened",
+    "file_path": "/var/db/timezone/tz/2025b.1.0/zoneinfo/posixrules Google Chrome Helper",
+    "file_name": "posixrules Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/db/timezone/tz/2025b.1.0/zoneinfo/posixrules Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.459",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+    "file_name": "Resources Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.459",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/en.lproj Google Chrome Helper",
+    "file_name": "en.lproj Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".lproj google chrome helper",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/en.lproj Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:11.459",
+    "event_type": "opened",
+    "file_path": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/Base.lproj Google Chrome Helper",
+    "file_name": "Base.lproj Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".lproj google chrome helper",
+    "process_info": {
+      "pid": "3233217",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Contents/Frameworks/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/Resources/Base.lproj Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:12.318",
+    "event_type": "opened",
+    "file_path": "/var/db/timezone/tz/2025b.1.0/icutz/icutz44l.dat Google Chrome Helper",
+    "file_name": "icutz44l.dat Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": ".dat google chrome helper",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/db/timezone/tz/2025b.1.0/icutz/icutz44l.dat Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:13.451",
+    "event_type": "opened",
+    "file_path": "//private/var/db/systemstats/46C1B8E9-7F83-47C6-A637-204A75FAA816.microstackshots.Qjqnod.gz",
+    "file_name": "46C1B8E9-7F83-47C6-A637-204A75FAA816.microstackshots.Qjqnod.gz",
+    "file_size": 275917,
+    "file_extension": ".gz",
+    "process_info": {
+      "pid": "3231777",
+      "process_name": "UserEventAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "UserEventAgent",
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:14.355",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.controlcenter.plist.u14sdsk",
+    "file_name": "com.apple.controlcenter.plist.u14sdsk",
+    "file_size": 0,
+    "file_extension": ".u14sdsk",
+    "process_info": {
+      "pid": "3232911",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.controlcenter.plist.u14sdsk",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:14.356",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.5yYPAnW",
+    "file_name": "com.apple.HIToolbox.plist.5yYPAnW",
+    "file_size": 0,
+    "file_extension": ".5yypanw",
+    "process_info": {
+      "pid": "3232911",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.5yYPAnW",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:16.658",
+    "event_type": "opened",
+    "file_path": "/var/db/timezone/tz/2025b.1.0/zoneinfo/UTC Google Chrome Helper",
+    "file_name": "UTC Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/db/timezone/tz/2025b.1.0/zoneinfo/UTC Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:16.658",
+    "event_type": "opened",
+    "file_path": "/var/db/timezone/tz/2025b.1.0/zoneinfo/posixrules Google Chrome Helper",
+    "file_name": "posixrules Google Chrome Helper",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "3233109",
+      "process_name": "(Renderer)",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "(Renderer)",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "(Renderer)",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/db/timezone/tz/2025b.1.0/zoneinfo/posixrules Google Chrome Helper",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:26.786",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.nhMU2Uc",
+    "file_name": "com.apple.HIToolbox.plist.nhMU2Uc",
+    "file_size": 0,
+    "file_extension": ".nhmu2uc",
+    "process_info": {
+      "pid": "3232911",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.nhMU2Uc",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:39.570",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.UoZ3BQQ",
+    "file_name": "com.apple.HIToolbox.plist.UoZ3BQQ",
+    "file_size": 0,
+    "file_extension": ".uoz3bqq",
+    "process_info": {
+      "pid": "3232911",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.HIToolbox.plist.UoZ3BQQ",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:43.946",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/com.apple.powerdatad.plist.vz15yNd",
+    "file_name": "com.apple.powerdatad.plist.vz15yNd",
+    "file_size": 0,
+    "file_extension": ".vz15ynd",
+    "process_info": {
+      "pid": "3233309",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/com.apple.powerdatad.plist.vz15yNd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:43.953",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/com.apple.powerdatad.plist.OFLk8m1",
+    "file_name": "com.apple.powerdatad.plist.OFLk8m1",
+    "file_size": 0,
+    "file_extension": ".oflk8m1",
+    "process_info": {
+      "pid": "3233309",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/com.apple.powerdatad.plist.OFLk8m1",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:43.961",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/com.apple.xpc.activity2.plist.UAjaMFG",
+    "file_name": "com.apple.xpc.activity2.plist.UAjaMFG",
+    "file_size": 0,
+    "file_extension": ".uajamfg",
+    "process_info": {
+      "pid": "3233309",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/com.apple.xpc.activity2.plist.UAjaMFG",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:49.487",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/com.apple.timed.plist.kPiited",
+    "file_name": "com.apple.timed.plist.kPiited",
+    "file_size": 0,
+    "file_extension": ".kpiited",
+    "process_info": {
+      "pid": "3233309",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/TemporaryItems/com.apple.timed.plist.kPiited",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:52.447",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.icloud.searchpartyuseragent.plist.9Ri6MCF",
+    "file_name": "com.apple.icloud.searchpartyuseragent.plist.9Ri6MCF",
+    "file_size": 0,
+    "file_extension": ".9ri6mcf",
+    "process_info": {
+      "pid": "3232928",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.icloud.searchpartyuseragent.plist.9Ri6MCF",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:41:52.451",
+    "event_type": "renamed",
+    "file_path": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.xpc.activity2.plist.WDbmKhE",
+    "file_name": "com.apple.xpc.activity2.plist.WDbmKhE",
+    "file_size": 0,
+    "file_extension": ".wdbmkhe",
+    "process_info": {
+      "pid": "3232928",
+      "process_name": "cfprefsd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "cfprefsd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "cfprefsd",
+      "upload_type": "Sensitive Access",
+      "original_file": "//private/var/folders/18/kd8qcgc16bdgx8vkz06lbjhw0000gn/T/TemporaryItems/com.apple.xpc.activity2.plist.WDbmKhE",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "renameat"
+    }
+  }
+]
