@@ -7,10 +7,11 @@ etw_file_monitor.py - 基于 ETW 的文件 I/O 监控器
 - 使用 Windows Event Tracing (ETW) 捕获文件 I/O 事件
 - 捕获 FileIo_Create (文件打开) 事件
 - 提供完整的进程信息 (PID, 进程名)
+- NT 路径自动转换为 DOS 路径
 
 要求:
 - 需要管理员权限运行
-- 需要安装: pip install pywintrace
+- 需要安装: pip install pywintrace pywin32
 
 对应架构角色: ETW 文件监控器 (与 watchdog 互补)
 """
@@ -18,25 +19,35 @@ etw_file_monitor.py - 基于 ETW 的文件 I/O 监控器
 import os
 import threading
 import time
+import string
 from datetime import datetime
 from typing import Callable, Optional, Dict, Any
 
 # ETW 相关常量
 KERNEL_FILE_PROVIDER_GUID = "{EDD08927-9CC4-4E65-B970-C2560FB5C289}"
 
+# FileIo Keywords (Based on Microsoft-Windows-Kernel-File provider)
+# Ref: https://github.com/repnz/etw-providers-docs/blob/master/Manifests-Win10/Microsoft-Windows-Kernel-File.xml
+# 0x10  = KERNEL_FILE_KEYWORD_FILENAME
+# 0x20  = KERNEL_FILE_KEYWORD_FILEIO
+# 0x80  = KERNEL_FILE_KEYWORD_CREATE
+# 0x200 = KERNEL_FILE_KEYWORD_WRITE
+ALL_FILE_IO_KEYWORDS = 0xFED0  # Combined common keywords
+
 # FileIo 操作类型
-FILE_IO_CREATE = 64    # 文件创建/打开
-FILE_IO_READ = 67      # 文件读取
-FILE_IO_WRITE = 68     # 文件写入
-FILE_IO_CLOSE = 66     # 文件关闭
+FILE_IO_CREATE = 12   # 文件创建/打开 (常见 opcode)
+FILE_IO_CREATE_2 = 64 # 文件创建/打开 (备用 opcode)
+
+# NT 路径前缀
+NT_DEVICE_PREFIX = "\\Device\\"
 
 
 class ETWFileMonitor:
     """
     基于 ETW 的文件 I/O 监控器
     
-    使用 NT Kernel Logger 的 FileIo 事件来精确捕获:
-    - 文件打开事件 (FileIo_Create)
+    使用 Microsoft-Windows-Kernel-File Provider 来精确捕获:
+    - 文件打开事件 (Create, 在内核层 Open 也是 Create)
     - 完整的进程信息 (PID, 进程名)
     
     与 watchdog 的区别:
@@ -46,15 +57,21 @@ class ETWFileMonitor:
     两者互补使用可实现完整的文件监控。
     """
     
-    def __init__(self, event_callback: Callable[[Dict[str, Any]], None] = None):
+    def __init__(self, event_callback: Callable[[Dict[str, Any]], None] = None, debug: bool = False):
         """
         Args:
             event_callback: 事件回调函数，接收标准化的事件字典
+            debug: 是否启用调试输出
         """
         self.event_callback = event_callback
+        self.debug = debug
         self.is_running = False
         self._thread: Optional[threading.Thread] = None
         self._session = None
+        
+        # NT 路径到 DOS 路径的映射缓存
+        self._nt_to_dos_map: Dict[str, str] = {}
+        self._init_drive_mapping()
         
         # 进程名缓存 (避免频繁查询)
         self._process_cache: Dict[int, str] = {}
@@ -63,19 +80,25 @@ class ETWFileMonitor:
         
         # 事件去重
         self._event_cache: Dict[str, float] = {}
-        self._dedup_ttl = 1.0  # 1秒内相同事件去重
+        self._dedup_ttl = 0.5  # 0.5秒内相同事件去重
         self._cache_lock = threading.Lock()  # 线程安全锁
         
-        # 过滤规则
+        # 事件计数器 (调试用)
+        self._event_count = 0
+        self._create_event_count = 0
+        self._seen_task_names = set() # 诊断用
+        
+        # 过滤规则 - 监控整台机器但忽略系统噪音
         self.ignore_extensions = [
-            '.tmp', '.temp', '.log', '.lock', '.ldb', 
-            '.db-wal', '.db-shm', '.etag', '.cache'
+            '.etl', '.pf', '.db-journal', '.db-wal', '.db-shm',
+            '.tmp', '.TMP', '.log', '.evtx'
         ]
         self.ignore_patterns = [
-            '\\Windows\\',
-            '\\$Recycle.Bin\\',
-            '\\System Volume Information\\',
-            '\\.git\\',
+            '\\Windows\\Prefetch\\',
+            '\\Windows\\System32\\winevt\\',
+            '\\$Extend\\',
+            '\\Device\\NamedPipe\\',
+            '\\Device\\Afd\\',
         ]
         
         # 敏感文件关键字
@@ -85,147 +108,250 @@ class ETWFileMonitor:
             "身份证", "护照", "驾照", "简历", "resume"
         ]
     
-    def start(self):
-        """启动 ETW 文件监控"""
-        if self.is_running:
-            print("[ETW_MONITOR] Already running")
-            return
+    def _init_drive_mapping(self):
+        """初始化 NT 设备路径到 DOS 驱动器的映射"""
+        try:
+            import win32file
+            import win32api
+            
+            # 获取所有逻辑驱动器
+            drives = win32api.GetLogicalDriveStrings().split('\x00')
+            drives = [d for d in drives if d]
+            
+            for drive in drives:
+                drive_letter = drive.rstrip('\\')
+                try:
+                    # 查询设备路径
+                    device_path = win32file.QueryDosDevice(drive_letter)
+                    if device_path:
+                        # QueryDosDevice 返回多个路径，取第一个
+                        device_name = device_path.split('\x00')[0]
+                        self._nt_to_dos_map[device_name.lower()] = drive_letter
+                        if self.debug:
+                            print(f"[ETW_MONITOR] Drive mapping: {device_name} -> {drive_letter}")
+                except Exception as e:
+                    if self.debug:
+                        print(f"[ETW_MONITOR] Failed to query device for {drive}: {e}")
+            
+            print(f"[ETW_MONITOR] Initialized {len(self._nt_to_dos_map)} drive mappings")
+            
+        except ImportError:
+            print("[ETW_MONITOR] Warning: pywin32 not installed, NT path conversion disabled")
+            # 备用硬编码映射
+            self._nt_to_dos_map = {
+                "\\device\\harddiskvolume1": "C:",
+                "\\device\\harddiskvolume2": "D:",
+                "\\device\\harddiskvolume3": "E:",
+                "\\device\\harddiskvolume4": "D:",  # 常见配置
+            }
+        except Exception as e:
+            print(f"[ETW_MONITOR] Drive mapping init error: {e}")
+    
+    def _convert_nt_path_to_dos(self, nt_path: str) -> str:
+        """将 NT 设备路径转换为 DOS 路径"""
+        if not nt_path:
+            return nt_path
         
+        # 已经是 DOS 路径
+        if len(nt_path) >= 2 and nt_path[1] == ':':
+            return nt_path
+        
+        # 检查是否是 NT 设备路径
+        nt_path_lower = nt_path.lower()
+        
+        for device_path, drive_letter in self._nt_to_dos_map.items():
+            if nt_path_lower.startswith(device_path):
+                # 替换设备路径为驱动器盘符
+                return drive_letter + nt_path[len(device_path):]
+        
+        # 无法转换，返回原路径
+        return nt_path
+    
+    def start(self):
+        """启动 ETW 监控"""
+        if self.is_running:
+            return
+            
         self.is_running = True
         self._thread = threading.Thread(target=self._run_etw_trace, daemon=True)
         self._thread.start()
-        print("[ETW_MONITOR] Started with Kernel File I/O tracing")
-    
+        print(f"[ETW_MONITOR] Started with Kernel File I/O tracing (Keywords: 0x{ALL_FILE_IO_KEYWORDS:X})")
+
     def stop(self):
-        """停止 ETW 文件监控"""
+        """停止 ETW 监控"""
+        if not self.is_running:
+            return
+            
         self.is_running = False
         if self._session:
             try:
                 self._session.stop()
-            except:
-                pass
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2)
-        print("[ETW_MONITOR] Stopped")
-    
+            except Exception as e:
+                print(f"[ETW_MONITOR] Error stopping session: {e}")
+                
+        if self._thread:
+            self._thread.join(timeout=2.0)
+            
+        # 打印统计
+        print(f"[ETW_MONITOR] Stopped. Total events: {self._event_count}, Create events: {self._create_event_count}")
+        print(f"[ETW_MONITOR] Unique Task Names seen: {list(self._seen_task_names)}")
+
     def _run_etw_trace(self):
-        """运行 ETW 跟踪 (在独立线程中)"""
+        """ETW 跟踪主循环"""
         try:
-            # 尝试使用 pywintrace (正确的 API 用法)
             import etw
             
-            # 定义 provider (Microsoft-Windows-Kernel-File)
+            # 定义 Provider
+            # Microsoft-Windows-Kernel-File: {EDD08927-9CC4-4E65-B970-C2560FB5C289}
             providers = [
                 etw.ProviderInfo(
                     'Microsoft-Windows-Kernel-File',
-                    etw.GUID(KERNEL_FILE_PROVIDER_GUID)
+                    etw.GUID(KERNEL_FILE_PROVIDER_GUID),
+                    any_keywords=ALL_FILE_IO_KEYWORDS
                 )
             ]
             
-            # 创建 ETW 实例，传入 event_callback
+            # 创建 ETW 实例
             self._session = etw.ETW(
                 providers=providers,
                 event_callback=self._process_etw_event
             )
             
-            print("[ETW_MONITOR] ETW session started")
             self._session.start()
-            
-            # 保持运行直到停止
-            while self.is_running:
-                time.sleep(0.1)
-            
-            # 停止会话
-            self._session.stop()
-            
-        except ImportError:
-            print("[ETW_MONITOR] pywintrace not installed, falling back to Recent Files monitor")
-            self._run_wmi_fallback()
+
         except Exception as e:
-            print(f"[ETW_MONITOR] Error: {e}")
-            # 尝试备用方案
-            self._run_wmi_fallback()
-    
-    def _run_wmi_fallback(self):
-        """文件打开监控备用方案 - 监控 Recent Files 文件夹"""
-        # WMI 不能直接监控文件打开，改用监控 Recent 文件夹
-        print("[ETW_MONITOR] Fallback: monitoring Recent Files folder")
-        
-        recent_path = os.path.join(
-            os.environ.get("APPDATA", ""),
-            "Microsoft", "Windows", "Recent"
-        )
-        
-        if not os.path.exists(recent_path):
-            print(f"[ETW_MONITOR] Recent folder not found: {recent_path}")
-            return
-        
-        known_files = set(os.listdir(recent_path))
-        
-        while self.is_running:
-            try:
-                current_files = set(os.listdir(recent_path))
-                new_files = current_files - known_files
-                
-                for lnk_file in new_files:
-                    if lnk_file.endswith('.lnk'):
-                        # 从 .lnk 文件名提取原始文件名
-                        original_name = lnk_file[:-4]
-                        if self.event_callback:
-                            event = self._build_event(
-                                'opened', 
-                                f"(Recent) {original_name}",
-                                0, 
-                                ""
-                            )
-                            self.event_callback(event)
-                
-                known_files = current_files
-                time.sleep(1)
-            except Exception as e:
-                print(f"[ETW_MONITOR] Fallback error: {e}")
-                time.sleep(1)
-    
+            print(f"[ETW_MONITOR] Trace loop error: {e}")
+            self.is_running = False
+
     def _process_etw_event(self, event):
         """处理 ETW 事件"""
         try:
-            # 过滤非文件 I/O 事件
-            task_name = getattr(event, 'task_name', '')
-            if task_name not in ['Create', 'Open', 'Read']:
+            if not self.is_running:
                 return
+
+            self._event_count += 1
             
-            # 获取文件路径
-            file_path = getattr(event, 'FileName', '') or getattr(event, 'file_path', '')
+            # 每100个事件输出一次统计
+            if self._event_count % 100 == 0:
+                print(f"[ETW_MONITOR] Received {self._event_count} total events, {self._create_event_count} create events")
+
+            # ETW 事件通常是一个元组: (event_id, event_data_dict)
+            if isinstance(event, tuple) and len(event) >= 2:
+                event_data = event[1]
+                if not isinstance(event_data, dict):
+                    return
+            else:
+                event_data = event
+
+            # 1. 获取事件类型/任务名
+            task_name = ''
+            if isinstance(event_data, dict):
+                task_name = event_data.get('Task Name', '')
+            else:
+                task_name = getattr(event_data, 'task_name', '')
+            
+            # 记录见过的任务名 (诊断用)
+            if task_name and task_name not in self._seen_task_names:
+                self._seen_task_names.add(task_name)
+                # if self.debug:
+                #     print(f"[ETW_DIAG] New Task Name: {task_name}")
+
+            # 2. 获取 Opcode
+            opcode = 0
+            if isinstance(event_data, dict):
+                try:
+                    opcode = event_data.get('EventHeader', {}).get('EventDescriptor', {}).get('Opcode', 0)
+                except:
+                    pass
+            else:
+                opcode = getattr(event_data, 'opcode', 0)
+
+            # 3. 识别 Create/Open 事件
+            # 包括 'Create', 'FileCreate', 'NameCreate' 等
+            # Opcode 12 (DelayCreate) 或 64 (Create) 或 32 (FileCreate)
+            # 我们放宽条件，不仅看 task_name，也看 opcode
+            is_create_event = (
+                'Create' in task_name or 
+                task_name in ['FileCreate', 'NameCreate'] or
+                opcode in [12, 64, 32]
+            )
+
+            if not is_create_event:
+                return
+
+            # 4. 获取文件路径
+            file_path = ''
+            if isinstance(event_data, dict):
+                for key in ['FileName', 'OpenPath', 'Path', 'FileObject', 'Name']:
+                    val = event_data.get(key)
+                    if val and isinstance(val, str) and (':' in val or '\\' in val):
+                        file_path = val
+                        break
+            else:
+                file_path = (
+                    getattr(event_data, 'FileName', None) or
+                    getattr(event_data, 'OpenPath', None) or
+                    getattr(event_data, 'file_path', None) or
+                    getattr(event_data, 'Path', None) or
+                    ''
+                )
+
             if not file_path:
                 return
+
+            # 5. 转换 NT 路径为 DOS 路径
+            dos_path = self._convert_nt_path_to_dos(file_path)
             
-            # 过滤
-            if self._should_ignore(file_path):
+            # 6. 过滤系统噪音
+            if self._should_ignore(dos_path):
                 return
             
-            # 去重
-            if self._is_duplicate('opened', file_path):
+            # 7. 去重
+            if self._is_duplicate('opened', dos_path):
                 return
             
-            # 获取进程信息
-            pid = getattr(event, 'ProcessId', 0) or getattr(event, 'process_id', 0)
+            self._create_event_count += 1
+            
+            # 8. 获取进程信息
+            pid = 0
+            if isinstance(event_data, dict):
+                try:
+                    pid = event_data.get('EventHeader', {}).get('ProcessId', 0)
+                except:
+                    pass
+            else:
+                pid = getattr(event_data, 'ProcessId', 0) or getattr(event_data, 'process_id', 0)
+            
             process_name = self._get_process_name(pid)
             
+            # 打印已捕获的打开事件
+            print(f"[ETW] 📂 opened: {dos_path} <- {process_name} (Task={task_name}, Opcode={opcode})")
+            
             # 构建标准化事件
-            file_event = self._build_event('opened', file_path, pid, process_name)
+            file_event = self._build_event('opened', dos_path, pid, process_name)
             
             # 回调
             if self.event_callback:
                 self.event_callback(file_event)
+            
+
                 
         except Exception as e:
-            print(f"[ETW_MONITOR] Event processing error: {e}")
+            if self.debug:
+                print(f"[ETW_MONITOR] Event processing error: {e}")
+                import traceback
+                traceback.print_exc()
     
     def _should_ignore(self, path: str) -> bool:
         """判断是否应该忽略该路径"""
+        if not path:
+            return True
+            
+        path_lower = path.lower()
+        
         # 忽略路径模式
         for pattern in self.ignore_patterns:
-            if pattern.lower() in path.lower():
+            if pattern.lower() in path_lower:
                 return True
         
         # 忽略扩展名
@@ -384,15 +510,17 @@ class ETWFileMonitor:
 # 测试
 if __name__ == "__main__":
     def print_event(event):
-        print(f"📂 [{event['event_type']}] {event['file_name']} <- {event['app_name']}")
+        print(f"📂 [{event['event_type']}] {event['file_path']} <- {event['app_name']} ({event['process_info']['process_name']})")
     
-    monitor = ETWFileMonitor(event_callback=print_event)
+    # 启用调试模式
+    monitor = ETWFileMonitor(event_callback=print_event, debug=True)
     monitor.start()
     
     try:
         print("ETW Monitoring... Press Ctrl+C to stop")
+        print("Try opening some files (documents, images, etc.) to see events")
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\\nStopping...")
+        print("\nStopping...")
         monitor.stop()

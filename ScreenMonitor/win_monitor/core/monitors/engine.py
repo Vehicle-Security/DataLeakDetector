@@ -21,6 +21,7 @@ from typing import List, Optional
 
 from .sensor import Sensor, WindowData
 from .file_system_monitor import FileSystemMonitor
+from .clipboard_monitor import ClipboardMonitor
 from ..detection.rule_matcher import RuleMatcher, MatchResult
 from ..logging.logger import Logger
 
@@ -41,14 +42,19 @@ class Engine:
     3. 状态机决策：是否开始/停止录制
     4. Logger.log() 记录事件
     5. FileSystemMonitor 捕获文件操作
+    6. ClipboardMonitor 捕获剪贴板操作
     
-    录制策略：
-    - 检测到黑名单应用时开始录制
-    - 持续录制直到用户停止监控或超过1小时
+    改进：
+    - 启动时即开启所有监控器 (File, Clipboard)
+    - 使用 event_buffer 缓存录制前的事件
+    - 触发录制时，将缓存的“案发前”事件写入日志
     """
     
-    # 日志缓冲区最大容量
+    # 日志缓冲区最大容量 (用于 Web UI)
     MAX_LOG_BUFFER = 500
+    
+    # 事件回溯缓冲区容量 (保存录制前的事件)
+    MAX_EVENT_BUFFER = 2000
     
     # 最大录制时长（秒）
     MAX_RECORDING_DURATION = 3600  # 1小时
@@ -66,8 +72,14 @@ class Engine:
         self.logger = Logger()
         self.config = config_loader
         
-        # 文件系统监控器（watchdog）
+        # 监控通过 _handle_monitor_event 统一回调
         self.file_monitor: Optional[FileSystemMonitor] = None
+        self.etw_monitor = None
+        self.clipboard_monitor: Optional[ClipboardMonitor] = None
+        
+        # 事件回溯缓冲区
+        self.event_buffer = deque(maxlen=self.MAX_EVENT_BUFFER)
+        self.buffer_lock = threading.Lock()
         
         # 录制服务（可选）
         self.recorder = recorder_service
@@ -91,6 +103,10 @@ class Engine:
         self.current_session_id: Optional[str] = None
         self.current_session_dir: Optional[str] = None
         self.recording_start_time: Optional[float] = None
+        
+        # 🆕 文件对话框检测状态
+        self.last_dialog_info: Optional[dict] = None  # 记录最近一次文件对话框信息
+        self.dialog_trigger_window: Optional[WindowData] = None  # 触发对话框的窗口
         
         # 日志缓冲区（用于 Web UI 显示）
         self._log_buffer: deque = deque(maxlen=self.MAX_LOG_BUFFER)
@@ -127,7 +143,10 @@ class Engine:
         print(f"   轮询间隔: {self.poll_interval}s")
         print(f"   最大录制时长: {self.MAX_RECORDING_DURATION // 60} 分钟")
         
-        # 启动主循环线程
+        # 1. 启动所有监控器 (持续运行)
+        self._start_monitors()
+        
+        # 2. 启动主循环线程
         self.monitor_thread = threading.Thread(target=self._main_loop, daemon=True)
         self.monitor_thread.start()
         return True
@@ -149,6 +168,9 @@ class Engine:
         # 如果正在录制，停止录制
         if self.state == State.RECORDING:
             self._stop_recording()
+            
+        # 停止所有监控器
+        self._stop_monitors()
         
         self._add_log("info", "监控引擎已停止")
         print("🛑 监控引擎已停止")
@@ -156,7 +178,84 @@ class Engine:
     
     # Web UI 别名
     stop_monitoring = stop
-    
+
+    def _start_monitors(self):
+        """启动所有底层监控器"""
+        # 1. 文件系统监控 (Watchdog)
+        try:
+            self.file_monitor = FileSystemMonitor(
+                event_callback=self._handle_monitor_event
+            )
+            self.file_monitor.start()
+            print("📂 文件系统监控已启动 (watchdog)")
+        except Exception as e:
+            print(f"[ERROR] 启动 watchdog 监控失败: {e}")
+
+        # 2. ETW 文件打开监控
+        try:
+            from .etw_file_monitor import ETWFileMonitor
+            self.etw_monitor = ETWFileMonitor(event_callback=self._handle_monitor_event)
+            self.etw_monitor.start()
+            print("📂 ETW 文件监控已启动 (file open events)")
+        except ImportError:
+            print("[WARN] ETW 监控不可用 (pywintrace 未安装)")
+        except Exception as e:
+            print(f"[WARN] ETW 监控启动失败: {e}")
+            
+        # 3. 剪贴板监控
+        try:
+            self.clipboard_monitor = ClipboardMonitor(event_callback=self._handle_monitor_event)
+            self.clipboard_monitor.start()
+            print("📋 剪贴板监控已启动")
+        except Exception as e:
+            print(f"[ERROR] 启动剪贴板监控失败: {e}")
+
+    def _stop_monitors(self):
+        """停止所有底层监控器"""
+        if self.file_monitor:
+            try:
+                self.file_monitor.stop()
+            except Exception as e:
+                print(f"[ERROR] 停止 watchdog 失败: {e}")
+            self.file_monitor = None
+            
+        if hasattr(self, 'etw_monitor') and self.etw_monitor:
+            try:
+                self.etw_monitor.stop()
+            except Exception as e:
+                print(f"[ERROR] 停止 ETW 失败: {e}")
+            self.etw_monitor = None
+            
+        if self.clipboard_monitor:
+            try:
+                self.clipboard_monitor.stop()
+            except Exception as e:
+                print(f"[ERROR] 停止剪贴板监控失败: {e}")
+            self.clipboard_monitor = None
+            
+    def _handle_monitor_event(self, event: dict):
+        """
+        统一处理来自各个监控器(File, Clipboard)的事件
+        """
+        # 1. 添加到 Web UI 日志缓冲区 (实时显示)
+        event_type = event.get("event_type", "unknown")
+        desc = event.get("file_name") or event.get("content_preview") or "unknown"
+        
+        level = "file"
+        if "clipboard" in event_type:
+            level = "clipboard"
+            
+        self._add_log(level, f"[{event_type}] {desc}", event)
+
+        # 2. 根据状态处理事件
+        if self.state == State.RECORDING:
+            # 录制中：直接写入日志文件
+            self.logger.log_raw_event(event)  # 需要确保 Logger 有 log_raw_event 方法
+        else:
+            # 空闲中：存入回溯缓冲区
+            with self.buffer_lock:
+                self.event_buffer.append(event)
+
     def _main_loop(self):
         """主循环"""
         while self.running:
@@ -181,7 +280,11 @@ class Engine:
                         # 3. 状态机决策
                         self._process_state(match_result, window_data)
                         
-                        # 4. 日志记录（持续记录窗口切换）
+                        # 🆕 4. 文件对话框检测和上传推理
+                        if self.state == State.RECORDING:
+                            self._detect_file_operations(window_data)
+                        
+                        # 5. 日志记录（持续记录窗口切换）
                         if self.state == State.RECORDING:
                             self.logger.log(window_data, match_result, time.time())
                         
@@ -207,7 +310,7 @@ class Engine:
                 current.window_title != self.last_window.window_title)
     
     def _process_state(self, match_result: MatchResult, window_data: WindowData):
-        """状态机处理 - 简化逻辑：检测到风险就开始录制，直到停止或超时"""
+        """状态机处理"""
         with self.state_lock:
             if match_result.is_match:
                 # 命中规则
@@ -222,7 +325,7 @@ class Engine:
         self.current_session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.recording_start_time = time.time()
         
-        # 创建会话目录 (只使用 logs 和 video)
+        # 创建会话目录
         self.current_session_dir = os.path.join(self.output_dir, f"session_{self.current_session_id}")
         os.makedirs(os.path.join(self.current_session_dir, "logs"), exist_ok=True)
         os.makedirs(os.path.join(self.current_session_dir, "video"), exist_ok=True)
@@ -235,8 +338,8 @@ class Engine:
         print(f"🎬 开始录制 - 触发: {match_result.app_name} ({match_result.category})")
         print(f"   会话目录: {self.current_session_dir}")
         
-        # 启动文件系统监控
-        self._start_file_monitor()
+        # 🌟 关键：将缓冲区中的“案发前”事件写入日志
+        self._flush_event_buffer()
         
         # 启动屏幕录制
         if self.recorder:
@@ -245,48 +348,21 @@ class Engine:
                 self.recorder.start(video_path)
             except Exception as e:
                 print(f"[ERROR] 启动屏幕录制失败: {e}")
+
+    def _flush_event_buffer(self):
+        """将缓存的事件写入日志文件"""
+        count = 0
+        with self.buffer_lock:
+            print(f"📥 正在写入缓存的 {len(self.event_buffer)} 个历史事件...")
+            while self.event_buffer:
+                event = self.event_buffer.popleft()
+                # 写入日志
+                self.logger.log_raw_event(event)
+                count += 1
+        return count
     
-    def _start_file_monitor(self):
-        """启动文件系统监控 (watchdog + ETW 双轨)"""
-        # 1. 启动 watchdog 监控 (文件变更: 创建/修改/删除/重命名)
-        try:
-            self.file_monitor = FileSystemMonitor(
-                event_callback=self._on_file_event
-            )
-            self.file_monitor.start()
-            print("📂 文件系统监控已启动 (watchdog)")
-        except Exception as e:
-            print(f"[ERROR] 启动 watchdog 监控失败: {e}")
-        
-        # 2. 启动 ETW 监控 (文件打开, 类似 Mac 的 fs_usage)
-        try:
-            from .etw_file_monitor import ETWFileMonitor
-            self.etw_monitor = ETWFileMonitor(event_callback=self._on_file_event)
-            self.etw_monitor.start()
-            print("📂 ETW 文件监控已启动 (file open events)")
-        except ImportError:
-            print("[WARN] ETW 监控不可用 (pywintrace 未安装)")
-            self.etw_monitor = None
-        except Exception as e:
-            print(f"[WARN] ETW 监控启动失败: {e}")
-            self.etw_monitor = None
-    
-    def _on_file_event(self, event: dict):
-        """处理文件系统事件"""
-        if self.state != State.RECORDING:
-            return
-        
-        # 记录到日志文件
-        self.logger.log_file_event(event)
-        
-        # 添加到 Web UI 日志缓冲区
-        event_type = event.get("event_type", "")
-        file_name = event.get("file_name", "")
-        self._add_log("file", f"[{event_type}] {file_name}", {
-            "event_type": event_type,
-            "file_path": event.get("file_path", ""),
-            "file_name": file_name
-        })
+    # 注意：不再需要 _start_file_monitor 和 _on_file_event，
+    # 因为已经由 _start_monitors 和 _handle_monitor_event 统一接管
     
     def _check_recording_duration(self):
         """检查录制时长是否超过最大值"""
@@ -408,3 +484,182 @@ class Engine:
                 status["current_title"] = self.last_window.window_title[:50]
             
             return status
+    
+    # ======================== 🆕 文件对话框检测和上传推理 ========================
+    
+    def _detect_file_operations(self, window_data: WindowData):
+        """检测文件对话框和上传操作"""
+        # 1. 检测文件对话框打开
+        if self._is_file_dialog(window_data):
+            self._on_file_dialog_opened(window_data)
+        
+        # 2. 检测从对话框返回浏览器（可能完成上传）
+        elif self.last_dialog_info and self._is_browser_window(window_data):
+            self._infer_upload_action(window_data)
+    
+    def _is_file_dialog(self, window_data: WindowData) -> bool:
+        """判断是否是文件选择对话框"""
+        # Windows 标准文件对话框的窗口类
+        dialog_classes = ['#32770', 'Chrome_WidgetWin_1']  # Win32对话框 和 Chrome内置对话框
+        
+        # 检查窗口类
+        if window_data.window_class not in dialog_classes:
+            return False
+        
+        # 检查窗口标题
+        dialog_keywords = ['打开', 'Open', '选择文件', 'Choose File', '上传', 'Upload']
+        for keyword in dialog_keywords:
+            if keyword in window_data.window_title:
+                return True
+        
+        return False
+    
+    def _on_file_dialog_opened(self, window_data: WindowData):
+        """处理文件对话框打开事件"""
+        # 记录对话框信息
+        self.last_dialog_info = {
+            'opened_at': datetime.now(),
+            'dialog_window': window_data
+        }
+        
+        # 记录触发对话框的应用（上一个窗口）
+        if self.last_window:
+            self.dialog_trigger_window = self.last_window
+            
+            print(f"📂 检测到文件对话框:")
+            print(f"   标题: {window_data.window_title}")
+            print(f"   触发应用: {self.last_window.process_name}")
+            print(f"   触发窗口: {self.last_window.window_title[:50]}")
+    
+    def _infer_upload_action(self, window_data: WindowData):
+        """推断文件上传操作"""
+        # 确保对话框是最近打开的（5秒内）
+        if not self.last_dialog_info:
+            return
+        
+        time_since_dialog = (datetime.now() - self.last_dialog_info['opened_at']).total_seconds()
+        if time_since_dialog > 5.0:  # 超过5秒，认为对话框已过期
+            self.last_dialog_info = None
+            self.dialog_trigger_window = None
+            return
+        
+        # 检查是否回到了邮件或聊天网站
+        if self._is_mail_or_chat_website(window_data):
+            # 尝试查找最近访问的文件
+            suspected_file = self._find_recent_accessed_file()
+            
+            # 提取网站名称
+            website_name = self._extract_website_name(window_data.window_title)
+            
+            # 生成上传推理事件
+            upload_event = {
+                'action': 'suspected_file_upload',
+                'confidence': 'high' if suspected_file else 'medium',
+                'evidence': 'file_dialog_sequence',
+                'website': website_name,
+                'browser': window_data.process_name,
+                'window_title': window_data.window_title,
+                'dialog_time': self.last_dialog_info['opened_at'].isoformat(),
+                'return_time': datetime.now().isoformat()
+            }
+            
+            if suspected_file:
+                upload_event['suspected_file'] = suspected_file
+            
+            # 记录推理日志
+            self._log_upload_inference(upload_event)
+            
+            # 清除对话框状态
+            self.last_dialog_info = None
+            self.dialog_trigger_window = None
+    
+    def _is_browser_window(self, window_data: WindowData) -> bool:
+        """判断是否是浏览器窗口"""
+        browser_processes = ['msedge.exe', 'chrome.exe', 'firefox.exe', 'brave.exe', 'opera.exe']
+        return window_data.process_name.lower() in browser_processes
+    
+    def _is_mail_or_chat_website(self, window_data: WindowData) -> bool:
+        """判断是否是邮件或聊天网站"""
+        if not self._is_browser_window(window_data):
+            return False
+        
+        # 检查窗口标题中的关键词
+        mail_keywords = ['邮箱', 'mail', 'gmail', 'outlook', 'qq邮箱', '163邮箱', '126邮箱']
+        chat_keywords = ['微信', 'wechat', 'qq', '钉钉', 'dingtalk', 'slack', 'teams', '飞书', 'lark']
+        
+        title_lower = window_data.window_title.lower()
+        
+        for keyword in mail_keywords + chat_keywords:
+            if keyword in title_lower:
+                return True
+        
+        return False
+    
+    def _extract_website_name(self, window_title: str) -> str:
+        """从窗口标题中提取网站名称"""
+        # QQ邮箱示例: "QQ邮箱 和另外 1 个页面 - 个人 - Microsoft​ Edge"
+        # 提取第一个 - 之前的部分
+        if ' - ' in window_title:
+            parts = window_title.split(' - ')
+            # 去掉 "和另外X个页面"
+            name = parts[0].split(' 和另外')[0].strip()
+            return name
+        
+        return window_title[:30]  # 返回前30个字符
+    
+    def _find_recent_accessed_file(self) -> Optional[str]:
+        """查找最近访问的文件（从监控到的文件事件中查找）"""
+        if not self.file_monitor:
+            return None
+        
+        try:
+            # 从 file_monitor 获取最近的文件事件
+            # 查找最近3秒内打开的 .zip, .docx, .pdf 等文件
+            recent_threshold = 3.0  # 秒
+            current_time = datetime.now()
+            
+            # 这里需要file_monitor提供一个方法来获取最近的文件
+            # 暂时先返回 None，后续可以增强
+            # TODO: 实现文件监控器的 get_recent_files 方法
+            
+            return None
+        except Exception as e:
+            print(f"[WARN] 查找最近文件失败: {e}")
+            return None
+    
+    def _log_upload_inference(self, upload_event: dict):
+        """记录上传推理日志"""
+        # 打印到控制台
+        print(f"\n🚀 推断文件上传操作:")
+        print(f"   网站: {upload_event.get('website', 'Unknown')}")
+        print(f"   置信度: {upload_event['confidence']}")
+        if upload_event.get('suspected_file'):
+            print(f"   疑似文件: {upload_event['suspected_file']}")
+        print(f"   证据: {upload_event['evidence']}")
+        
+        # 写入日志文件
+        if self.logger and self.logger.is_open():
+            # 创建特殊的日志条目
+            log_entry = {
+                'timestamp': datetime.now().isoformat(),
+                'event_type': 'inferred_upload',
+                'confidence': upload_event['confidence'],
+                'website': upload_event.get('website', ''),
+                'browser': upload_event.get('browser', ''),
+                'window_title': upload_event.get('window_title', ''),
+                'suspected_file': upload_event.get('suspected_file', ''),
+                'evidence': upload_event.get('evidence', ''),
+                'dialog_opened_at': upload_event.get('dialog_time', ''),
+                'returned_at': upload_event.get('return_time', '')
+            }
+            
+            # 直接写入日志（不通过logger的标准流程）
+            try:
+                import json
+                json_line = json.dumps(log_entry, ensure_ascii=False)
+                if hasattr(self.logger, 'log_file') and self.logger.log_file:
+                    self.logger.log_file.write(json_line + "\n")
+                    self.logger.log_file.flush()
+            except Exception as e:
+                print(f"[ERROR] 写入上传推理日志失败: {e}")
+

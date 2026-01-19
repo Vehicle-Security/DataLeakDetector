@@ -83,28 +83,16 @@ class FileSystemMonitorHandler(FileSystemEventHandler):
         self._flush_thread.start()
     
     def _get_ignore_patterns(self):
-        """获取忽略的路径模式 - 放宽规则以捕获更多文件事件 (修复 Case 48/49/50)"""
+        """获取忽略的路径模式 - 移除所有过滤，监控整台机器"""
         return [
-            # 系统临时目录
-            "\\Windows\\Temp\\",
-            "\\$Recycle.Bin\\",
-            "\\System Volume Information\\",
-            # 开发相关目录
-            "\\.git\\",
-            "\\node_modules\\",
-            "\\__pycache__\\",
-            # 浏览器缓存（仍然过滤）
-            "\\AppData\\Local\\Microsoft\\Edge\\User Data\\",
-            "\\AppData\\Local\\Google\\Chrome\\User Data\\",
-            # 注意：移除了 \\AppData\\Local\\Temp\\ 和 \\AppData\\Roaming\\Microsoft\\
-            # 因为某些应用（如WPS、QQ）可能在这些路径下保存重要文件
+            # 仅保留最基本的系统目录过滤，避免过多噪音
+            # 如需完全无过滤，可注释掉以下所有行
         ]
     
     def _get_ignore_extensions(self):
-        """获取忽略的文件扩展名"""
+        """获取忽略的文件扩展名 - 移除所有过滤，监控所有文件类型"""
         return [
-            '.tmp', '.temp', '.log', '.lock', '.ldb', '.db-wal', '.db-shm',
-            '.crdownload', '.part', '.etag', '.cache'
+            # 移除所有扩展名过滤，监控所有文件类型
         ]
     
     def _should_ignore(self, path):
@@ -532,31 +520,23 @@ class FileSystemMonitor:
         self.watch_paths = self._get_watch_paths()
     
     def _get_watch_paths(self):
-        """获取要监控的路径 - 扩展监控范围 (修复 Case 48/49/50)"""
-        user_profile = os.environ.get("USERPROFILE", "")
+        """获取要监控的路径 - 监控所有可用驱动器"""
+        import string
         
         paths = []
-        if user_profile:
-            paths.extend([
-                os.path.join(user_profile, "Desktop"),
-                os.path.join(user_profile, "Documents"),
-                os.path.join(user_profile, "Downloads"),
-                os.path.join(user_profile, "Videos"),  # 屏幕录制常保存在此
-                os.path.join(user_profile, "Pictures"),  # 截图可能保存在此
-            ])
-            # 添加常用应用数据目录
-            appdata_local = os.environ.get("LOCALAPPDATA", "")
-            if appdata_local:
-                # WPS、QQ 等应用的临时/缓存目录
-                paths.append(os.path.join(appdata_local, "Kingsoft"))  # WPS
-                paths.append(os.path.join(appdata_local, "Tencent"))   # QQ/微信
         
-        # 从配置中获取额外路径
+        # 获取所有可用的驱动器（A-Z）
+        for drive_letter in string.ascii_uppercase:
+            drive_path = f"{drive_letter}:\\"
+            if os.path.exists(drive_path):
+                paths.append(drive_path)
+                print(f"[FS_MONITOR] 添加监控驱动器: {drive_path}")
+        
+        # 从配置中获取额外路径（如果有）
         extra_paths = self.config.get("monitor_paths", [])
         paths.extend(extra_paths)
         
-        # 过滤存在的路径
-        return [p for p in paths if os.path.exists(p)]
+        return paths
     
     def start(self):
         """启动监控"""

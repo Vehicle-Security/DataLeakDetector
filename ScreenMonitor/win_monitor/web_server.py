@@ -330,16 +330,24 @@ def api_session_events(session_id):
                 try:
                     with open(s["events_path"], "r", encoding="utf-8") as f:
                         events = json.load(f)
-                except:
-                    pass
+                except Exception as e:
+                    print(f"[ERROR] 读取 key_events 失败: {e}")
             
-            # 如果没有 key_events，读取原始日志
+            # 如果没有 key_events，读取原始日志（JSON Lines 格式）
             elif s.get("log_path") and os.path.exists(s["log_path"]):
                 try:
                     with open(s["log_path"], "r", encoding="utf-8") as f:
-                        events = json.load(f)
-                except:
-                    pass
+                        # 修复：日志是 JSON Lines 格式，每行一个JSON对象
+                        for line in f:
+                            line = line.strip()
+                            if line:
+                                try:
+                                    event = json.loads(line)
+                                    events.append(event)
+                                except json.JSONDecodeError as e:
+                                    print(f"[WARN] 跳过无效日志行: {e}")
+                except Exception as e:
+                    print(f"[ERROR] 读取原始日志失败: {e}")
             
             return jsonify({
                 "success": True,

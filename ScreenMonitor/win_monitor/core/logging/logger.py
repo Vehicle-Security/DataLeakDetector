@@ -201,6 +201,71 @@ class Logger:
         }
         emoji = event_emoji.get(event.get("event_type", ""), "📄")
         print(f"{emoji} [{event.get('event_type', '')}] {event.get('file_name', '')} <- {app_name}")
+
+    def log_raw_event(self, event: dict):
+        """
+        记录原始事件（来自 FileSystemMonitor 或 ClipboardMonitor）
+        直接写入，或进行最小化格式适配以符合 Mac Protocol
+        """
+        if not self.log_file:
+            return
+
+        # 提取应用名称
+        proc_info = event.get("process_info", {})
+        process_name = proc_info.get("process_name", "")
+        app_name = event.get("app_name") or self._normalize_app_name(process_name)
+
+        # 构建标准格式
+        entry = {
+            "timestamp": event.get("timestamp", datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]),
+            "event_type": event.get("event_type", "unknown"),
+            "file_path": event.get("file_path", ""),
+            "file_name": event.get("file_name", ""),
+            "file_size": event.get("file_size", 0),
+            "file_extension": event.get("file_extension", ""),
+            "process_info": proc_info,
+            "window_info": event.get("window_info", {
+                "window_handle": "", "window_title": "", "window_class": ""
+            }),
+            "user_info": event.get("user_info", {
+                "username": self._username,
+                "hostname": self._hostname
+            }),
+            "disk_info": event.get("disk_info", {
+                "drive_letter": "", "disk_type": ""
+            }),
+            "app_name": app_name,
+        }
+
+        # 敏感信息检测 (如果 Monitor 没做)
+        if "upload_detection" in event:
+             entry["upload_detection"] = event["upload_detection"]
+        elif event.get("event_type") in ["opened", "created", "modified"]:
+             det = self._check_sensitive_file(entry["file_name"], entry["file_path"], app_name)
+             if det:
+                 entry["upload_detection"] = det
+
+        # 剪贴板内容
+        if "content_preview" in event:
+            entry["content_preview"] = event["content_preview"]
+        if "content_hash" in event:
+            entry["content_hash"] = event["content_hash"]
+            
+        # 图片大小
+        if "image_size" in event:
+            entry["image_size"] = event["image_size"]
+
+        # 确保 extra 存在
+        if "extra" in event:
+            entry["extra"] = event["extra"]
+        else:
+            entry["extra"] = {
+                "raw_operation": event.get("event_type", ""),
+                "category": "",
+                "source": event.get("detection_method", "unknown_monitor")
+            }
+
+        self._write_entry(entry)
     
     def _normalize_app_name(self, process_name: str) -> str:
         """规范化应用名称"""
