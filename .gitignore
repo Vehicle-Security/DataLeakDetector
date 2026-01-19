@@ -23,7 +23,7 @@
 # 数据文件
 # 忽略数据文件
 **/data/memory.json
-**/logs/
+#**/logs/
 **/test/
 **/tests/
 **/checkMemory.py
