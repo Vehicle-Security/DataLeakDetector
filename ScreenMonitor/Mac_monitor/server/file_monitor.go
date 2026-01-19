@@ -185,9 +185,18 @@ func (fm *FileMonitor) Start(outputPath string) error {
 
 	// 3. 启动 fsevents_client 子进程
 	clientPath := filepath.Join(filepath.Dir(os.Args[0]), "..", "fsevents_client", "fsevents_client")
+	log.Printf("🔍 尝试 fsevents_client 路径1: %s", clientPath)
 	if _, err := os.Stat(clientPath); os.IsNotExist(err) {
 		// 尝试当前目录
 		clientPath = "./fsevents_client/fsevents_client"
+		log.Printf("🔍 路径1不存在，尝试路径2: %s", clientPath)
+	}
+
+	// 检查最终路径是否存在
+	if _, err := os.Stat(clientPath); os.IsNotExist(err) {
+		log.Printf("❌ fsevents_client 二进制文件不存在: %s", clientPath)
+	} else {
+		log.Printf("✅ 找到 fsevents_client: %s", clientPath)
 	}
 
 	fm.fseventsClient = exec.Command(clientPath, fm.socketPath)
@@ -215,6 +224,7 @@ func (fm *FileMonitor) Start(outputPath string) error {
 			log.Printf("⚠️ 启动 fs_usage 失败: %v (需要 sudo 权限)", err)
 			fm.cmd = nil
 		} else {
+			log.Printf("📊 fs_usage 已启动 (pid: %d) - 监控文件读取操作", fm.cmd.Process.Pid)
 			// 启动 fs_usage 读取协程
 			go fm.fsUsageReaderLoop(stdout)
 		}
@@ -400,30 +410,14 @@ func (fm *FileMonitor) processFsUsageLine(line string) {
 		return
 	}
 
-	key := eventType + ":" + fullPathStr
-
 	fm.mutex.Lock()
 	defer fm.mutex.Unlock()
 
-	// 检查是否有对应的待处理 FSEvent
-	if pending, exists := fm.pendingEvents[key]; exists && !pending.Emitted {
-		// 找到匹配，补充进程信息并输出
-		processInfo := &ProcessInfo{
-			PID:         processID,
-			ProcessName: processName,
-		}
-		fm.emitEventIPC(pending.FSEvent, processInfo)
-		pending.Emitted = true
-		delete(fm.pendingEvents, key)
-	} else {
-		// 缓存进程信息，等待 FSEvent
-		fm.fsUsageProcessInfo[key] = &ProcessInfoCache{
-			ProcessName: processName,
-			ProcessID:   processID,
-			EventType:   eventType,
-			CaptureTime: time.Now(),
-		}
-	}
+	// ===== fs_usage 独立输出所有事件 =====
+	// fs_usage 提供精确的进程信息，独立输出
+	// FSEvents 提供精确的时间戳，也独立输出
+	// 两者相互补充，不再尝试合并
+	fm.emitFsUsageEvent(fullPathStr, eventType, processName, processID)
 }
 
 // isSystemProcess 检查是否是系统进程
@@ -1099,6 +1093,96 @@ func (fm *FileMonitor) emitEventIPC(fsEvent FSEventIPC, processInfo *ProcessInfo
 	// 打印日志
 	log.Printf("📄 [%s] %s %s -> %s (精准时间戳)",
 		event.EventType, event.AppName, event.FileName, event.FilePath)
+}
+
+// emitFsUsageEvent 输出来自 fs_usage 的独立事件（用于捕获 open/read 操作）
+// fs_usage 可以捕获 FSEvents 无法捕获的文件读取操作
+func (fm *FileMonitor) emitFsUsageEvent(filePath, eventType, processName, processID string) {
+	baseName := filepath.Base(filePath)
+	ext := strings.ToLower(filepath.Ext(filePath))
+
+	var fileSize int64 = 0
+	if info, err := os.Stat(filePath); err == nil {
+		fileSize = info.Size()
+	}
+
+	// 获取当前活动窗口信息
+	var windowTitle string
+	if fm.windowMonitor != nil {
+		_, windowTitle = fm.windowMonitor.getActiveWindow()
+	}
+
+	// 规范化应用名称
+	appName, category, _ := fm.normalizeProcessName(processName, windowTitle)
+
+	// 检查敏感文件
+	var isSensitive bool
+	fileNameLower := strings.ToLower(baseName)
+	for _, keyword := range SensitiveFileKeywords {
+		if strings.Contains(fileNameLower, strings.ToLower(keyword)) {
+			isSensitive = true
+			break
+		}
+	}
+
+	var uploadInfo *UploadDetection
+	if isSensitive {
+		uploadInfo = &UploadDetection{
+			IsUpload:     true,
+			AppName:      appName,
+			UploadType:   "File Access",
+			OriginalFile: filePath,
+		}
+	}
+
+	event := &LogEntry{
+		Timestamp:     time.Now().Format("2006-01-02T15:04:05.000"),
+		EventType:     eventType,
+		FilePath:      filePath,
+		FileName:      baseName,
+		FileSize:      fileSize,
+		FileExtension: ext,
+		ProcessInfo: ProcessInfo{
+			PID:         processID,
+			ProcessName: processName,
+		},
+		WindowInfo: WindowInfo{
+			WindowTitle: windowTitle,
+		},
+		UserInfo: UserInfo{
+			Username: fm.currentUser,
+			Hostname: fm.hostname,
+		},
+		DiskInfo: DiskInfo{
+			DriveLetter: "/",
+			DiskType:    "SSD/HDD",
+		},
+		AppName:    appName,
+		UploadInfo: uploadInfo,
+		Extra: map[string]interface{}{
+			"raw_operation": eventType,
+			"category":      category,
+			"source":        "fs_usage", // 标记来自 fs_usage
+		},
+	}
+
+	// 添加到事件列表
+	fm.events = append(fm.events, *event)
+
+	// 写入文件
+	if fm.logFile != nil {
+		data, _ := json.Marshal(event)
+		fm.logFile.Write(data)
+		fm.logFile.WriteString("\n")
+	}
+
+	// 检查关键事件
+	if fm.isKeyEvent(event) {
+		fm.keyEvents = append(fm.keyEvents, fm.toKeyEvent(event))
+	}
+
+	// 打印日志
+	log.Printf("📂 [%s] %s.%s -> %s (fs_usage)", eventType, processName, processID, baseName)
 }
 
 // flushExpiredPendingEventsIPC 刷新超时的待处理 IPC 事件

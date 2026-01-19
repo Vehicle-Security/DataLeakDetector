@@ -7,3 +7,7 @@ pywin32>=306
 psutil>=5.9.0
 uiautomation>=2.0.0
 PyYAML>=6.0
+
+# ETW 文件监控 (可选，用于精确捕获文件打开事件)
+pywintrace>=0.3.0
+WMI>=1.5.1

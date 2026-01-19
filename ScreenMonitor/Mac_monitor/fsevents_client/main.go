@@ -115,7 +115,7 @@ func main() {
 
 	fmt.Println("🎯 FSEvents 独立监控进程")
 	fmt.Printf("📡 Socket 路径: %s\n", socketPath)
-	fmt.Printf("📁 监控目录: %s/{Desktop,Documents,Downloads}\n", homeDir)
+	fmt.Printf("📁 监控目录: %s (全部用户文件)\n", homeDir)
 
 	// 连接到服务器
 	var err error
@@ -132,11 +132,9 @@ func main() {
 
 	fmt.Println("✅ 已连接到主服务器")
 
-	// 监控的目录
+	// 监控整个用户 home 目录（捕获所有文件操作）
 	watchPaths := []string{
-		filepath.Join(homeDir, "Desktop"),
-		filepath.Join(homeDir, "Documents"),
-		filepath.Join(homeDir, "Downloads"),
+		homeDir, // 监控整个用户目录
 	}
 
 	// 创建 CFArray
@@ -283,15 +281,16 @@ func sendEvent(event FSEvent) {
 }
 
 func shouldIgnore(path string) bool {
-	// 系统路径前缀
+	// 只过滤明确的系统路径（保留用户文件和应用访问）
 	ignorePrefixes := []string{
 		"/private/var",
 		"/private/tmp",
 		"/System/",
-		"/Applications/",
 		"/Volumes/",
 		"/dev/",
 		"/usr/",
+		"/sbin/",
+		"/bin/",
 	}
 	for _, prefix := range ignorePrefixes {
 		if strings.HasPrefix(path, prefix) {
@@ -299,16 +298,31 @@ func shouldIgnore(path string) bool {
 		}
 	}
 
-	// Library 目录
-	if strings.Contains(path, "/Library/") {
+	// 只过滤系统级 Library（保留用户 ~/Library 下的应用数据）
+	if strings.HasPrefix(path, "/Library/") {
 		return true
 	}
 
-	// 隐藏文件
+	// 过滤特定的噪音 Library 子目录（但保留用户应用数据）
+	noisyLibraryPaths := []string{
+		"/Caches/",
+		"/Logs/",
+		"/Saved Application State/",
+		"/WebKit/",
+		"/Cookies/",
+	}
+	for _, noisy := range noisyLibraryPaths {
+		if strings.Contains(path, "/Library"+noisy) {
+			return true
+		}
+	}
+
+	// 隐藏文件（以.开头）
 	baseName := filepath.Base(path)
 	if strings.HasPrefix(baseName, ".") {
 		return true
 	}
+	// 隐藏目录中的文件
 	if strings.Contains(path, "/.") {
 		return true
 	}
@@ -320,7 +334,7 @@ func shouldIgnore(path string) bool {
 
 	// 临时扩展名
 	ext := strings.ToLower(filepath.Ext(path))
-	tempExts := []string{".tmp", ".lock", ".dat", ".plist", ".db", ".log", ".crdownload", ".download", ".part"}
+	tempExts := []string{".tmp", ".lock", ".plist", ".db", ".log", ".crdownload", ".download", ".part"}
 	for _, te := range tempExts {
 		if ext == te {
 			return true

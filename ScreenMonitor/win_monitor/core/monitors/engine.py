@@ -247,15 +247,29 @@ class Engine:
                 print(f"[ERROR] 启动屏幕录制失败: {e}")
     
     def _start_file_monitor(self):
-        """启动文件系统监控"""
+        """启动文件系统监控 (watchdog + ETW 双轨)"""
+        # 1. 启动 watchdog 监控 (文件变更: 创建/修改/删除/重命名)
         try:
             self.file_monitor = FileSystemMonitor(
                 event_callback=self._on_file_event
             )
             self.file_monitor.start()
-            print("📂 文件系统监控已启动")
+            print("📂 文件系统监控已启动 (watchdog)")
         except Exception as e:
-            print(f"[ERROR] 启动文件监控失败: {e}")
+            print(f"[ERROR] 启动 watchdog 监控失败: {e}")
+        
+        # 2. 启动 ETW 监控 (文件打开, 类似 Mac 的 fs_usage)
+        try:
+            from .etw_file_monitor import ETWFileMonitor
+            self.etw_monitor = ETWFileMonitor(event_callback=self._on_file_event)
+            self.etw_monitor.start()
+            print("📂 ETW 文件监控已启动 (file open events)")
+        except ImportError:
+            print("[WARN] ETW 监控不可用 (pywintrace 未安装)")
+            self.etw_monitor = None
+        except Exception as e:
+            print(f"[WARN] ETW 监控启动失败: {e}")
+            self.etw_monitor = None
     
     def _on_file_event(self, event: dict):
         """处理文件系统事件"""
@@ -289,14 +303,23 @@ class Engine:
         """停止录制"""
         self.state = State.IDLE
         
-        # 停止文件系统监控
+        # 停止文件系统监控 (watchdog)
         if self.file_monitor:
             try:
                 self.file_monitor.stop()
                 self.file_monitor = None
-                print("📂 文件系统监控已停止")
+                print("📂 watchdog 监控已停止")
             except Exception as e:
-                print(f"[ERROR] 停止文件监控失败: {e}")
+                print(f"[ERROR] 停止 watchdog 监控失败: {e}")
+        
+        # 停止 ETW 监控
+        if hasattr(self, 'etw_monitor') and self.etw_monitor:
+            try:
+                self.etw_monitor.stop()
+                self.etw_monitor = None
+                print("📂 ETW 监控已停止")
+            except Exception as e:
+                print(f"[ERROR] 停止 ETW 监控失败: {e}")
         
         # 关闭日志
         event_count = self.logger.get_event_count()
@@ -332,10 +355,16 @@ class Engine:
             return
         
         try:
+            # 使用录制开始时间而非当前时间（修复 Case 46/47）
+            if self.recording_start_time:
+                start_time_str = datetime.fromtimestamp(self.recording_start_time).strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                start_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
             content = f"""# Recording Session Index
 
 **Session ID**: {self.current_session_id}  
-**Recording Time**: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}  
+**Recording Time**: {start_time_str}  
 **Duration**: {duration:.2f} seconds  
 **Event Count**: {event_count}
 

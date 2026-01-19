@@ -83,18 +83,21 @@ class FileSystemMonitorHandler(FileSystemEventHandler):
         self._flush_thread.start()
     
     def _get_ignore_patterns(self):
-        """获取忽略的路径模式"""
+        """获取忽略的路径模式 - 放宽规则以捕获更多文件事件 (修复 Case 48/49/50)"""
         return [
-            "\\AppData\\Local\\Temp\\",
+            # 系统临时目录
             "\\Windows\\Temp\\",
             "\\$Recycle.Bin\\",
             "\\System Volume Information\\",
+            # 开发相关目录
             "\\.git\\",
             "\\node_modules\\",
             "\\__pycache__\\",
-            "\\AppData\\Local\\Microsoft\\Edge\\",
-            "\\AppData\\Local\\Google\\Chrome\\",
-            "\\AppData\\Roaming\\Microsoft\\",
+            # 浏览器缓存（仍然过滤）
+            "\\AppData\\Local\\Microsoft\\Edge\\User Data\\",
+            "\\AppData\\Local\\Google\\Chrome\\User Data\\",
+            # 注意：移除了 \\AppData\\Local\\Temp\\ 和 \\AppData\\Roaming\\Microsoft\\
+            # 因为某些应用（如WPS、QQ）可能在这些路径下保存重要文件
         ]
     
     def _get_ignore_extensions(self):
@@ -196,6 +199,12 @@ class FileSystemMonitorHandler(FileSystemEventHandler):
         # 获取进程和窗口信息
         process_info, window_info = self._get_process_info()
         
+        # 规范化应用名称
+        app_name = self._normalize_app_name(process_info.get("process_name", ""))
+        
+        # 检查敏感文件
+        upload_detection = self._check_sensitive_file(basename, src_path, app_name)
+        
         event = {
             "timestamp": datetime.now().isoformat(timespec='milliseconds'),
             "event_type": event_type,
@@ -213,7 +222,18 @@ class FileSystemMonitorHandler(FileSystemEventHandler):
                 "drive_letter": drive,
                 "disk_type": "Fixed"
             },
-            "detection_method": "watchdog_fs_monitor"
+            "app_name": app_name,
+        }
+        
+        # 添加 upload_detection（如果是敏感文件）
+        if upload_detection:
+            event["upload_detection"] = upload_detection
+        
+        # 添加 extra 对象（与 Mac 格式一致）
+        event["extra"] = {
+            "raw_operation": event_type,
+            "category": "",
+            "source": "watchdog_fs_monitor"
         }
         
         # 重命名事件：添加目标路径和文件名
@@ -306,6 +326,54 @@ class FileSystemMonitorHandler(FileSystemEventHandler):
         """
         if not event.is_directory:
             self._emit_event(EventType.OPENED, event.src_path)
+    
+    def _normalize_app_name(self, process_name: str) -> str:
+        """规范化应用名称"""
+        if not process_name:
+            return ""
+        
+        # 移除 .exe 后缀
+        if process_name.lower().endswith('.exe'):
+            process_name = process_name[:-4]
+        
+        # 常见应用名称映射
+        app_name_map = {
+            "chrome": "Chrome",
+            "msedge": "Edge",
+            "firefox": "Firefox",
+            "explorer": "Explorer",
+            "notepad": "记事本",
+            "code": "VS Code",
+            "wechat": "微信",
+            "qq": "QQ",
+        }
+        
+        return app_name_map.get(process_name.lower(), process_name)
+    
+    def _check_sensitive_file(self, file_name: str, file_path: str, app_name: str):
+        """检查是否为敏感文件，返回 upload_detection 对象"""
+        if not file_name:
+            return None
+        
+        # 敏感关键字（与 Mac 保持一致）
+        sensitive_keywords = [
+            "合同", "机密", "密码", "password", "secret", "private",
+            "财务", "工资", "薪资", "银行", "账号", "证件",
+            "身份证", "护照", "驾照", "简历", "resume"
+        ]
+        
+        file_name_lower = file_name.lower()
+        for keyword in sensitive_keywords:
+            if keyword.lower() in file_name_lower:
+                return {
+                    "is_upload": True,
+                    "app_name": app_name,
+                    "upload_type": "File Access",
+                    "original_file": file_path,
+                    "temp_directory": ""
+                }
+        
+        return None
 
 
 class RecentFilesMonitor:
@@ -432,7 +500,12 @@ class RecentFilesMonitor:
                 "drive_letter": drive,
                 "disk_type": "Fixed"
             },
-            "detection_method": "recent_folder_monitor"
+            "app_name": "",
+            "extra": {
+                "raw_operation": "opened",
+                "category": "",
+                "source": "recent_folder_monitor"
+            }
         }
         
         try:
@@ -459,7 +532,7 @@ class FileSystemMonitor:
         self.watch_paths = self._get_watch_paths()
     
     def _get_watch_paths(self):
-        """获取要监控的路径"""
+        """获取要监控的路径 - 扩展监控范围 (修复 Case 48/49/50)"""
         user_profile = os.environ.get("USERPROFILE", "")
         
         paths = []
@@ -468,7 +541,15 @@ class FileSystemMonitor:
                 os.path.join(user_profile, "Desktop"),
                 os.path.join(user_profile, "Documents"),
                 os.path.join(user_profile, "Downloads"),
+                os.path.join(user_profile, "Videos"),  # 屏幕录制常保存在此
+                os.path.join(user_profile, "Pictures"),  # 截图可能保存在此
             ])
+            # 添加常用应用数据目录
+            appdata_local = os.environ.get("LOCALAPPDATA", "")
+            if appdata_local:
+                # WPS、QQ 等应用的临时/缓存目录
+                paths.append(os.path.join(appdata_local, "Kingsoft"))  # WPS
+                paths.append(os.path.join(appdata_local, "Tencent"))   # QQ/微信
         
         # 从配置中获取额外路径
         extra_paths = self.config.get("monitor_paths", [])

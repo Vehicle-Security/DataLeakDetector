@@ -58,7 +58,7 @@ class Logger:
         try:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             self.log_file = open(output_path, 'w', encoding='utf-8')
-            self.log_file.write("[\n")
+            # 使用 JSON Lines 格式（与 Mac 一致）
             self.start_time = start_time
             self.first_entry = True
             self._event_count = 0
@@ -70,7 +70,7 @@ class Logger:
     def close(self):
         """关闭日志文件"""
         if self.log_file:
-            self.log_file.write("\n]")
+            # JSON Lines 格式不需要结束括号
             self.log_file.close()
             self.log_file = None
             print(f"📊 日志已保存，共 {self._event_count} 条记录")
@@ -90,10 +90,14 @@ class Logger:
         if self.start_time:
             relative_ts = round(current_time - self.start_time, 3)
         
-        # 使用与文件事件相同的嵌套结构
+        # 使用与 Mac 一致的嵌套结构
         entry = {
             "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3],
             "event_type": "website_visit" if match_result.match_type == "website" else "app_switch",
+            "file_path": "",
+            "file_name": "",
+            "file_size": 0,
+            "file_extension": "",
             "process_info": {
                 "pid": str(window_data.process_id),
                 "process_name": window_data.process_name,
@@ -109,14 +113,19 @@ class Logger:
                 "username": self._username,
                 "hostname": self._hostname
             },
+            "disk_info": {
+                "drive_letter": "",
+                "disk_type": ""
+            },
             "app_name": match_result.app_name,
-            "category": match_result.category,
-            "risk_level": "高" if match_result.is_match else "",
-            "match_type": match_result.match_type
+            "extra": {
+                "raw_operation": match_result.match_type,
+                "category": match_result.category,
+                "source": "window_monitor",
+                "risk_level": "高" if match_result.is_match else "",
+                "relative_timestamp": relative_ts
+            }
         }
-        
-        if relative_ts is not None:
-            entry["relative_timestamp"] = relative_ts
         
         self._write_entry(entry)
         
@@ -141,22 +150,43 @@ class Logger:
         process_name = proc_info.get("process_name", "")
         app_name = self._normalize_app_name(process_name)
         
-        # 构建统一格式的事件
+        # 检查是否为敏感文件
+        file_name = event.get("file_name", "")
+        upload_detection = self._check_sensitive_file(file_name, event.get("file_path", ""), app_name)
+        
+        # 构建与 Mac 完全一致的格式
         entry = {
             "timestamp": event.get("timestamp", datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]),
             "event_type": event.get("event_type", ""),
             "file_path": event.get("file_path", ""),
-            "file_name": event.get("file_name", ""),
+            "file_name": file_name,
             "file_size": event.get("file_size", 0),
             "file_extension": event.get("file_extension", ""),
-            "process_info": event.get("process_info", {}),
-            "window_info": event.get("window_info", {}),
+            "process_info": event.get("process_info", {
+                "pid": "", "process_name": "", "process_path": "", "cmdline": ""
+            }),
+            "window_info": event.get("window_info", {
+                "window_handle": "", "window_title": "", "window_class": ""
+            }),
             "user_info": event.get("user_info", {
                 "username": self._username,
                 "hostname": self._hostname
             }),
-            "disk_info": event.get("disk_info", {}),
-            "app_name": app_name
+            "disk_info": event.get("disk_info", {
+                "drive_letter": "", "disk_type": ""
+            }),
+            "app_name": app_name,
+        }
+        
+        # 添加 upload_detection（如果是敏感文件）
+        if upload_detection:
+            entry["upload_detection"] = upload_detection
+        
+        # 添加 extra 对象（与 Mac 一致）
+        entry["extra"] = {
+            "raw_operation": event.get("event_type", ""),
+            "category": "",
+            "source": event.get("detection_method", "watchdog_fs_monitor")
         }
         
         self._write_entry(entry)
@@ -195,17 +225,41 @@ class Logger:
         
         return app_name_map.get(process_name.lower(), process_name)
     
+    def _check_sensitive_file(self, file_name: str, file_path: str, app_name: str) -> Optional[Dict[str, Any]]:
+        """检查是否为敏感文件，返回 upload_detection 对象"""
+        if not file_name:
+            return None
+        
+        # 敏感关键字（与 Mac 保持一致）
+        sensitive_keywords = [
+            "合同", "机密", "密码", "password", "secret", "private",
+            "财务", "工资", "薪资", "银行", "账号", "证件",
+            "身份证", "护照", "驾照", "简历", "resume"
+        ]
+        
+        file_name_lower = file_name.lower()
+        for keyword in sensitive_keywords:
+            if keyword.lower() in file_name_lower:
+                return {
+                    "is_upload": True,
+                    "app_name": app_name,
+                    "upload_type": "File Access",
+                    "original_file": file_path,
+                    "temp_directory": ""
+                }
+        
+        return None
+    
     def _write_entry(self, entry: dict):
-        """写入日志条目到文件"""
+        """写入日志条目到文件（JSON Lines 格式）"""
         if not self.log_file:
             return
         
         try:
-            if not self.first_entry:
-                self.log_file.write(",\n")
+            # JSON Lines 格式：每行一个 JSON 对象
             self.log_file.write(json.dumps(entry, ensure_ascii=False))
+            self.log_file.write("\n")
             self.log_file.flush()
-            self.first_entry = False
             self._event_count += 1
         except Exception as e:
             print(f"[ERROR] 写入日志失败: {e}")

@@ -173,7 +173,9 @@ class PromptTemplates:
                 "process_name": "Excel",
                 "pid": "1234"
             },
-            "description": "用户打开了文件"
+            "description": "用户打开了文件",
+            "upload_detection": {...},  # 可选
+            "destination_path": "..."    # 可选，用于重命名
         }
         """
         if not logs:
@@ -184,7 +186,9 @@ class PromptTemplates:
             timestamp = log.get('timestamp', '')
             event_type = log.get('event_type', '未知')
             file_path = log.get('file_path', '')
+            file_name = log.get('file_name', '')
             process_name = log.get('process_info', {}).get('process_name', '未知进程')
+            window_title = log.get('window_info', {}).get('window_title', '')
             description = log.get('description', '')
             
             # 提取时间部分（去掉日期）
@@ -197,8 +201,26 @@ class PromptTemplates:
             log_entry = f"""[{i}] 时间: {time_str}
    事件: {event_type}
    进程: {process_name}
-   文件: {file_path}
-   描述: {description}"""
+   窗口: {window_title}
+   文件: {file_name or file_path}"""
+            
+            # 添加重命名目标
+            dest_path = log.get('destination_path', '')
+            if dest_path:
+                log_entry += f"\n   重命名到: {dest_path}"
+            
+            # 添加上传检测信息
+            upload_info = log.get('upload_detection', {})
+            if upload_info.get('is_upload'):
+                app_name = upload_info.get('app_name', '未知')
+                upload_type = upload_info.get('upload_type', '')
+                original_file = upload_info.get('original_file', '')
+                log_entry += f"\n   ⚠️ 上传检测: 应用={app_name}, 类型={upload_type}"
+                if original_file:
+                    log_entry += f", 原始文件={original_file}"
+            
+            if description:
+                log_entry += f"\n   描述: {description}"
             
             formatted_logs.append(log_entry)
         
