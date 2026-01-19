@@ -324,7 +324,7 @@ class FileSystemMonitorHandler(FileSystemEventHandler):
         if process_name.lower().endswith('.exe'):
             process_name = process_name[:-4]
         
-        # 常见应用名称映射
+        # 常见应用名称映射（与 logger.py 保持一致）
         app_name_map = {
             "chrome": "Chrome",
             "msedge": "Edge",
@@ -334,6 +334,14 @@ class FileSystemMonitorHandler(FileSystemEventHandler):
             "code": "VS Code",
             "wechat": "微信",
             "qq": "QQ",
+            "wps": "WPS",
+            "wpsoffice": "WPS",
+            "et": "WPS Excel",
+            "wpp": "WPS PPT",
+            "wpsclouddrive": "WPS云盘",
+            "dingtalk": "钉钉",
+            "feishu": "飞书",
+            "lark": "飞书",
         }
         
         return app_name_map.get(process_name.lower(), process_name)
@@ -343,11 +351,27 @@ class FileSystemMonitorHandler(FileSystemEventHandler):
         if not file_name:
             return None
         
-        # 敏感关键字（与 Mac 保持一致）
+        # 敏感关键字（扩展版，基于69个场景分析，与 logger.py 保持一致）
         sensitive_keywords = [
-            "合同", "机密", "密码", "password", "secret", "private",
-            "财务", "工资", "薪资", "银行", "账号", "证件",
-            "身份证", "护照", "驾照", "简历", "resume"
+            # 公司核心文件
+            "合同", "机密", "密码", "secret", "private", "confidential", "绝密",
+            "财务", "工资", "薪资", "银行", "账号", "证件", "内部",
+            "身份证", "护照", "驾照", "简历", "resume",
+            # 项目/业务文件
+            "规划", "战略", "预算", "报表", "员工守则", "客户",
+            "设计", "技术", "算法", "核心", "会议纪要", "项目",
+            # 敏感文件名模式
+            "accesskey", "credential", "api_key", "token",
+            # 场景设计提取的敏感词
+            "员工绩效", "薪资表", "薪资明细", "财务报表", "发票",
+            "公司合同", "合作合同", "劳务合同", "客户合同", 
+            "秘密会议", "内部资料", "公司机密",
+            "发展战略", "核心技术", "技术文档", "技术图纸",
+            "客户信息", "重点客户", "客户身份",
+            "产品设计", "市场分析", "市场调研", "竞品分析",
+            "需求分析", "prd设计", "需求设计", "详细规划",
+            "培养方案", "管理制度", "组织架构",
+            "身份信息", "部署账号", "并购项目", "定价策略",
         ]
         
         file_name_lower = file_name.lower()

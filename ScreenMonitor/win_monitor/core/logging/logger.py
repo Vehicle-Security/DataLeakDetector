@@ -4,6 +4,10 @@ logger.py - 结构化日志记录器
 职责：输出符合 Mac Protocol 的 JSON 日志
 确保 Windows 和 Mac 的日志格式完全一致
 
+日志文件结构:
+- logs.json: 所有事件的完整日志 (JSON Array)
+- keyevents.json: 关键事件摘要 (JSON Array) - 用于 LLM 分析
+
 对应架构角色：Logger（日志器）
 """
 
@@ -11,7 +15,7 @@ import json
 import os
 import socket
 from datetime import datetime
-from typing import Optional, IO, Dict, Any
+from typing import Optional, IO, Dict, Any, List
 
 try:
     import win32api
@@ -25,15 +29,28 @@ class Logger:
     
     输出格式严格遵循 Mac Protocol，确保后端无法区分日志来源
     所有事件统一使用嵌套结构: process_info, window_info, user_info, disk_info
+    
+    日志格式:
+    - 使用 JSON Array 格式（整个文件是一个数组）
+    - 同时维护 keyevents.json 用于 LLM 分析
     """
     
     def __init__(self):
         self.log_file: Optional[IO] = None
+        self.keyevents_file: Optional[IO] = None
         self.start_time: Optional[float] = None
-        self.first_entry = True
         self._hostname = socket.gethostname()
         self._username = self._get_username()
         self._event_count = 0
+        self._keyevent_count = 0
+        
+        # 内存中存储所有日志条目（用于 JSON Array 格式）
+        self._log_entries: List[dict] = []
+        self._keyevent_entries: List[dict] = []
+        
+        # 文件路径
+        self._log_path: Optional[str] = None
+        self._keyevents_path: Optional[str] = None
     
     def _get_username(self) -> str:
         """获取当前用户名"""
@@ -49,7 +66,7 @@ class Logger:
         打开日志文件
         
         Args:
-            output_path: 日志文件路径
+            output_path: 日志文件路径 (logs.json)
             start_time: 录制开始时间戳（用于计算相对时间）
             
         Returns:
@@ -57,23 +74,53 @@ class Logger:
         """
         try:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            self.log_file = open(output_path, 'w', encoding='utf-8')
-            # 使用 JSON Lines 格式（与 Mac 一致）
+            
+            self._log_path = output_path
+            # keyevents.json 放在同一目录下
+            log_dir = os.path.dirname(output_path)
+            self._keyevents_path = os.path.join(log_dir, "keyevents.json")
+            
             self.start_time = start_time
-            self.first_entry = True
             self._event_count = 0
+            self._keyevent_count = 0
+            self._log_entries = []
+            self._keyevent_entries = []
+            
+            print(f"📝 日志文件: {self._log_path}")
+            print(f"📝 关键事件文件: {self._keyevents_path}")
+            
             return True
         except Exception as e:
-            print(f"[ERROR] 无法打开日志文件: {e}")
+            print(f"[ERROR] 无法初始化日志: {e}")
             return False
     
     def close(self):
-        """关闭日志文件"""
-        if self.log_file:
-            # JSON Lines 格式不需要结束括号
-            self.log_file.close()
-            self.log_file = None
-            print(f"📊 日志已保存，共 {self._event_count} 条记录")
+        """关闭日志文件 - 将内存中的数据写入 JSON 文件"""
+        try:
+            # 写入 logs.json
+            if self._log_path and self._log_entries:
+                with open(self._log_path, 'w', encoding='utf-8') as f:
+                    json.dump(self._log_entries, f, ensure_ascii=False, indent=2)
+                print(f"📊 日志已保存: {self._log_path} ({self._event_count} 条)")
+            
+            # 写入 keyevents.json
+            if self._keyevents_path and self._keyevent_entries:
+                with open(self._keyevents_path, 'w', encoding='utf-8') as f:
+                    json.dump(self._keyevent_entries, f, ensure_ascii=False, indent=2)
+                print(f"🔑 关键事件已保存: {self._keyevents_path} ({self._keyevent_count} 条)")
+            
+            # 清空内存
+            self._log_entries = []
+            self._keyevent_entries = []
+            self._log_path = None
+            self._keyevents_path = None
+            
+        except Exception as e:
+            print(f"[ERROR] 保存日志失败: {e}")
+    
+    def is_open(self) -> bool:
+        """检查日志是否已打开"""
+        return self._log_path is not None
     
     def log(self, window_data, match_result, current_time: float):
         """
@@ -129,8 +176,9 @@ class Logger:
         
         self._write_entry(entry)
         
-        # 控制台输出
+        # 如果是高风险事件，同时写入 keyevents
         if match_result.is_match:
+            self._write_keyevent(entry, "黑名单应用访问")
             print(f"🚨 [高] {match_result.app_name} - {window_data.window_title[:50]}... ({match_result.category})")
     
     def log_file_event(self, event: dict):
@@ -139,12 +187,7 @@ class Logger:
         
         Args:
             event: 文件系统事件字典，来自 FileSystemMonitor
-                   包含: timestamp, event_type, file_path, file_name, file_size,
-                         file_extension, process_info, window_info, user_info, disk_info
         """
-        if not self.log_file:
-            return
-        
         # 提取进程名称用于 app_name
         proc_info = event.get("process_info", {})
         process_name = proc_info.get("process_name", "")
@@ -191,6 +234,14 @@ class Logger:
         
         self._write_entry(entry)
         
+        # 检查是否为关键事件 (不仅是敏感文件，还包括其他类型)
+        key_reason = self._is_key_event(entry, event)
+        if key_reason:
+            self._write_keyevent(entry, key_reason)
+        elif upload_detection:
+            # 备用：如果 _is_key_event 没检测到但有敏感文件
+            self._write_keyevent(entry, "敏感文件访问")
+        
         # 控制台输出（简化）
         event_emoji = {
             "created": "✨",
@@ -207,9 +258,6 @@ class Logger:
         记录原始事件（来自 FileSystemMonitor 或 ClipboardMonitor）
         直接写入，或进行最小化格式适配以符合 Mac Protocol
         """
-        if not self.log_file:
-            return
-
         # 提取应用名称
         proc_info = event.get("process_info", {})
         process_name = proc_info.get("process_name", "")
@@ -266,6 +314,12 @@ class Logger:
             }
 
         self._write_entry(entry)
+        
+        # 判断是否为关键事件 (基于场景分析扩展)
+        key_reason = self._is_key_event(entry, event)
+        
+        if key_reason:
+            self._write_keyevent(entry, key_reason)
     
     def _normalize_app_name(self, process_name: str) -> str:
         """规范化应用名称"""
@@ -286,6 +340,14 @@ class Logger:
             "code": "VS Code",
             "wechat": "微信",
             "qq": "QQ",
+            "wps": "WPS",
+            "wpsoffice": "WPS",
+            "et": "WPS Excel",
+            "wpp": "WPS PPT",
+            "wpsclouddrive": "WPS云盘",
+            "dingtalk": "钉钉",
+            "feishu": "飞书",
+            "lark": "飞书",
         }
         
         return app_name_map.get(process_name.lower(), process_name)
@@ -295,14 +357,46 @@ class Logger:
         if not file_name:
             return None
         
-        # 敏感关键字（与 Mac 保持一致）
+        # 敏感关键字（扩展版，基于69个场景分析）
         sensitive_keywords = [
-            "合同", "机密", "密码", "password", "secret", "private",
-            "财务", "工资", "薪资", "银行", "账号", "证件",
-            "身份证", "护照", "驾照", "简历", "resume"
+            # 公司核心文件
+            "合同", "机密", "密码", "secret", "private", "confidential", "绝密",
+            "财务", "工资", "薪资", "银行", "账号", "证件", "内部",
+            "身份证", "护照", "驾照", "简历", "resume",
+            # 项目/业务文件
+            "规划", "战略", "预算", "报表", "员工守则", "客户",
+            "设计", "技术", "算法", "核心", "会议纪要", "项目",
+            # 敏感文件名模式
+            "accesskey", "credential", "api_key", "token",
+            # 场景设计提取的敏感词
+            "员工绩效", "薪资表", "薪资明细", "财务报表", "发票",
+            "公司合同", "合作合同", "劳务合同", "客户合同", 
+            "秘密会议", "内部资料", "公司机密",
+            "发展战略", "核心技术", "技术文档", "技术图纸",
+            "客户信息", "重点客户", "客户身份",
+            "产品设计", "市场分析", "市场调研", "竞品分析",
+            "需求分析", "prd设计", "需求设计", "详细规划",
+            "培养方案", "管理制度", "组织架构",
+            "身份信息", "部署账号", "并购项目", "定价策略",
         ]
         
+        # 敏感扩展名
+        sensitive_extensions = [".pem", ".key", ".cert", ".p12", ".pfx"]
+        
         file_name_lower = file_name.lower()
+        _, ext = os.path.splitext(file_name_lower)
+        
+        # 检查敏感扩展名
+        if ext in sensitive_extensions:
+            return {
+                "is_upload": True,
+                "app_name": app_name,
+                "upload_type": "Sensitive File Type",
+                "original_file": file_path,
+                "temp_directory": ""
+            }
+        
+        # 检查敏感关键字
         for keyword in sensitive_keywords:
             if keyword.lower() in file_name_lower:
                 return {
@@ -315,20 +409,167 @@ class Logger:
         
         return None
     
+    def _is_key_event(self, entry: dict, original_event: dict) -> Optional[str]:
+        """
+        判断是否为关键事件，返回原因或 None
+        基于场景设计分析，扩展关键事件类型
+        """
+        event_type = entry.get("event_type", "")
+        app_name = entry.get("app_name", "").lower()
+        file_name = entry.get("file_name", "").lower()
+        window_title = entry.get("window_info", {}).get("window_title", "").lower()
+        
+        # ========== 1. 敏感文件访问 ==========
+        if entry.get("upload_detection"):
+            return "敏感文件访问"
+        
+        # ========== 2. 黑名单应用访问 ==========
+        blacklist_apps = [
+            # 即时通讯
+            "qq", "wechat", "微信", "钉钉", "dingtalk", "飞书", "feishu", "lark",
+            "telegram", "slack", "teams",
+            # AI 应用
+            "kimi", "doubao", "豆包", "chatgpt", "deepseek", "gemini",
+            "通义", "tongyi", "文心", "yiyan", "元宝", "yuanbao",
+            "chatbox", "cherry studio", "claude",
+            # 网盘
+            "百度网盘", "baiduyun", "阿里云盘", "aliyundrive",
+            "夸克网盘", "quark", "坚果云", "jianguoyun",
+            "wps云盘", "wpsclouddrive",
+            # 会议
+            "zoom", "腾讯会议", "tencent meeting",
+            # 办公 (WPS 打开敏感文件时需要记录)
+            "wps", "wpsoffice", "et", "wpp",
+        ]
+        for bl_app in blacklist_apps:
+            if bl_app in app_name or bl_app in window_title:
+                if event_type in ["app_switch", "website_visit"]:
+                    return f"黑名单应用: {entry.get('app_name', '')}"
+        
+        # ========== 3. 剪贴板操作 ==========
+        # clipboard_monitor.py 发送: clipboard_text, clipboard_image
+        if event_type in ["clipboard_text", "clipboard_image", "clipboard_copy", "clipboard_paste"]:
+            return "剪贴板操作"
+        
+        # ========== 4. 文件上传推断 ==========
+        if event_type == "inferred_upload":
+            return "推断上传操作"
+        
+        # ========== 5. 文件重命名 ==========
+        if event_type == "renamed":
+            return "文件重命名"
+        
+        # ========== 6. 压缩文件操作 ==========
+        if file_name.endswith((".zip", ".rar", ".7z", ".tar", ".gz")):
+            if event_type in ["created", "modified"]:
+                return "压缩文件创建"
+        
+        # ========== 7. 屏幕录制/截图 ==========
+        screen_keywords = ["screenshot", "screen", "录屏", "截图", "capture", "snip"]
+        for kw in screen_keywords:
+            if kw in file_name:
+                return "屏幕录制/截图"
+        
+        # ========== 8. U盘/移动存储 ==========
+        drive_letter = entry.get("disk_info", {}).get("drive_letter", "")
+        if drive_letter and drive_letter not in ["C:", "D:", ""]:
+            if event_type in ["created", "modified", "moved"]:
+                return f"移动存储操作 ({drive_letter})"
+        
+        # ========== 9. 邮件附件 (扩展关键词) ==========
+        email_keywords = [
+            "mail", "邮箱", "邮件", "outlook", 
+            "163", "126", "qq邮箱", "qqmail", "foxmail",
+            "gmail", "yahoo", "hotmail"
+        ]
+        for kw in email_keywords:
+            if kw in window_title or kw in app_name:
+                if event_type in ["opened", "created", "app_switch", "website_visit"]:
+                    return "邮箱操作"
+        
+        # ========== 10. AI应用文件上传 ==========
+        ai_apps = [
+            "kimi", "doubao", "豆包", "chatgpt", "deepseek", "gemini",
+            "通义", "tongyi", "文心", "yiyan", "claude", "元宝"
+        ]
+        for ai_app in ai_apps:
+            if ai_app in window_title or ai_app in app_name:
+                if event_type in ["opened", "created", "app_switch", "website_visit"]:
+                    return f"AI应用操作: {ai_app}"
+        
+        # ========== 11. WPS 打开文件 ==========
+        wps_apps = ["wps", "wpsoffice", "et", "wpp"]
+        process_name = entry.get("process_info", {}).get("process_name", "").lower()
+        for wps_app in wps_apps:
+            if wps_app in process_name or wps_app in app_name:
+                if event_type in ["opened", "created", "modified"]:
+                    return "WPS文件操作"
+        
+        return None
+    
     def _write_entry(self, entry: dict):
-        """写入日志条目到文件（JSON Lines 格式）"""
-        if not self.log_file:
+        """写入日志条目到内存缓存（JSON Array 格式）"""
+        if not self._log_path:
             return
         
         try:
-            # JSON Lines 格式：每行一个 JSON 对象
-            self.log_file.write(json.dumps(entry, ensure_ascii=False))
-            self.log_file.write("\n")
-            self.log_file.flush()
+            self._log_entries.append(entry)
             self._event_count += 1
+            
+            # 每 100 条自动保存一次，防止意外丢失
+            if self._event_count % 100 == 0:
+                self._flush_logs()
+                
         except Exception as e:
             print(f"[ERROR] 写入日志失败: {e}")
+    
+    def _write_keyevent(self, entry: dict, reason: str):
+        """写入关键事件"""
+        if not self._keyevents_path:
+            return
+        
+        try:
+            # 创建简化版的关键事件记录
+            keyevent = {
+                "timestamp": entry.get("timestamp"),
+                "event_type": entry.get("event_type"),
+                "reason": reason,
+                "app_name": entry.get("app_name"),
+                "file_name": entry.get("file_name", ""),
+                "file_path": entry.get("file_path", ""),
+                "window_title": entry.get("window_info", {}).get("window_title", ""),
+                "process_name": entry.get("process_info", {}).get("process_name", ""),
+            }
+            
+            # 包含剪贴板预览
+            if "content_preview" in entry:
+                keyevent["content_preview"] = entry["content_preview"]
+            
+            self._keyevent_entries.append(keyevent)
+            self._keyevent_count += 1
+            
+            print(f"🔑 关键事件: [{reason}] {keyevent.get('app_name', '')} - {keyevent.get('file_name', '') or keyevent.get('window_title', '')[:30]}")
+            
+        except Exception as e:
+            print(f"[ERROR] 写入关键事件失败: {e}")
+    
+    def _flush_logs(self):
+        """将内存中的日志刷新到文件（防止丢失）"""
+        try:
+            if self._log_path and self._log_entries:
+                with open(self._log_path, 'w', encoding='utf-8') as f:
+                    json.dump(self._log_entries, f, ensure_ascii=False, indent=2)
+            
+            if self._keyevents_path and self._keyevent_entries:
+                with open(self._keyevents_path, 'w', encoding='utf-8') as f:
+                    json.dump(self._keyevent_entries, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[WARN] 刷新日志失败: {e}")
     
     def get_event_count(self) -> int:
         """获取已记录的事件数量"""
         return self._event_count
+    
+    def get_keyevent_count(self) -> int:
+        """获取关键事件数量"""
+        return self._keyevent_count

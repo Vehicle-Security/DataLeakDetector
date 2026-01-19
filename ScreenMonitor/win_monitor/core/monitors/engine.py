@@ -330,8 +330,8 @@ class Engine:
         os.makedirs(os.path.join(self.current_session_dir, "logs"), exist_ok=True)
         os.makedirs(os.path.join(self.current_session_dir, "video"), exist_ok=True)
         
-        # 启动日志记录
-        log_path = os.path.join(self.current_session_dir, "logs", f"events_{self.current_session_id}.json")
+        # 启动日志记录 (使用 logs.json 以匹配 API 期望)
+        log_path = os.path.join(self.current_session_dir, "logs", "logs.json")
         self.logger.open(log_path, time.time())
         
         self._add_log("info", f"开始录制 - 触发: {match_result.app_name} ({match_result.category})")
@@ -376,29 +376,16 @@ class Engine:
             self._stop_recording()
     
     def _stop_recording(self):
-        """停止录制"""
+        """停止录制（但不停止监控器，监控器持续运行直到引擎停止）"""
         self.state = State.IDLE
         
-        # 停止文件系统监控 (watchdog)
-        if self.file_monitor:
-            try:
-                self.file_monitor.stop()
-                self.file_monitor = None
-                print("📂 watchdog 监控已停止")
-            except Exception as e:
-                print(f"[ERROR] 停止 watchdog 监控失败: {e}")
-        
-        # 停止 ETW 监控
-        if hasattr(self, 'etw_monitor') and self.etw_monitor:
-            try:
-                self.etw_monitor.stop()
-                self.etw_monitor = None
-                print("📂 ETW 监控已停止")
-            except Exception as e:
-                print(f"[ERROR] 停止 ETW 监控失败: {e}")
+        # 注意：不要在这里停止监控器！
+        # 监控器应该持续运行，以便捕获下一次触发事件
+        # 监控器只在 _stop_monitors() 中停止
         
         # 关闭日志
         event_count = self.logger.get_event_count()
+        keyevent_count = self.logger.get_keyevent_count()
         self.logger.close()
         
         # 计算录制时长
@@ -406,10 +393,10 @@ class Engine:
         if self.recording_start_time:
             duration = time.time() - self.recording_start_time
         
-        self._add_log("info", f"录制已停止 (时长: {duration:.1f}s, 事件: {event_count})")
+        self._add_log("info", f"录制已停止 (时长: {duration:.1f}s, 事件: {event_count}, 关键事件: {keyevent_count})")
         print(f"🛑 录制已停止")
         print(f"   时长: {duration:.1f} 秒")
-        print(f"   事件数: {event_count}")
+        print(f"   事件数: {event_count} (关键事件: {keyevent_count})")
         
         # 停止屏幕录制
         if self.recorder:

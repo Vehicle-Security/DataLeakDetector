@@ -317,7 +317,7 @@ def api_session_detail(session_id):
 
 @app.route('/api/sessions/<session_id>/events', methods=['GET'])
 def api_session_events(session_id):
-    """获取会话事件"""
+    """获取会话完整日志"""
     get_engine()
     sessions = scan_sessions()
     
@@ -325,29 +325,95 @@ def api_session_events(session_id):
         if s["id"] == session_id:
             events = []
             
-            # 优先读取 key_events
-            if s.get("events_path") and os.path.exists(s["events_path"]):
+            # 读取完整日志 (logs.json)
+            logs_dir = os.path.join(s["path"], "logs")
+            logs_file = os.path.join(logs_dir, "logs.json")
+            
+            if os.path.exists(logs_file):
+                try:
+                    with open(logs_file, "r", encoding="utf-8") as f:
+                        content = f.read().strip()
+                        # 尝试 JSON Array 格式
+                        if content.startswith('['):
+                            events = json.loads(content)
+                        else:
+                            # JSON Lines 格式
+                            for line in content.split('\n'):
+                                if line.strip():
+                                    try:
+                                        events.append(json.loads(line))
+                                    except:
+                                        pass
+                except Exception as e:
+                    print(f"[ERROR] 读取 logs.json 失败: {e}")
+            
+            # 如果没有 logs.json，尝试旧的日志格式
+            elif s.get("log_path") and os.path.exists(s["log_path"]):
+                try:
+                    with open(s["log_path"], "r", encoding="utf-8") as f:
+                        content = f.read().strip()
+                        if content.startswith('['):
+                            events = json.loads(content)
+                        else:
+                            for line in content.split('\n'):
+                                if line.strip():
+                                    try:
+                                        events.append(json.loads(line))
+                                    except:
+                                        pass
+                except Exception as e:
+                    print(f"[ERROR] 读取原始日志失败: {e}")
+            
+            return jsonify({
+                "success": True,
+                "events": events if isinstance(events, list) else [],
+                "total": len(events) if isinstance(events, list) else 0
+            })
+    
+    return jsonify({
+        "success": False,
+        "message": "会话不存在"
+    }), 404
+
+
+@app.route('/api/sessions/<session_id>/keyevents', methods=['GET'])
+def api_session_keyevents(session_id):
+    """获取会话关键事件"""
+    get_engine()
+    sessions = scan_sessions()
+    
+    for s in sessions:
+        if s["id"] == session_id:
+            events = []
+            
+            # 读取关键事件 (keyevents.json)
+            logs_dir = os.path.join(s["path"], "logs")
+            keyevents_file = os.path.join(logs_dir, "keyevents.json")
+            
+            if os.path.exists(keyevents_file):
+                try:
+                    with open(keyevents_file, "r", encoding="utf-8") as f:
+                        content = f.read().strip()
+                        if content.startswith('['):
+                            events = json.loads(content)
+                        else:
+                            # JSON Lines 备用
+                            for line in content.split('\n'):
+                                if line.strip():
+                                    try:
+                                        events.append(json.loads(line))
+                                    except:
+                                        pass
+                except Exception as e:
+                    print(f"[ERROR] 读取 keyevents.json 失败: {e}")
+            
+            # 备用：读取旧的 key_events 目录
+            elif s.get("events_path") and os.path.exists(s["events_path"]):
                 try:
                     with open(s["events_path"], "r", encoding="utf-8") as f:
                         events = json.load(f)
                 except Exception as e:
                     print(f"[ERROR] 读取 key_events 失败: {e}")
-            
-            # 如果没有 key_events，读取原始日志（JSON Lines 格式）
-            elif s.get("log_path") and os.path.exists(s["log_path"]):
-                try:
-                    with open(s["log_path"], "r", encoding="utf-8") as f:
-                        # 修复：日志是 JSON Lines 格式，每行一个JSON对象
-                        for line in f:
-                            line = line.strip()
-                            if line:
-                                try:
-                                    event = json.loads(line)
-                                    events.append(event)
-                                except json.JSONDecodeError as e:
-                                    print(f"[WARN] 跳过无效日志行: {e}")
-                except Exception as e:
-                    print(f"[ERROR] 读取原始日志失败: {e}")
             
             return jsonify({
                 "success": True,
