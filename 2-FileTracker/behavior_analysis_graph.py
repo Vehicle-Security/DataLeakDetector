@@ -378,7 +378,7 @@ class BehaviorAnalysisGraph:
                 # 转换为ISO格式（如果需要）
                 try:
                     dt = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-                    timestamp = dt.strftime("%Y-%m-%dT%H:%M:%S.%f")
+                    timestamp = dt.strftime("%Y-%m-%dT%H:%M:%S") # "%Y-%m-%dT%H:%M:%S.%f"
                 except:
                     timestamp = timestamp_str if 'T' in timestamp_str else timestamp_str.replace(' ', 'T') + '.000000'
             else:

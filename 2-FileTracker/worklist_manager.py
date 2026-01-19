@@ -289,7 +289,10 @@ class WorklistManager:
         Returns:
             事件ID
         """
-        return f"{timestamp}_{event_type}_{hash(file_path)}"
+        #return f"{timestamp}_{event_type}_{hash(file_path)}"
+        # 只保留时间戳到秒级别，避免同一秒内同一文件的重复事件被多次处理
+        timestamp_sec = timestamp.split('.')[0] if '.' in timestamp else timestamp
+        return f"{timestamp_sec}_{event_type}_{hash(file_path)}"
     
     def _is_sensitive_event(self, event: Dict[str, Any]) -> bool:
         """

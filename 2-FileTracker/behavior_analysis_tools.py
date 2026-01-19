@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from langchain_core.tools import tool
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../1-FrameAnalyzer"))
-from agent import VideoFileOperationAgent
+from relavance import analyze_video_behavior
 
 
 @tool
@@ -55,16 +55,17 @@ def analyze_frame_behavior(
         print(f"   - 目标关键词: {target_keywords}")
         
         # 调用模块1
-        result = VideoFileOperationAgent().run({
-            "rec_start": rec_start_time,
-            "search_start": search_start_time,
-            "search_end": search_end_time,
-            "keywords": target_keywords,
-            "video_path": video_path
-        })
+        result = analyze_video_behavior(
+            rec_start_time_str=rec_start_time,
+            search_start_time_str=search_start_time,
+            search_end_time_str=search_end_time,
+            keywords=target_keywords,
+            video_path=video_path
+        )
         
         if result:
             print(f"   ✅ 模块1分析完成，发现 {result.get('total_events', 0)} 个事件")
+            print(f"   - 结果预览: {json.dumps(result.get('events', [])[:2], ensure_ascii=False)}")
             return result
         else:
             print(f"   ⚠️ 模块1未返回结果")

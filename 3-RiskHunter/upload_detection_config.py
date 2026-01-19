@@ -14,14 +14,18 @@ class UploadDetectionConfig:
         # TODO用户应根据实际情况修改此列表
         self.sensitive_files = [
             # 示例敏感文件路径（请根据实际情况修改）
-            "/Users/tujiali/Documents/项目3prd设计.docx", # 60 重命名
+            "/Users/tujiali/Documents/项目3prd设计.docx", # 60 重命名 45 截屏
             "/Users/tujiali/Documents/项目1详细规划.docx", # 43 压缩zip
             "/Users/tujiali/Documents/项目2需求分析.docx", # 42 格式转换：导出为pdf
             "D:\\dingxinyao\\desktop\\智能图像增强系统技术设计文档.docx", # 64 重命名(windows) 61 复制粘贴
+            
             "D:\\dingxinyao\\desktop\\公司合作合同.docx", # 46 蓝牙发送文件
             "D:\\dingxinyao\\desktop\\2025年第一季度内部财务报表.docx", # 47 U盘拷贝
             "D:\\dingxinyao\\desktop\\公司机密\\公司内部资料\\公司高层秘密会议纪要.docx", #61 复制粘贴
             "D:\\dingxinyao\\desktop\\重点客户信息汇总表.docx", #62 截图泄露 65 云端上传泄露
+
+            "/Users/tujiali/Documents/需求设计.docx", # 41 重命名
+            "/Users/tujiali/Documents/AAA公司员工守则.docx", # 44 复制粘贴 57 OCR识别文字
         ]
         
         # ========== 黑名单应用 ==========
