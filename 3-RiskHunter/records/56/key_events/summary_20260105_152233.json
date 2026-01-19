@@ -1,0 +1,50 @@
+{
+  "total_events": 185,
+  "event_types": {
+    "opened": 174,
+    "renamed": 11
+  },
+  "file_extensions": {
+    ".0qgvxzb": 1,
+    ".4g3lczv": 1,
+    ".8ipkqw6": 1,
+    ".bghwcrh": 1,
+    ".corespotlightd": 10,
+    ".dat google chrome helper": 3,
+    ".kwyzwnu": 1,
+    ".loctable": 1,
+    ".lproj google chrome helper": 10,
+    ".n3d952o": 1,
+    ".okd8s7a": 1,
+    ".plist google chrome": 12,
+    ".plist google chrome helper": 15,
+    ".png": 1,
+    ".pvsox9q": 1,
+    ".ssappinfocus": 4,
+    ".svwbrqx": 1,
+    ".vuikgau": 1,
+    ".wplist": 2,
+    ".xlsx": 8,
+    ".xlsx google": 1,
+    ".xml": 15,
+    ".z93rn7e": 1
+  },
+  "apps": {
+    "(Renderer)": 88,
+    "BiomeAgent": 14,
+    "Chrome": 1,
+    "Helper": 44,
+    "OfficeThumbnailExtension": 14,
+    "QuickLookSatellite": 7,
+    "UserNotificationCenter": 2,
+    "cfprefsd": 11,
+    "filecoordinationd": 1,
+    "quicklookd": 1,
+    "webprivacyd": 2
+  },
+  "upload_count": 0,
+  "time_range": {
+    "start": "2026-01-05T15:22:35.319",
+    "end": "2026-01-05T15:24:12.917"
+  }
+}
