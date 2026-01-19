@@ -524,31 +524,21 @@ class Logger:
             print(f"[ERROR] 写入日志失败: {e}")
     
     def _write_keyevent(self, entry: dict, reason: str):
-        """写入关键事件"""
+        """写入关键事件 - 直接使用原始日志格式，keyevents 是 logs 的子集"""
         if not self._keyevents_path:
             return
         
         try:
-            # 创建简化版的关键事件记录
-            keyevent = {
-                "timestamp": entry.get("timestamp"),
-                "event_type": entry.get("event_type"),
-                "reason": reason,
-                "app_name": entry.get("app_name"),
-                "file_name": entry.get("file_name", ""),
-                "file_path": entry.get("file_path", ""),
-                "window_title": entry.get("window_info", {}).get("window_title", ""),
-                "process_name": entry.get("process_info", {}).get("process_name", ""),
-            }
-            
-            # 包含剪贴板预览
-            if "content_preview" in entry:
-                keyevent["content_preview"] = entry["content_preview"]
-            
-            self._keyevent_entries.append(keyevent)
+            # 直接使用原始日志条目，保持与 logs.json 相同的格式
+            # keyevents.json 是 logs.json 的子集
+            self._keyevent_entries.append(entry)
             self._keyevent_count += 1
             
-            print(f"🔑 关键事件: [{reason}] {keyevent.get('app_name', '')} - {keyevent.get('file_name', '') or keyevent.get('window_title', '')[:30]}")
+            # 控制台输出
+            app_name = entry.get("app_name", "")
+            file_name = entry.get("file_name", "")
+            window_title = entry.get("window_info", {}).get("window_title", "")[:30] if entry.get("window_info") else ""
+            print(f"🔑 关键事件: [{reason}] {app_name} - {file_name or window_title}")
             
         except Exception as e:
             print(f"[ERROR] 写入关键事件失败: {e}")

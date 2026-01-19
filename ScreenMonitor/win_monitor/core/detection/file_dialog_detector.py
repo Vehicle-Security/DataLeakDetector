@@ -27,8 +27,14 @@ class FileDialogDetector:
         self.last_dialog_handle = 0
         self.last_check_time = 0
         
-        # 已知的对话框标题
-        self.dialog_titles = ["打开", "Open", "选择文件", "Select File", "上传", "Upload", "保存", "Save As"]
+        # 已知的对话框标题（中英文）
+        self.dialog_titles = [
+            # 英文
+            "Open", "Save As", "Select File", "Upload", "Browse", "Choose File",
+            # 中文
+            "打开", "保存", "另存为", "选择文件", "上传", "浏览", "选择要上传的文件",
+            "添加附件", "选择附件", "文件上传", "选取文件"
+        ]
         
     def start_monitoring(self, interval=1.0):
         """启动监控线程"""
@@ -177,6 +183,9 @@ class FileDialogDetector:
                 # UI Automation 很难直接获取"当前目录"，除非去读地址栏
                 # 但是现代对话框通常会在点击"打开"时，文件框里有完整路径（有时）
                 # 或者我们需要结合 RecentFileTracker 或者是地址栏
+                
+                # 初始化 full_path
+                full_path = file_path
                 
                 # 尝试获取地址栏当前路径
                 folder_path = ""
