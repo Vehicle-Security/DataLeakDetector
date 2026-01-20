@@ -25,7 +25,7 @@ class UploadDetectionConfig:
             "D:\\dingxinyao\\desktop\\重点客户信息汇总表.docx", #62 截图泄露 65 云端上传泄露
 
             "/Users/tujiali/Documents/需求设计.docx", # 41 重命名
-            "/Users/tujiali/Documents/AAA公司员工守则.docx", # 44 复制粘贴 57 OCR识别文字
+            "/Users/tujiali/Documents/AAA公司员工守则.docx", # 44 复制粘贴 57 OCR识别文字 58 截图泄露
         ]
         
         # ========== 黑名单应用 ==========
