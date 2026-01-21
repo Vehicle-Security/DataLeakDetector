@@ -17,6 +17,7 @@ import prompts
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from schema import AgentState
+from thefuzz import fuzz
 
 load_dotenv()
 logger = logging.getLogger("VideoAgent")
@@ -66,12 +67,33 @@ class VideoFileOperationAgent:
         return state
 
     def keyword_filter_node(self, state: AgentState) -> AgentState:
-        logger.info(f"Step 2: 正在执行 OCR 文本识别并匹配关键词: {state.target_keywords}...")
+        # 判断是否需要执行“长文本模糊匹配”模式
+        # 逻辑：如果 keywords 列表中有任何一个元素长度 > 10，则视为粘贴的长文本
+        is_long_text_mode = any(len(kw) > 10 for kw in state.target_keywords)
+        
+        if is_long_text_mode:
+            # 将所有关键词拼接成一个目标长文本进行比对
+            target_text = "".join(state.target_keywords).replace(" ", "").lower()
+            logger.info(f"Step 2: 检测到长文本，正在执行模糊相似度匹配 (目标: {target_text[:20]}...)")
+        else:
+            logger.info(f"Step 2: 正在执行 OCR 文本识别并匹配关键词: {state.target_keywords}...")
+
         last_hit_idx = -1
         for item in state.candidate_frames:
             results = self.reader.readtext(item['frame'], detail=0)
-            text_blob = "".join(results).replace(" ", "")
-            if any(kw in text_blob for kw in state.target_keywords):
+            text_blob = "".join(results).replace(" ", "").lower()
+            
+            is_match = False
+            if is_long_text_mode:
+                score = fuzz.partial_ratio(target_text, text_blob)
+                if score >= 65:
+                    is_match = True
+                    logger.debug(f"帧 {item['idx']} 模糊匹配成功，得分: {score}")
+            else:
+                if any(kw.lower() in text_blob for kw in state.target_keywords):
+                    is_match = True
+
+            if is_match:
                 wall_time = (state.time_range['rec_start'] + timedelta(seconds=item['idx'] / state.fps)).strftime("%Y-%m-%d %H:%M:%S")
                 state.hit_frames.append({
                     'idx': item['idx'], 
@@ -80,6 +102,7 @@ class VideoFileOperationAgent:
                     'type': 'key_event'
                 })
                 last_hit_idx = item['idx']
+
         state.final_report['_last_hit_idx'] = last_hit_idx
         return state
 
@@ -115,6 +138,7 @@ class VideoFileOperationAgent:
             return state
 
         logger.info(f"Step 4: 正在发送关键帧至 VLM 模型进行深层行为意图分析...")
+        
         state.hit_frames.sort(key=lambda x: x['idx'])
         llm = ChatOpenAI(
             model=self.llm_model,
@@ -135,6 +159,7 @@ class VideoFileOperationAgent:
 
         contents = [{"type": "text", "text": final_prompt}]
         for f in state.hit_frames:
+            
             _, buffer = cv2.imencode('.jpg', f['frame'], [cv2.IMWRITE_JPEG_QUALITY, 75])
             img_b64 = base64.b64encode(buffer).decode('utf-8')
             contents.append({
@@ -147,22 +172,32 @@ class VideoFileOperationAgent:
             clean_text = re.sub(r'```json\n?|```', '', resp.content).strip()
             batch_data = json.loads(clean_text)
             raw_events = batch_data["events"] if isinstance(batch_data, dict) and "events" in batch_data else batch_data
-            filtered_events = []
             
 
-            for event in raw_events:
-                original_name = event.get("original_filename", "")
-                if any(kw.lower() in original_name.lower() for kw in state.target_keywords):
-                    filtered_events.append(event)
-                else:
-                    logger.info(f"🗑️ 剔除无关事件中")
+            is_long_text_mode = any(len(kw) > 10 for kw in state.target_keywords)
+
+            if is_long_text_mode:
+                
+                logger.info("📝 长文本模式：已获取 VLM 识别的所有行为序列，跳过文件名过滤")
+                final_events = raw_events
+            else:
+                logger.info(f"🔍 普通模式：正在匹配文件名关键词: {state.target_keywords}")
+                final_events = []
+                for event in raw_events:
+                    original_name = event.get("original_filename", "").lower()
+                    if any(kw.lower() in original_name for kw in state.target_keywords):
+                        final_events.append(event)
+                    else:
+                        logger.info(f"🗑️ 剔除无关文件名: {original_name}")
+
+            
             state.final_report = {
                 "search_range": {
                     "start": state.time_range['search_start'].strftime("%Y-%m-%d %H:%M:%S"), 
                     "end": state.time_range['search_end'].strftime("%Y-%m-%d %H:%M:%S")
                 },
-                "total_events": len(filtered_events),
-                "events": filtered_events,
+                "total_events": len(final_events),
+                "events": final_events,
                 "status": "success"
             }
         except Exception as e:
