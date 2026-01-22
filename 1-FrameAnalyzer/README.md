@@ -48,6 +48,7 @@ DASHSCOPE_API_KEY=your_api_key_here
 ## 使用示例
 
 在 `main.py` 中配置视频路径、录制开始时间及搜索关键词，然后运行：
+注："keywords"中可以是文件名、或者 复制粘贴的文字段
 
 Python
 
