@@ -1,0 +1,42 @@
+{
+  "total_events": 335,
+  "event_types": {
+    "opened": 335
+  },
+  "file_extensions": {
+    ".dat google chrome helper": 3,
+    ".docx": 4,
+    ".docx google": 2,
+    ".pak": 2,
+    ".pak antigravity": 8,
+    ".pak docker desktop": 8,
+    ".pak github desktop": 8,
+    ".pak qq": 8,
+    ".plist antigravity": 4,
+    ".plist docker desktop": 4,
+    ".plist github desktop": 4,
+    ".plist google chrome": 12,
+    ".plist google chrome helper": 33,
+    ".plist qq": 4,
+    ".plist wechatappex": 16,
+    ".png": 13,
+    ".ttc google chrome helper": 5,
+    ".xml": 7
+  },
+  "apps": {
+    "(Renderer)": 195,
+    "Chrome": 2,
+    "Helper": 108,
+    "QuickLookSatellite": 9,
+    "efilogin-helper": 8,
+    "filecoordinationd": 1,
+    "promecefpluginhost": 6,
+    "quicklookd": 1,
+    "storagekitd": 5
+  },
+  "upload_count": 0,
+  "time_range": {
+    "start": "2026-01-05T13:38:36.811",
+    "end": "2026-01-05T13:39:41.685"
+  }
+}

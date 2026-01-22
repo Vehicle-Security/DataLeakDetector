@@ -1,0 +1,25 @@
+{
+  "total_events": 156,
+  "event_types": {
+    "deleted": 35,
+    "opened": 121
+  },
+  "file_extensions": {
+    ".jpg": 92,
+    ".pdf": 2,
+    ".png": 35,
+    ".txt": 4,
+    ".wxam": 4
+  },
+  "apps": {
+    "Finder": 10,
+    "ImageThumbnailExtension": 10,
+    "WPS Office": 11,
+    "微信": 125
+  },
+  "upload_count": 0,
+  "time_range": {
+    "start": "2026-01-05T14:09:51.507",
+    "end": "2026-01-05T14:10:27.099"
+  }
+}

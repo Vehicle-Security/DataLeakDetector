@@ -1,0 +1,23 @@
+{
+  "total_events": 14,
+  "event_types": {
+    "opened": 14
+  },
+  "file_extensions": {
+    ".pdf": 8,
+    ".png": 6
+  },
+  "apps": {
+    "CoreServicesUIAgent": 3,
+    "QuickLookUIService": 5,
+    "WPS Office": 2,
+    "XprotectService": 2,
+    "filecoordinationd": 1,
+    "syspolicyd": 1
+  },
+  "upload_count": 0,
+  "time_range": {
+    "start": "2026-01-05T14:06:31.716",
+    "end": "2026-01-05T14:07:19.359"
+  }
+}

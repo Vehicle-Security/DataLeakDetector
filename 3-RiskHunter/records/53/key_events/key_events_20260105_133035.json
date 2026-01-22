@@ -1,0 +1,931 @@
+[
+  {
+    "timestamp": "2026-01-05T13:30:39.504",
+    "event_type": "opened",
+    "file_path": "/Resources/PrivacyScreenRecording.png",
+    "file_name": "PrivacyScreenRecording.png",
+    "file_size": 0,
+    "file_extension": ".png",
+    "process_info": {
+      "pid": "412701",
+      "process_name": "UserNotificationCenter",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "UserNotificationCenter",
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:31:40.883",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14834981",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:31:40.886",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14834981",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:31:40.896",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14834981",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:31:40.899",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14834981",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:31:40.915",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14834981",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:31:40.917",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14834981",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:31:40.948",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14834981",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:31:41.239",
+    "event_type": "opened",
+    "file_path": "/PowerLog.framework/Versions/A/XPCServices/PerfPowerTelemetryClientRegistrationService.xpc/Contents/MacOS/PerfPowerTelemetryClientRegistrationService",
+    "file_name": "PerfPowerTelemetryClientRegistrationService",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14838271",
+      "process_name": "runningboardd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "runningboardd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "runningboardd",
+      "upload_type": "Sensitive Access",
+      "original_file": "/PowerLog.framework/Versions/A/XPCServices/PerfPowerTelemetryClientRegistrationService.xpc/Contents/MacOS/PerfPowerTelemetryClientRegistrationService",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:31:41.240",
+    "event_type": "opened",
+    "file_path": "/PowerLog.framework/Versions/A/XPCServices/PerfPowerTelemetryClientRegistrationService.xpc/Contents/MacOS/PerfPowerTelemetryClientRegistrationService",
+    "file_name": "PerfPowerTelemetryClientRegistrationService",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14838271",
+      "process_name": "runningboardd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "runningboardd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "runningboardd",
+      "upload_type": "Sensitive Access",
+      "original_file": "/PowerLog.framework/Versions/A/XPCServices/PerfPowerTelemetryClientRegistrationService.xpc/Contents/MacOS/PerfPowerTelemetryClientRegistrationService",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:31:41.256",
+    "event_type": "opened",
+    "file_path": "/CoreADI",
+    "file_name": "CoreADI",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14838269",
+      "process_name": "runningboardd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "runningboardd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "runningboardd",
+      "upload_type": "Sensitive Access",
+      "original_file": "/CoreADI",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:31:41.256",
+    "event_type": "opened",
+    "file_path": "/CoreADI",
+    "file_name": "CoreADI",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14838269",
+      "process_name": "runningboardd",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "runningboardd",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "runningboardd",
+      "upload_type": "Sensitive Access",
+      "original_file": "/CoreADI",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:31:41.429",
+    "event_type": "opened",
+    "file_path": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+    "file_name": "Google Chrome Helper (Renderer)",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14834981",
+      "process_name": "PerfPowerServices",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "PerfPowerServices",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "PerfPowerServices",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Google Chrome Framework.framework/Versions/143.0.7499.170/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:32:13.339",
+    "event_type": "created",
+    "file_path": "/var/folders/6x/r1zsj0h94kd1s9cgmyh88pt40000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_HIcUMB",
+    "file_name": "NSIRD_chronod_HIcUMB",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14840141",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/folders/6x/r1zsj0h94kd1s9cgmyh88pt40000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_HIcUMB",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "mkdir"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:32:13.339",
+    "event_type": "created",
+    "file_path": "/var/folders/6x/r1zsj0h94kd1s9cgmyh88pt40000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_2w8JdV",
+    "file_name": "NSIRD_chronod_2w8JdV",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14840141",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/folders/6x/r1zsj0h94kd1s9cgmyh88pt40000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_2w8JdV",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "mkdir"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:32:13.339",
+    "event_type": "opened",
+    "file_path": "/TemporaryItems/NSIRD_chronod_2w8JdV/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "14840141",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/TemporaryItems/NSIRD_chronod_2w8JdV/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:32:13.340",
+    "event_type": "renamed",
+    "file_path": "/T/com.apple.chrono/TemporaryItems/NSIRD_chronod_2w8JdV/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "14840141",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/T/com.apple.chrono/TemporaryItems/NSIRD_chronod_2w8JdV/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "rename"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:32:13.340",
+    "event_type": "deleted",
+    "file_path": "/var/folders/6x/r1zsj0h94kd1s9cgmyh88pt40000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_2w8JdV",
+    "file_name": "NSIRD_chronod_2w8JdV",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14840141",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/folders/6x/r1zsj0h94kd1s9cgmyh88pt40000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_2w8JdV",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "rmdir"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:32:13.340",
+    "event_type": "opened",
+    "file_path": "//TemporaryItems/NSIRD_chronod_HIcUMB/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "14840141",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "//TemporaryItems/NSIRD_chronod_HIcUMB/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:32:13.340",
+    "event_type": "opened",
+    "file_path": "//TemporaryItems/NSIRD_chronod_HIcUMB/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "14840141",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "//TemporaryItems/NSIRD_chronod_HIcUMB/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:32:13.860",
+    "event_type": "deleted",
+    "file_path": "/SystemData/com.apple.chrono/timelines/com.apple.weather/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "14829789",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/SystemData/com.apple.chrono/timelines/com.apple.weather/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "unlink"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:32:13.860",
+    "event_type": "renamed",
+    "file_path": "/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_HIcUMB/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "14829789",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_HIcUMB/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "rename"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:32:13.860",
+    "event_type": "opened",
+    "file_path": "/var/folders/6x/r1zsj0h94kd1s9cgmyh88pt40000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_HIcUMB",
+    "file_name": "NSIRD_chronod_HIcUMB",
+    "file_size": 0,
+    "file_extension": "",
+    "process_info": {
+      "pid": "14829789",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/var/folders/6x/r1zsj0h94kd1s9cgmyh88pt40000gn/T/com.apple.chrono//TemporaryItems/NSIRD_chronod_HIcUMB",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:32:13.860",
+    "event_type": "opened",
+    "file_path": "/com.apple.chrono/timelines/com.apple.weather/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "14829789",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/com.apple.chrono/timelines/com.apple.weather/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  }
+]
