@@ -43,7 +43,19 @@ def analyze_frame_behavior(
         rec_start_time = _read_recording_start_time(index_path)
         print(f"   - 录屏开始时间: {rec_start_time}")
         
-        event_dt = datetime.strptime(event_timestamp, "%Y-%m-%dT%H:%M:%S.%f")
+        # 支持两种时间格式：带毫秒和不带毫秒
+        try:
+            event_dt = datetime.strptime(event_timestamp, "%Y-%m-%dT%H:%M:%S.%f")
+        except ValueError:
+            try:
+                event_dt = datetime.strptime(event_timestamp, "%Y-%m-%dT%H:%M:%S")
+            except ValueError:
+                try:
+                    # 如果都失败，尝试去掉T的格式
+                    event_dt = datetime.strptime(event_timestamp.replace('T', ' '), "%Y-%m-%d %H:%M:%S")
+                except ValueError as e:
+                    raise ValueError(f"无法解析事件时间戳: {event_timestamp}") from e
+        
         search_start_time = event_dt.strftime("%Y-%m-%d %H:%M:%S")
         search_end_dt = event_dt + timedelta(seconds=search_duration)
         search_end_time = search_end_dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -65,7 +77,7 @@ def analyze_frame_behavior(
         
         if result:
             print(f"   ✅ 模块1分析完成，发现 {result.get('total_events', 0)} 个事件")
-            print(f"   - 结果预览: {json.dumps(result.get('events', [])[:2], ensure_ascii=False)}")
+            print(f"   - 结果预览: {json.dumps(result.get('events', [])[:3], ensure_ascii=False)}")
             return result
         else:
             print(f"   ⚠️ 模块1未返回结果")

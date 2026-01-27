@@ -38,6 +38,12 @@ class UploadEvent:
     # 报警信息
     should_alert: bool
     alert_level: str  # critical/warning/info
+    
+    # 以下字段有默认值，必须放在后面
+    # 外发内容信息
+    upload_content: str = ""  # 真正外发的文件/内容（可能是重命名后的文件、复制的内容等）
+    upload_content_mapping_link: str = ""  # 外发内容的原始文件映射链
+    
     alert_reason: str = ""
     
     # 额外信息
@@ -51,6 +57,8 @@ class UploadEvent:
             "file_path": self.file_path,
             "file_name": self.file_name,
             "original_file": self.original_file,
+            "upload_content": self.upload_content,
+            "upload_content_mapping_link": self.upload_content_mapping_link,
             "app_name": self.app_name,
             "app_category": self.app_category,
             "behavior_category": self.behavior_category,
@@ -83,6 +91,7 @@ class UploadDetectorState(TypedDict):
     sensitive_files: List[str]
     blacklist_apps: List[str]
     whitelist_apps: List[str]
+    search_duration: int  # 模块1视频搜索时长（秒）
     
     # WorklistManager状态
     worklist_size: int
@@ -129,7 +138,8 @@ def create_initial_state(
     index_path: str,
     sensitive_files: List[str],
     blacklist_apps: List[str],
-    whitelist_apps: List[str]
+    whitelist_apps: List[str],
+    search_duration: int = 30
 ) -> UploadDetectorState:
     """
     创建初始状态
@@ -143,6 +153,7 @@ def create_initial_state(
         sensitive_files: 敏感文件列表
         blacklist_apps: 黑名单应用列表
         whitelist_apps: 白名单应用列表
+        search_duration: 模块1视频搜索时长（秒），默认30秒
         
     Returns:
         初始化的状态对象
@@ -159,6 +170,7 @@ def create_initial_state(
         sensitive_files=sensitive_files,
         blacklist_apps=blacklist_apps,
         whitelist_apps=whitelist_apps,
+        search_duration=search_duration,
         
         # WorklistManager状态
         worklist_size=0,

@@ -1,1 +1,80 @@
-null
+[
+  {
+    "timestamp": "2026-01-21T21:10:55.552",
+    "event_type": "opened",
+    "file_path": "/Users/tujiali/Documents/项目1详细规划.docx",
+    "file_name": "项目1详细规划.docx",
+    "file_size": 21526,
+    "file_extension": ".docx",
+    "process_info": {
+      "pid": "61303",
+      "process_name": "ArchiveService",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "ArchiveService",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "ArchiveService",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Users/tujiali/Documents/项目1详细规划.docx",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-21T21:11:17.552",
+    "event_type": "created",
+    "file_path": "/Users/tujiali/Documents/项目1详细规划.docx",
+    "file_name": "项目1详细规划.docx",
+    "file_size": 21526,
+    "file_extension": ".docx",
+    "process_info": {
+      "pid": "61303",
+      "process_name": "ArchiveService",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "ArchiveService",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "ArchiveService",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Users/tujiali/Documents/项目1详细规划.docx",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  }
+]

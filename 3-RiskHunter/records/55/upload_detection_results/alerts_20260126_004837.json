@@ -1,0 +1,61 @@
+{
+  "record_id": 55,
+  "timestamp": "20260126_004837",
+  "total_alerts": 1,
+  "alerts": [
+    {
+      "event_id": "derived_内容提取（复制）_-128829739675004805_2026-01-05T14:07:09",
+      "timestamp": "2026-01-05T14:07:09",
+      "file_path": "/Users/qwer/Downloads/test/Message hidden in image (right click ➔ save as)",
+      "file_name": "Message hidden in image (right click ➔ save as)",
+      "original_file": "/Users/qwer/Downloads/test/XX有限公司内部管理制度汇编.pdf",
+      "app_name": "微信",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "文件传输",
+      "time_range": "2026-01-05 14:07:08 - 2026-01-05 14:07:37",
+      "involved_timestamps": [
+        "2026-01-05 14:07:08",
+        "2026-01-05 14:07:09",
+        "2026-01-05 14:07:10",
+        "2026-01-05 14:07:13",
+        "2026-01-05 14:07:17",
+        "2026-01-05 14:07:20",
+        "2026-01-05 14:07:22",
+        "2026-01-05 14:07:24",
+        "2026-01-05 14:07:27",
+        "2026-01-05 14:07:33",
+        "2026-01-05 14:07:34",
+        "2026-01-05 14:07:37"
+      ],
+      "description": "用户在微信中通过文件传输助手发送了名为“下载 (1).png”的图片文件。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 '微信' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2026-01-05 14:07:08 - 2026-01-05 14:07:37",
+        "involved_timestamps": [
+          "2026-01-05 14:07:08",
+          "2026-01-05 14:07:09",
+          "2026-01-05 14:07:10",
+          "2026-01-05 14:07:13",
+          "2026-01-05 14:07:17",
+          "2026-01-05 14:07:20",
+          "2026-01-05 14:07:22",
+          "2026-01-05 14:07:24",
+          "2026-01-05 14:07:27",
+          "2026-01-05 14:07:33",
+          "2026-01-05 14:07:34",
+          "2026-01-05 14:07:37"
+        ],
+        "app_name": "微信",
+        "app_type": "黑名单",
+        "behavior_category": "直接外发",
+        "operation_type": "文件传输",
+        "original_filename": "下载 (1).png",
+        "modified_filename": "未知",
+        "description": "用户在微信中通过文件传输助手发送了名为“下载 (1).png”的图片文件。"
+      }
+    }
+  ]
+}

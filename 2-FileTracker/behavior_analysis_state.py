@@ -16,6 +16,7 @@ class BehaviorAnalysisState(TypedDict):
     index_path: str  # INDEX.md 文件路径
     video_path: str  # 视频文件路径
     log_events: List[Dict[str, Any]]  # 日志事件列表（用于查找跨目录文件）
+    search_duration: int  # 视频搜索时长（秒）
     
     # 模块1分析结果
     frame_analysis_result: Optional[Dict[str, Any]]  # 帧分析结果

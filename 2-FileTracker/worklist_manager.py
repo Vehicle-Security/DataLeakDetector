@@ -68,6 +68,9 @@ class WorklistManager:
         # 文件映射关系：当前文件 -> 原始文件（用于追踪重命名、复制等）
         self.file_mapping: Dict[str, str] = {}
         
+        # 文件直接映射关系（复数）：派生文件 -> 直接父文件（只记录上一层，用于构建完整映射链）
+        self.file_mappings: Dict[str, str] = {}
+        
         # 已加入工作列表的事件ID集合（避免重复处理）
         self.processed_events: Set[str] = set()
         
@@ -194,6 +197,9 @@ class WorklistManager:
         if event.event_id not in self.processed_events:
             self.worklist.append(event)
             self.processed_events.add(event.event_id)  # 标记为已加入，避免重复添加
+            print(f"   ✅ 成功添加新事件ID: {event.event_id}")
+        else:
+            print(f"   ⚠️ 事件ID已存在，跳过添加: {event.event_id}")
     
     def is_empty(self) -> bool:
         """
@@ -217,6 +223,10 @@ class WorklistManager:
         """
         更新文件映射关系（用于追踪重命名、复制等操作）
         
+        同时维护两个映射字典：
+        - file_mapping: 派生文件 -> 最初源文件（直接追溯，用于快速查询）
+        - file_mappings: 派生文件 -> 直接父文件（只记录上一层，用于构建完整映射链）
+        
         Args:
             original_file: 原始文件路径
             new_file: 新文件路径
@@ -224,12 +234,52 @@ class WorklistManager:
         original_normalized = self._normalize_path(original_file)
         new_normalized = self._normalize_path(new_file)
         
+        # 更新 file_mappings：只记录直接父子关系
+        self.file_mappings[new_normalized] = original_normalized
+        
+        # 更新 file_mapping：追溯到最初的源文件
         # 如果原始文件本身是派生文件，追溯到最初的源文件
         if original_normalized in self.file_mapping:
             root_file = self.file_mapping[original_normalized]
             self.file_mapping[new_normalized] = root_file
         else:
             self.file_mapping[new_normalized] = original_normalized
+    
+    def get_mapping_chain(self, file_path: str) -> Optional[str]:
+        """
+        获取文件的完整映射链（从最初源文件到当前文件）
+        
+        Args:
+            file_path: 当前文件路径
+            
+        Returns:
+            映射链字符串（例如："file_a.docx -> file_b.docx -> file_c.docx"）
+            如果不是派生文件，返回 None
+        """
+        normalized_path = self._normalize_path(file_path)
+        
+        # 如果不是派生文件，返回 None
+        if normalized_path not in self.file_mappings:
+            return None
+        
+        # 从当前文件向上追溯，构建映射链
+        chain = []
+        current = normalized_path
+        
+        # 向上追溯最多10层，防止死循环
+        for _ in range(10):
+            if current in self.file_mappings:
+                parent = self.file_mappings[current]
+                chain.insert(0, parent)
+                current = parent
+            else:
+                break
+        
+        # 添加当前文件
+        chain.append(normalized_path)
+        
+        # 返回映射链字符串
+        return " -> ".join(chain)
     
     def get_statistics(self) -> Dict[str, Any]:
         """
@@ -243,6 +293,7 @@ class WorklistManager:
             "worklist_size": len(self.worklist),
             "processed_events_count": len(self.processed_events),
             "file_mappings_count": len(self.file_mapping),
+            "direct_mappings_count": len(self.file_mappings),
             "event_types": self._count_event_types()
         }
     
@@ -259,6 +310,7 @@ class WorklistManager:
         self.sensitive_files.clear()
         self.worklist.clear()
         self.file_mapping.clear()
+        self.file_mappings.clear()
         self.processed_events.clear()
     
     # ==================== 私有方法 ====================

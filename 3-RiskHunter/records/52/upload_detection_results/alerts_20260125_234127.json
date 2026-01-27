@@ -1,0 +1,83 @@
+{
+  "record_id": 52,
+  "timestamp": "20260125_234127",
+  "total_alerts": 2,
+  "alerts": [
+    {
+      "event_id": "2026-01-05T14:09:51_opened_-9207779430555022446",
+      "timestamp": "2026-01-05T14:09:51.507",
+      "file_path": "/Users/qwer/Downloads/test/XX有限公司内部管理制度汇编.pdf",
+      "file_name": "XX有限公司内部管理制度汇编.pdf",
+      "original_file": "/Users/qwer/Downloads/test/XX有限公司内部管理制度汇编.pdf",
+      "app_name": "微信",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "聊天转发",
+      "time_range": "2026-01-05 14:10:05 - 2026-01-05 14:10:17",
+      "involved_timestamps": [
+        "2026-01-05 14:10:05",
+        "2026-01-05 14:10:10",
+        "2026-01-05 14:10:12",
+        "2026-01-05 14:10:14",
+        "2026-01-05 14:10:17"
+      ],
+      "description": "用户通过微信传输助手发送了多张图片和文档，包括'XX有限公司内部管理制度汇编.pdf'的转换后的PNG图片。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 '微信' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2026-01-05 14:10:05 - 2026-01-05 14:10:17",
+        "involved_timestamps": [
+          "2026-01-05 14:10:05",
+          "2026-01-05 14:10:10",
+          "2026-01-05 14:10:12",
+          "2026-01-05 14:10:14",
+          "2026-01-05 14:10:17"
+        ],
+        "app_name": "微信",
+        "app_type": "黑名单",
+        "behavior_category": "直接外发",
+        "operation_type": "聊天转发",
+        "original_filename": "未知",
+        "modified_filename": "未知",
+        "description": "用户通过微信传输助手发送了多张图片和文档，包括'XX有限公司内部管理制度汇编.pdf'的转换后的PNG图片。"
+      }
+    },
+    {
+      "event_id": "derived_格式转换_2051714983609889223_2026-01-05T14:09:54",
+      "timestamp": "2026-01-05T14:09:54",
+      "file_path": "/Users/qwer/Downloads/test/XX有限公司内部管理制度汇编_00.png, XX有限公司内部管理制度汇编_01.png, XX有限公司内部管理制度汇编_02.png, XX有限公司内部管理制度汇编_03.png, XX有限公司内部管理制度汇编_04.png",
+      "file_name": "XX有限公司内部管理制度汇编_00.png, XX有限公司内部管理制度汇编_01.png, XX有限公司内部管理制度汇编_02.png, XX有限公司内部管理制度汇编_03.png, XX有限公司内部管理制度汇编_04.png",
+      "original_file": "/Users/qwer/Downloads/test/XX有限公司内部管理制度汇编.pdf",
+      "app_name": "微信",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "粘贴外发",
+      "time_range": "2026-01-05 14:10:15 - 2026-01-05 14:10:27",
+      "involved_timestamps": [
+        "2026-01-05 14:10:15",
+        "2026-01-05 14:10:20",
+        "2026-01-05 14:10:27"
+      ],
+      "description": "用户将内容从WPS Office复制后，在微信中粘贴并发送给联系人。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 '微信' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2026-01-05 14:10:15 - 2026-01-05 14:10:27",
+        "involved_timestamps": [
+          "2026-01-05 14:10:15",
+          "2026-01-05 14:10:20",
+          "2026-01-05 14:10:27"
+        ],
+        "app_name": "微信",
+        "app_type": "黑名单",
+        "behavior_category": "直接外发",
+        "operation_type": "粘贴外发",
+        "original_filename": "XX有限公司内部管理制度汇编.pdf",
+        "modified_filename": "未知",
+        "description": "用户将内容从WPS Office复制后，在微信中粘贴并发送给联系人。"
+      }
+    }
+  ]
+}

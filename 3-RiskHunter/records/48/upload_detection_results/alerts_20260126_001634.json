@@ -1,0 +1,89 @@
+{
+  "record_id": 48,
+  "timestamp": "20260126_001634",
+  "total_alerts": 2,
+  "alerts": [
+    {
+      "event_id": "2025-12-30T15:51:48_opened_-2874016820271866823",
+      "timestamp": "2025-12-30T15:51:48.410",
+      "file_path": "D:/dingxinyao/desktop/重点客户信息汇总表.docx",
+      "file_name": "重点客户信息汇总表.docx",
+      "original_file": "D:/dingxinyao/desktop/重点客户信息汇总表.docx",
+      "app_name": "QQ",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "聊天转发",
+      "time_range": "2025-12-30 15:51:49 - 2025-12-30 15:52:16",
+      "involved_timestamps": [
+        "2025-12-30 15:51:49",
+        "2025-12-30 15:51:50",
+        "2025-12-30 15:51:52",
+        "2025-12-30 15:52:11",
+        "2025-12-30 15:52:16"
+      ],
+      "description": "用户在QQ中打开并查看了《重点客户信息汇总表.docx》，并在聊天窗口中进行了操作，疑似准备发送该文件。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 'QQ' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2025-12-30 15:51:49 - 2025-12-30 15:52:16",
+        "involved_timestamps": [
+          "2025-12-30 15:51:49",
+          "2025-12-30 15:51:50",
+          "2025-12-30 15:51:52",
+          "2025-12-30 15:52:11",
+          "2025-12-30 15:52:16"
+        ],
+        "app_name": "QQ",
+        "app_type": "黑名单",
+        "behavior_category": "直接外发",
+        "operation_type": "聊天转发",
+        "original_filename": "重点客户信息汇总表.docx",
+        "modified_filename": "未知",
+        "description": "用户在QQ中打开并查看了《重点客户信息汇总表.docx》，并在聊天窗口中进行了操作，疑似准备发送该文件。"
+      }
+    },
+    {
+      "event_id": "2025-12-30T15:52:32_modified_6827705782075394295",
+      "timestamp": "2025-12-30T15:52:32.243",
+      "file_path": "D:/dingxinyao/desktop/2025—2028年公司发展战略规划.docx",
+      "file_name": "2025—2028年公司发展战略规划.docx",
+      "original_file": "D:/dingxinyao/desktop/2025—2028年公司发展战略规划.docx",
+      "app_name": "QQ",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "聊天转发",
+      "time_range": "2025-12-30 15:52:49 - 2025-12-30 15:53:04",
+      "involved_timestamps": [
+        "2025-12-30 15:52:49",
+        "2025-12-30 15:52:50",
+        "2025-12-30 15:52:51",
+        "2025-12-30 15:52:56",
+        "2025-12-30 15:52:59",
+        "2025-12-30 15:53:04"
+      ],
+      "description": "用户在QQ中通过鼠标右键菜单选择了发送给联系人，并且发送了一个名为'QQ20251230-155217.mp4'的文件。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 'QQ' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2025-12-30 15:52:49 - 2025-12-30 15:53:04",
+        "involved_timestamps": [
+          "2025-12-30 15:52:49",
+          "2025-12-30 15:52:50",
+          "2025-12-30 15:52:51",
+          "2025-12-30 15:52:56",
+          "2025-12-30 15:52:59",
+          "2025-12-30 15:53:04"
+        ],
+        "app_name": "QQ",
+        "app_type": "黑名单",
+        "behavior_category": "直接外发",
+        "operation_type": "聊天转发",
+        "original_filename": "《2025—2028年公司发展战略规划》.docx",
+        "modified_filename": "未知",
+        "description": "用户在QQ中通过鼠标右键菜单选择了发送给联系人，并且发送了一个名为'QQ20251230-155217.mp4'的文件。"
+      }
+    }
+  ]
+}

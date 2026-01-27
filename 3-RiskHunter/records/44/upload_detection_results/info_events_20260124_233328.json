@@ -1,0 +1,75 @@
+{
+  "record_id": 44,
+  "timestamp": "20260124_233328",
+  "total_events": 2,
+  "events": [
+    {
+      "event_id": "derived_复制_6745260113044244726_2025-12-28T19:01:53",
+      "timestamp": "2025-12-28T19:01:53",
+      "file_path": "/Users/tujiali/Documents/三、本手册的所有条款，除特殊说明外，对公司全体员工具有同等约束力，每一位员工均须详尽了解本手册并严格遵守执行。违反本手册规定的员工，公司有处罚其的权利，处罚方式（通报批评、警告、劝退、辞退、开除等）视情节严重程度由公司决定。",
+      "file_name": "三、本手册的所有条款，除特殊说明外，对公司全体员工具有同等约束力，每一位员工均须详尽了解本手册并严格遵守执行。违反本手册规定的员工，公司有处罚其的权利，处罚方式（通报批评、警告、劝退、辞退、开除等）视情节严重程度由公司决定。",
+      "original_file": "/Users/tujiali/Documents/AAA公司员工守则.docx",
+      "app_name": "Google Chrome",
+      "app_category": "unknown",
+      "behavior_category": "直接外发",
+      "operation_type": "粘贴外发",
+      "time_range": "2025-12-28 19:02:02 - 2025-12-28 19:02:09",
+      "involved_timestamps": [
+        "2025-12-28 19:02:02",
+        "2025-12-28 19:02:09"
+      ],
+      "description": "用户在Google Chrome浏览器中打开了一个新标签页，并在搜索框中输入内容，疑似准备将之前复制的内容粘贴到外部网站或服务中。",
+      "should_alert": false,
+      "alert_level": "info",
+      "alert_reason": "非黑名单应用 'Google Chrome' 的文件外发（仅记录）",
+      "extra_info": {
+        "time_range": "2025-12-28 19:02:02 - 2025-12-28 19:02:09",
+        "involved_timestamps": [
+          "2025-12-28 19:02:02",
+          "2025-12-28 19:02:09"
+        ],
+        "app_name": "Google Chrome",
+        "app_type": "黑名单",
+        "behavior_category": "直接外发",
+        "operation_type": "粘贴外发",
+        "original_filename": "三、本手册的所有条款，除特殊说明外，对公司全体员工具有同等约束力，每一位员工均须详尽了解本手册并严格遵守执行。违反本手册规定的员工，公司有处罚其的权利，处罚方式（通报批评、警告、劝退、辞退、开除等）视情节严重程度由公司决定。",
+        "modified_filename": "未知",
+        "description": "用户在Google Chrome浏览器中打开了一个新标签页，并在搜索框中输入内容，疑似准备将之前复制的内容粘贴到外部网站或服务中。"
+      }
+    },
+    {
+      "event_id": "derived_复制_6745260113044244726_2025-12-28T19:01:54",
+      "timestamp": "2025-12-28T19:01:54",
+      "file_path": "/Users/tujiali/Documents/三、本手册的所有条款，除特殊说明外，对公司全体员工具有同等约束力，每一位员工均须详尽了解本手册并严格遵守执行。违反本手册规定的员工，公司有处罚其的权利，处罚方式（通报批评、警告、劝退、辞退、开除等）视情节严重程度由公司决定。",
+      "file_name": "三、本手册的所有条款，除特殊说明外，对公司全体员工具有同等约束力，每一位员工均须详尽了解本手册并严格遵守执行。违反本手册规定的员工，公司有处罚其的权利，处罚方式（通报批评、警告、劝退、辞退、开除等）视情节严重程度由公司决定。",
+      "original_file": "/Users/tujiali/Documents/AAA公司员工守则.docx",
+      "app_name": "Google Chrome",
+      "app_category": "unknown",
+      "behavior_category": "直接外发",
+      "operation_type": "粘贴外发",
+      "time_range": "2025-12-28 19:02:02 - 2025-12-28 19:02:09",
+      "involved_timestamps": [
+        "2025-12-28 19:02:02",
+        "2025-12-28 19:02:09"
+      ],
+      "description": "用户在Google Chrome浏览器中打开了一个新标签页，并在搜索框中输入内容，疑似准备将之前复制的内容粘贴到外部网站或服务中。",
+      "should_alert": false,
+      "alert_level": "info",
+      "alert_reason": "非黑名单应用 'Google Chrome' 的文件外发（仅记录）",
+      "extra_info": {
+        "time_range": "2025-12-28 19:02:02 - 2025-12-28 19:02:09",
+        "involved_timestamps": [
+          "2025-12-28 19:02:02",
+          "2025-12-28 19:02:09"
+        ],
+        "app_name": "Google Chrome",
+        "app_type": "黑名单",
+        "behavior_category": "直接外发",
+        "operation_type": "粘贴外发",
+        "original_filename": "三、本手册的所有条款，除特殊说明外，对公司全体员工具有同等约束力，每一位员工均须详尽了解本手册并严格遵守执行。违反本手册规定的员工，公司有处罚其的权利，处罚方式（通报批评、警告、劝退、辞退、开除等）视情节严重程度由公司决定。",
+        "modified_filename": "未知",
+        "description": "用户在Google Chrome浏览器中打开了一个新标签页，并在搜索框中输入内容，疑似准备将之前复制的内容粘贴到外部网站或服务中。"
+      }
+    }
+  ]
+}

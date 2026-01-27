@@ -1,0 +1,55 @@
+{
+  "record_id": 49,
+  "timestamp": "20260125_230112",
+  "total_alerts": 1,
+  "alerts": [
+    {
+      "event_id": "2025-12-30T15:59:10_modified_-4389383000152714078",
+      "timestamp": "2025-12-30T15:59:10.243",
+      "file_path": "D:/dingxinyao/desktop/公司合作合同.docx",
+      "file_name": "公司合作合同.docx",
+      "original_file": "D:/dingxinyao/desktop/公司合作合同.docx",
+      "app_name": "QQ",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "粘贴外发",
+      "time_range": "2025-12-30 15:59:10 - 2025-12-30 15:59:29",
+      "involved_timestamps": [
+        "2025-12-30 15:59:10",
+        "2025-12-30 15:59:11",
+        "2025-12-30 15:59:12",
+        "2025-12-30 15:59:18",
+        "2025-12-30 15:59:19",
+        "2025-12-30 15:59:22",
+        "2025-12-30 15:59:25",
+        "2025-12-30 15:59:26",
+        "2025-12-30 15:59:29"
+      ],
+      "description": "用户在QQ中将文件内容粘贴并发送给联系人。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 'QQ' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2025-12-30 15:59:10 - 2025-12-30 15:59:29",
+        "involved_timestamps": [
+          "2025-12-30 15:59:10",
+          "2025-12-30 15:59:11",
+          "2025-12-30 15:59:12",
+          "2025-12-30 15:59:18",
+          "2025-12-30 15:59:19",
+          "2025-12-30 15:59:22",
+          "2025-12-30 15:59:25",
+          "2025-12-30 15:59:26",
+          "2025-12-30 15:59:29"
+        ],
+        "app_name": "QQ",
+        "app_type": "黑名单",
+        "behavior_category": "直接外发",
+        "operation_type": "粘贴外发",
+        "original_filename": "公司合作合同.docx",
+        "modified_filename": "未知",
+        "description": "用户在QQ中将文件内容粘贴并发送给联系人。"
+      }
+    }
+  ]
+}

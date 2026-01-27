@@ -927,5 +927,83 @@
       "category": "",
       "raw_operation": "open"
     }
+  },
+  {
+    "timestamp": "2026-01-05T13:32:13.860",
+    "event_type": "opened",
+    "file_path": "/com.apple.chrono/timelines/com.apple.weather/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_name": "systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+    "file_size": 0,
+    "file_extension": ".chrono-timeline",
+    "process_info": {
+      "pid": "14829789",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/com.apple.chrono/timelines/com.apple.weather/systemSmall--3183218717769055586----164.00w--164.00h--20.00r--0f--0.00t-0.00l-0.00b0.00t.chrono-timeline",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T13:32:14.860",
+    "event_type": "opened",
+    "file_path": "/Users/qwer/Downloads/test/AAA公司合同.docx",
+    "file_name": "AAA公司合同.docx",
+    "file_size": 0,
+    "file_extension": ".docx",
+    "process_info": {
+      "pid": "14829789",
+      "process_name": "chronod",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "qwerdeMacBook-Pro.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "chronod",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "chronod",
+      "upload_type": "Sensitive Access",
+      "original_file": "/Users/qwer/Downloads/test/AAA公司合同.docx",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "open"
+    }
   }
 ]

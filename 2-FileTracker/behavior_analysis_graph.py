@@ -197,7 +197,8 @@ class BehaviorAnalysisGraph:
         event: SensitiveFileEvent,
         index_path: str,
         video_path: str,
-        log_events: list = None
+        log_events: list = None,
+        search_duration: int = 30
     ) -> Dict[str, Any]:
         """
         分析单个敏感事件的隐藏行为
@@ -207,6 +208,7 @@ class BehaviorAnalysisGraph:
             index_path: INDEX.md 路径
             video_path: 视频路径
             log_events: 日志事件列表（用于查找跨目录文件的实际路径）
+            search_duration: 视频搜索时长（秒），默认30秒
             
         Returns:
             分析结果
@@ -218,6 +220,7 @@ class BehaviorAnalysisGraph:
             "index_path": index_path,
             "video_path": video_path,
             "log_events": log_events or [],  # 添加日志事件列表
+            "search_duration": search_duration,
             "frame_analysis_result": None,
             "hidden_operations": [],
             "file_mappings": [],
@@ -272,7 +275,7 @@ class BehaviorAnalysisGraph:
                 "current_file": event.current_file,
                 "index_path": state["index_path"],
                 "video_path": state["video_path"],
-                "search_duration": 30
+                "search_duration": state["search_duration"]
             })
             
             print(f"   ✅ 帧分析完成")
@@ -356,7 +359,7 @@ class BehaviorAnalysisGraph:
             new_file_path = ""
             if log_events:
                 print(f"   🔍 在 {len(log_events)} 条日志中搜索文件: {new_filename}")
-                print(f"   🔍 时间范围: {time_range}")
+                print(f"   🔍 模块1检测到的关键帧时间范围: {time_range}")
                 new_file_path = self._find_file_path_in_logs(new_filename, time_range, log_events)
                 if new_file_path:
                     print(f"   📍 从日志找到实际路径: {new_file_path}")
@@ -422,6 +425,7 @@ class BehaviorAnalysisGraph:
         new_sensitive_files = []
         for event in new_events:
             self.worklist_manager.add_event(event)
+            # 输出event_id
             print(f"   ✅ 添加到 worklist: {event.current_file}")
             
             if event.current_file not in self.worklist_manager.sensitive_files:
@@ -429,11 +433,14 @@ class BehaviorAnalysisGraph:
                 new_sensitive_files.append(event.current_file)
                 print(f"   ✅ 添加到敏感文件列表: {event.current_file}")
             
+            # 获取relationship信息
+            relationship = event.raw_event.get("operation_type", "未知关系") if event.raw_event else "未知关系"
+            
             self.worklist_manager.update_file_mapping(
                 original_file=event.original_file,
                 new_file=event.current_file
             )
-            print(f"   ✅ 添加映射: {event.original_file} -> {event.current_file}")
+            print(f"   ✅ 添加映射 ({relationship}): {event.original_file} -> {event.current_file}")
         
         # 如果有新的敏感文件，重新扫描日志
         if new_sensitive_files:
@@ -480,7 +487,8 @@ def analyze_sensitive_event_behavior(
     index_path: str,
     video_path: str,
     worklist_manager: WorklistManager,
-    log_events: list = None
+    log_events: list = None,
+    search_duration: int = 30
 ) -> Dict[str, Any]:
     """
     分析单个敏感事件的隐藏行为（便捷函数）
@@ -491,9 +499,10 @@ def analyze_sensitive_event_behavior(
         video_path: 视频路径
         worklist_manager: Worklist 管理器
         log_events: 日志事件列表（用于查找跨目录文件的实际路径）
+        search_duration: 视频搜索时长（秒），默认30秒
         
     Returns:
         分析结果
     """
     graph = BehaviorAnalysisGraph(worklist_manager)
-    return graph.analyze_event(event, index_path, video_path, log_events)
+    return graph.analyze_event(event, index_path, video_path, log_events, search_duration)

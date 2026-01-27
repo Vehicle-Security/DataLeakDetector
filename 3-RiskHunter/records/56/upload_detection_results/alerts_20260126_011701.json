@@ -1,0 +1,45 @@
+{
+  "record_id": 56,
+  "timestamp": "20260126_011701",
+  "total_alerts": 1,
+  "alerts": [
+    {
+      "event_id": "2026-01-05T15:23:28_opened_-3326711768502219154",
+      "timestamp": "2026-01-05T15:23:28.440",
+      "file_path": "/Users/tujiali/Documents/BBB公司员工绩效表.xlsx",
+      "file_name": "BBB公司员工绩效表.xlsx",
+      "original_file": "/Users/tujiali/Documents/BBB公司员工绩效表.xlsx",
+      "app_name": "Google Gemini",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "粘贴外发",
+      "time_range": "2026-01-05 15:23:27 - 2026-01-05 15:23:42",
+      "involved_timestamps": [
+        "2026-01-05 15:23:27",
+        "2026-01-05 15:23:30",
+        "2026-01-05 15:23:35",
+        "2026-01-05 15:23:42"
+      ],
+      "description": "用户在Google Gemini中上传并分析了文件'BBB公司员工绩效表.xlsx'，该操作涉及将文件内容发送到AI对话框进行处理。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 'Google Gemini' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2026-01-05 15:23:27 - 2026-01-05 15:23:42",
+        "involved_timestamps": [
+          "2026-01-05 15:23:27",
+          "2026-01-05 15:23:30",
+          "2026-01-05 15:23:35",
+          "2026-01-05 15:23:42"
+        ],
+        "app_name": "Google Gemini",
+        "app_type": "黑名单",
+        "behavior_category": "直接外发",
+        "operation_type": "粘贴外发",
+        "original_filename": "BBB公司员工绩效表.xlsx",
+        "modified_filename": "未知",
+        "description": "用户在Google Gemini中上传并分析了文件'BBB公司员工绩效表.xlsx'，该操作涉及将文件内容发送到AI对话框进行处理。"
+      }
+    }
+  ]
+}

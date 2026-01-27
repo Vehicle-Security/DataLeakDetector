@@ -1,0 +1,83 @@
+[
+  {
+    "timestamp": "2025-12-30T15:51:48.410",
+    "event_type": "opened",
+    "file_path": "D:\\dingxinyao\\desktop\\重点客户信息汇总表.docx",
+    "file_name": "重点客户信息汇总表.docx",
+    "file_size": 11740,
+    "file_extension": ".docx",
+    "process_info": {
+      "pid": 21004,
+      "process_name": "wpsdesktop.exe",
+      "process_path": "D:\\app\\WPS Office\\12.1.0.24034\\office6\\wpsdesktop.exe",
+      "cmdline": "D:\\app\\WPS Office\\12.1.0.24034\\office6\\wpsdesktop.exe /kdesktop /StartFrom=desktop_shortcut"
+    },
+    "window_info": {
+      "window_handle": "0",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "dingxinyao",
+      "hostname": "LAPTOP-8LJV9DNU"
+    },
+    "disk_info": {
+      "drive_letter": "D:",
+      "disk_type": "Fixed"
+    }
+  },
+  {
+    "timestamp": "2025-12-30T15:52:20.243",
+    "event_type": "opened",
+    "file_path": "D:\\dingxinyao\\desktop\\公司合作合同.docx",
+    "file_name": "公司合作合同.docx",
+    "file_size": 11342,
+    "file_extension": ".docx",
+    "process_info": {
+      "pid": 18948,
+      "process_name": "fsquirt.exe",
+      "process_path": "C:\\Windows\\System32\\fsquirt.exe",
+      "cmdline": "C:\\WINDOWS\\system32\\fsquirt.exe"
+    },
+    "window_info": {
+      "window_handle": "0",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "dingxinyao",
+      "hostname": "LAPTOP-8LJV9DNU"
+    },
+    "disk_info": {
+      "drive_letter": "D:",
+      "disk_type": "Fixed"
+    }
+  },
+  {
+    "timestamp": "2025-12-30T15:52:32.243",
+    "event_type": "modified",
+    "file_path": "D:\\dingxinyao\\desktop\\2025—2028年公司发展战略规划.docx",
+    "file_name": "2025—2028年公司发展战略规划.docx",
+    "file_size": 11342,
+    "file_extension": ".docx",
+    "process_info": {
+      "pid": 18948,
+      "process_name": "fsquirt.exe",
+      "process_path": "C:\\Windows\\System32\\fsquirt.exe",
+      "cmdline": "C:\\WINDOWS\\system32\\fsquirt.exe"
+    },
+    "window_info": {
+      "window_handle": "0",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "dingxinyao",
+      "hostname": "LAPTOP-8LJV9DNU"
+    },
+    "disk_info": {
+      "drive_letter": "D:",
+      "disk_type": "Fixed"
+    }
+  }
+]

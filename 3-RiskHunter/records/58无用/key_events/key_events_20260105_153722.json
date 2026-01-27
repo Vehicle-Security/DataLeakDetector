@@ -1,5 +1,83 @@
 [
   {
+    "timestamp": "2026-01-05T15:37:29.482",
+    "event_type": "opened",
+    "file_path": "/Users/tujiali/Documents/AAA公司合同.docx",
+    "file_name": "AAA公司合同.docx",
+    "file_size": 0,
+    "file_extension": ".docx",
+    "process_info": {
+      "pid": "3213094",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
+    "timestamp": "2026-01-05T15:37:44.482",
+    "event_type": "opened",
+    "file_path": "/Users/tujiali/Documents/AAA公司合同.docx",
+    "file_name": "AAA公司合同.docx",
+    "file_size": 0,
+    "file_extension": ".docx",
+    "process_info": {
+      "pid": "3213094",
+      "process_name": "BiomeAgent",
+      "process_path": "",
+      "cmdline": ""
+    },
+    "window_info": {
+      "window_handle": "",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "root",
+      "hostname": "tujialideMacBook-Air.local"
+    },
+    "disk_info": {
+      "drive_letter": "/",
+      "disk_type": "SSD/HDD"
+    },
+    "app_name": "BiomeAgent",
+    "upload_detection": {
+      "is_upload": true,
+      "app_name": "BiomeAgent",
+      "upload_type": "Sensitive Access",
+      "original_file": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",
+      "temp_directory": ""
+    },
+    "extra": {
+      "category": "",
+      "raw_operation": "openat"
+    }
+  },
+  {
     "timestamp": "2026-01-05T15:37:26.482",
     "event_type": "opened",
     "file_path": "/sessions/46C1B8E9-7F83-47C6-A637-204A75FAA816/bookmarks/server/com.apple.corespotlightd",

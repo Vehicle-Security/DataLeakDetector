@@ -15,17 +15,23 @@ class UploadDetectionConfig:
         self.sensitive_files = [
             # 示例敏感文件路径（请根据实际情况修改）
             "/Users/tujiali/Documents/项目3prd设计.docx", # 60 重命名 45 截屏
-            "/Users/tujiali/Documents/项目1详细规划.docx", # 43 压缩zip
+            "/Users/tujiali/Documents/项目1详细规划.docx", # 43 压缩zip 70 截图 59云端上传
             "/Users/tujiali/Documents/项目2需求分析.docx", # 42 格式转换：导出为pdf
             "D:\\dingxinyao\\desktop\\智能图像增强系统技术设计文档.docx", # 64 重命名(windows) 61 复制粘贴
             
-            "D:\\dingxinyao\\desktop\\公司合作合同.docx", # 46 蓝牙发送文件
+            "D:\\dingxinyao\\desktop\\公司合作合同.docx", # 46 蓝牙发送文件 48 49
             "D:\\dingxinyao\\desktop\\2025年第一季度内部财务报表.docx", # 47 U盘拷贝
             "D:\\dingxinyao\\desktop\\公司机密\\公司内部资料\\公司高层秘密会议纪要.docx", #61 复制粘贴
-            "D:\\dingxinyao\\desktop\\重点客户信息汇总表.docx", #62 截图泄露 65 云端上传泄露
+            "D:\\dingxinyao\\desktop\\重点客户信息汇总表.docx", #48 录屏泄露 62 截图泄露 65 云端上传泄露 50白名单分享黑名单
+            "D:\\dingxinyao\\desktop\\2025—2028年公司发展战略规划.docx", #48
 
             "/Users/tujiali/Documents/需求设计.docx", # 41 重命名
             "/Users/tujiali/Documents/AAA公司员工守则.docx", # 44 复制粘贴 57 OCR识别文字 58 截图泄露
+            "/Users/tujiali/Documents/BBB公司员工绩效表.xlsx", #56 文件上传
+            "/Users/tujiali/Documents/AAA公司合同.docx", #58 截屏
+
+            "/Users/qwer/Downloads/test/XX有限公司内部管理制度汇编.pdf", #52 文件分段成图片 55 文本嵌入图片像素
+            "/Users/qwer/Downloads/test/AAA公司合同.docx", #53 云端上传 54 VPN/代理泄露 
         ]
         
         # ========== 黑名单应用 ==========
@@ -47,9 +53,9 @@ class UploadDetectionConfig:
             "邮箱大师", "Youxiangdashi.exe", "Youxiangdashi",
 
             "网易邮箱", "163邮箱", "mail.163.com",
-            "QQ邮箱", "mail.qq.com"
+            "QQ邮箱", "mail.qq.com",
 
-            "百度网盘", "BaiduNetdisk.exe", "BaiduNetdisk", "pan.baidu.com"
+            "百度网盘", "BaiduNetdisk.exe", "BaiduNetdisk", "pan.baidu.com",
             "GitHub", "github.com",
             "CSDN", "csdn.net",
             "有道云笔记", "note.youdao.com",
@@ -90,6 +96,9 @@ class UploadDetectionConfig:
             "企业网盘",
             "企业云存储",
             "WPS", "wpsdesktop.exe", "wps.exe", 
+            "Word", "Microsoft Word", 
+            "Excel", "Microsoft Excel",
+            "本地文件夹", "IDE", "公司内部OA"
         ]
         
         # ========== 检测规则 ==========

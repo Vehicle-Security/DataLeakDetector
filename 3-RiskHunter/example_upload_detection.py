@@ -29,11 +29,15 @@ def main():
     
     # ========== 配置参数 ==========
     # 记录ID（可修改为不同的会话）
-    # 可用ID：42 57 
-    # 无用ID：41 43 46 47 48 49 50 58 59 60 61 62 63 64 65
-    # 可能可用ID：44(复制粘贴还无法确认外发行为)  45(模块1无法识别截图的文件隐藏行为操作及截图生成的照片文件)
+    # 可用ID：41 42 43 44 49 50 52 53 54 55 56 57
+    # 无用ID：45\58(模块1无法识别截图操作及生成的照片文件) 46\47(两块屏幕像素低)  48 51 60 61
+    # 待重测ID：62 63 64 65
     # 待测ID: 
-    record_id = 59
+    record_id = 61
+    
+    # 模块1视频搜索时间范围（秒）
+    # 从敏感文件事件发生时刻开始往后搜索的时长
+    search_duration = 30
     
     base_path = f"records/{record_id}"
     
@@ -65,6 +69,7 @@ def main():
     print(f"   - 敏感文件: {len(sensitive_files)} 个")
     print(f"   - 黑名单应用: {len(blacklist_apps)} 个")
     print(f"   - 白名单应用: {len(whitelist_apps)} 个")
+    print(f"   - 视频搜索间隔时长: {search_duration} 秒")
     
     # ========== 创建初始状态 ==========
     print(f"\n🔧 创建初始状态...")
@@ -76,7 +81,8 @@ def main():
         index_path=index_path,
         sensitive_files=sensitive_files,
         blacklist_apps=blacklist_apps,
-        whitelist_apps=whitelist_apps
+        whitelist_apps=whitelist_apps,
+        search_duration=search_duration
     )
     
     # ========== 创建并运行图 ==========

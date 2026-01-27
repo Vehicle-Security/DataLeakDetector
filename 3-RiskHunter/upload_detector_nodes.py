@@ -116,7 +116,8 @@ def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
             index_path=state["index_path"],
             video_path=state["video_path"],
             worklist_manager=manager,
-            log_events=log_events
+            log_events=log_events,
+            search_duration=state["search_duration"]
         )
         
         state["module1_result"] = result.get("frame_analysis_result", result)
@@ -134,6 +135,7 @@ def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
             if additional_count > 0:
                 print(f"   ✅ 新增 {additional_count} 个敏感事件到worklist")
                 state["worklist_size"] = manager.size()
+                print(f"   📊 更新后worklist大小: {state['worklist_size']}")
             else:
                 print(f"   ℹ️ 未发现额外的敏感事件")
         
@@ -188,7 +190,7 @@ def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
             # 判断是否为上传/外发行为
             is_upload = "外发" in behavior_category or any(
                 keyword in operation_type 
-                for keyword in ["上传", "发送", "分享", "转发", "附件"]
+                for keyword in ["上传", "发送", "分享", "转发", "附件", "粘贴"]
             )
             
             if not is_upload:
@@ -216,12 +218,35 @@ def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
             print(f"      - 级别: {alert_level}")
             print(f"      - 原因: {alert_reason}")
             
+            # 提取真正外发的文件/内容
+            # 对于直接外发行为，original_filename是真正外发的内容
+            upload_content = event_data.get("original_filename", "")
+            if not upload_content or upload_content == "未知":
+                upload_content = current_event["file_path"]  # 如果没有，默认使用当前文件
+            
+            # 构建映射链：从worklist_manager获取文件映射
+            upload_content_mapping_link = "无"
+            try:
+                manager = state.get("_worklist_manager")
+                if manager and upload_content:
+                    # 使用 get_mapping_chain 方法获取完整映射链
+                    mapping_chain = manager.get_mapping_chain(upload_content)
+                    if mapping_chain:
+                        upload_content_mapping_link = mapping_chain
+            except Exception as e:
+                print(f"      ⚠️ 构建映射链失败: {e}")
+            
+            print(f"      - 外发内容: {upload_content}")
+            print(f"      - 映射链: {upload_content_mapping_link}")
+            
             upload_event = UploadEvent(
                 event_id=current_event["event_id"],
                 timestamp=current_event["timestamp"],
                 file_path=current_event["file_path"],
                 file_name=os.path.basename(current_event["file_path"]),
                 original_file=current_event["original_file"],
+                upload_content=upload_content,
+                upload_content_mapping_link=upload_content_mapping_link,
                 app_name=app_name,
                 app_category=app_category,
                 behavior_category=behavior_category,
@@ -298,6 +323,8 @@ def finalize_node(state: UploadDetectorState) -> UploadDetectorState:
             print(f"      文件: {event.file_name}")
             print(f"      应用: {event.app_name} ({event.app_category})")
             print(f"      操作: {event.operation_type}")
+            print(f"      外发内容: {event.upload_content}")
+            print(f"      映射链: {event.upload_content_mapping_link}")
             print(f"      原因: {event.alert_reason}")
     else:
         print(f"\n✅ 无报警事件")
@@ -311,6 +338,8 @@ def finalize_node(state: UploadDetectorState) -> UploadDetectorState:
             print(f"      文件: {event.file_name}")
             print(f"      应用: {event.app_name} ({event.app_category})")
             print(f"      操作: {event.operation_type}")
+            print(f"      外发内容: {event.upload_content}")
+            print(f"      映射链: {event.upload_content_mapping_link}")
     
     if state["errors"]:
         print(f"\n❌ 错误 ({len(state['errors'])} 个):")
