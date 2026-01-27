@@ -19,7 +19,7 @@ class UploadDetectionConfig:
             "/Users/tujiali/Documents/项目2需求分析.docx", # 42 格式转换：导出为pdf
             "D:\\dingxinyao\\desktop\\智能图像增强系统技术设计文档.docx", # 64 重命名(windows) 61 复制粘贴
             
-            "D:\\dingxinyao\\desktop\\公司合作合同.docx", # 46 蓝牙发送文件 48 49
+            "D:\\dingxinyao\\desktop\\公司合作合同.docx", # 46 蓝牙发送文件 48 49 OCR识字 63语音
             "D:\\dingxinyao\\desktop\\2025年第一季度内部财务报表.docx", # 47 U盘拷贝
             "D:\\dingxinyao\\desktop\\公司机密\\公司内部资料\\公司高层秘密会议纪要.docx", #61 复制粘贴
             "D:\\dingxinyao\\desktop\\重点客户信息汇总表.docx", #48 录屏泄露 62 截图泄露 65 云端上传泄露 50白名单分享黑名单

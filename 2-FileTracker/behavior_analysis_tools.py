@@ -190,6 +190,161 @@ def extract_hidden_operations(frame_analysis_result: Dict[str, Any]) -> Dict[str
             "file_mappings": []
         }
 
+# ==================== 共同辅助函数 ====================
+
+def infer_full_path(base_dir: str, filename: str) -> str:
+    """
+    推断并标准化文件的完整路径
+    
+    Args:
+        base_dir: 基础目录路径
+        filename: 文件名（可能是完整路径或仅文件名）
+        
+    Returns:
+        标准化后的完整路径
+    """
+    # 如果已经是绝对路径，直接使用
+    if os.path.isabs(filename) or filename.startswith('/'):
+        full_path = filename
+    else:
+        full_path = os.path.join(base_dir, filename) if base_dir else filename
+    
+    full_path = full_path.replace("\\", "/")
+    full_path = full_path.replace("//", "/")
+    
+    return full_path
+
+
+def find_file_path_in_logs(filename: str, time_range: str, log_events: list) -> str:
+    """
+    从日志中查找文件的实际完整路径
+    
+    单次遍历策略（高效）：
+    1. 遍历日志时记录：完全匹配（带扩展名）和不带扩展名匹配
+    2. 找到完全匹配立即返回
+    3. 遍历完没有完全匹配，返回不带扩展名匹配（如果有）
+    
+    Args:
+        filename: 文件名（不含路径）
+        time_range: 时间范围字符串（如 "2026-01-05 10:00:00 - 2026-01-05 10:10:00"）
+        log_events: 日志事件列表
+        
+    Returns:
+        找到的完整文件路径，如果未找到则返回空字符串
+    """
+    if not log_events:
+        return ""
+    
+    start_time, end_time = datetime.min, datetime.max
+    try:
+        time_parts = time_range.split(" - ")
+        if len(time_parts) == 2:
+            start_time = datetime.strptime(time_parts[0].strip(), "%Y-%m-%d %H:%M:%S")
+            end_time = datetime.strptime(time_parts[1].strip(), "%Y-%m-%d %H:%M:%S")
+    except:
+        pass
+    
+    target_name_no_ext = os.path.splitext(filename)[0]
+    
+    no_ext_match = None
+    no_ext_in_range = False
+    
+    for event in log_events:
+        try:
+            file_path = event.get("file_path", "")
+            if not file_path:
+                continue
+            
+            event_filename = os.path.basename(file_path)
+            
+            if event_filename == filename:
+                in_time_range = False
+                event_time_str = event.get("timestamp", "")
+                if event_time_str:
+                    try:
+                        event_time = datetime.strptime(event_time_str, "%Y-%m-%dT%H:%M:%S.%f")
+                        in_time_range = start_time <= event_time <= end_time
+                    except:
+                        try:
+                            event_time = datetime.strptime(event_time_str, "%Y-%m-%d %H:%M:%S")
+                            in_time_range = start_time <= event_time <= end_time
+                        except:
+                            pass
+                
+                range_info = "在时间范围内" if in_time_range else "不在时间范围内"
+                print(f"      ✅ 带扩展名匹配文件路径（{range_info}）")
+                return file_path
+            
+            if not no_ext_match:
+                event_name_no_ext = os.path.splitext(event_filename)[0]
+                if event_name_no_ext == target_name_no_ext:
+                    no_ext_match = file_path
+                    
+                    event_time_str = event.get("timestamp", "")
+                    if event_time_str:
+                        try:
+                            event_time = datetime.strptime(event_time_str, "%Y-%m-%dT%H:%M:%S.%f")
+                            no_ext_in_range = start_time <= event_time <= end_time
+                        except:
+                            try:
+                                event_time = datetime.strptime(event_time_str, "%Y-%m-%d %H:%M:%S")
+                                no_ext_in_range = start_time <= event_time <= end_time
+                            except:
+                                pass
+                    
+        except Exception as e:
+            continue
+    
+    if no_ext_match:
+        range_info = "在时间范围内" if no_ext_in_range else "不在时间范围内"
+        print(f"      ✅ 不带扩展名匹配文件路径（{range_info}）")
+        return no_ext_match
+    
+    return ""
+
+
+def resolve_full_path(
+    filename: str,
+    base_dir: str,
+    log_events: list = None,
+    time_range: str = "",
+    print_prefix: str = ""
+) -> str:
+    """
+    解析文件的完整路径（智能推断）
+    
+    策略：
+    1. 如果已经是完整路径，直接返回
+    2. 优先从日志中查找（处理跨目录情况）
+    3. 日志未找到则使用同目录推断
+    
+    Args:
+        filename: 文件名或路径
+        base_dir: 基础目录路径（用于同目录推断）
+        log_events: 日志事件列表（可选）
+        time_range: 时间范围字符串（可选）
+        print_prefix: 打印信息的前缀（用于缩进）
+        
+    Returns:
+        解析后的完整路径
+    """
+    # 检查是否已经是完整路径
+    if os.path.isabs(filename) or filename.startswith('/'):
+        return filename
+    
+    # 优先从日志中查找
+    if log_events:
+        found_path = find_file_path_in_logs(filename, time_range, log_events)
+        if found_path:
+            print(f"{print_prefix}📍 从日志找到完整路径: {found_path}")
+            return found_path
+    else:
+        print(f"{print_prefix}📍 日志中未找到文件路径")
+    # 日志未找到，使用同目录推断
+    full_path = infer_full_path(base_dir, filename)
+    print(f"{print_prefix}📍 使用同目录推断路径: {full_path}")
+    return full_path
+
 
 # 工具列表
 tools_list = [

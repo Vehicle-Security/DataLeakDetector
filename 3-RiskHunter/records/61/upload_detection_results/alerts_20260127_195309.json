@@ -1,0 +1,81 @@
+{
+  "record_id": 61,
+  "timestamp": "20260127_195309",
+  "total_alerts": 2,
+  "alerts": [
+    {
+      "event_id": "2026-01-05T17:12:29_opened_1251363115982555124",
+      "timestamp": "2026-01-05T17:12:29.215",
+      "file_path": "D:/dingxinyao/desktop/智能图像增强系统技术设计文档.docx",
+      "file_name": "智能图像增强系统技术设计文档.docx",
+      "original_file": "D:/dingxinyao/desktop/智能图像增强系统技术设计文档.docx",
+      "upload_content": "D:/dingxinyao/desktop/《智能图像增强系统技术设计文档》文件级别：绝密系统名称：VisionBoost-X一、系统概述VisionBoost-X 是一套基于扩散模型的图像增强系统，主要用于低质量图像修复与细节重建。二、系统架构系统采用分层架构设计，分为数据处理层、模型推理层、服务接口层三部分。三、核心算法说明系统核心采用改进型扩散生成模型，通过引入多尺度特征融合机制提升细节恢复能力。四、关键技术参数模型参数规模：约 8.2 亿平均推理时间：单张图像 320ms五、安全设计系统内部数据传输采用 AES-256 加密，模型访问权限基于角色进行控制。",
+      "upload_content_mapping_link": "D:/dingxinyao/desktop/智能图像增强系统技术设计文档.docx -> D:/dingxinyao/desktop/《智能图像增强系统技术设计文档》文件级别：绝密系统名称：VisionBoost-X一、系统概述VisionBoost-X 是一套基于扩散模型的图像增强系统，主要用于低质量图像修复与细节重建。二、系统架构系统采用分层架构设计，分为数据处理层、模型推理层、服务接口层三部分。三、核心算法说明系统核心采用改进型扩散生成模型，通过引入多尺度特征融合机制提升细节恢复能力。四、关键技术参数模型参数规模：约 8.2 亿平均推理时间：单张图像 320ms五、安全设计系统内部数据传输采用 AES-256 加密，模型访问权限基于角色进行控制。",
+      "app_name": "微信电脑版",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "粘贴外发",
+      "time_range": "2026-01-05 17:13:03 - 2026-01-05 17:13:10",
+      "involved_timestamps": [
+        "2026-01-05 17:13:03",
+        "2026-01-05 17:13:10"
+      ],
+      "description": "用户在微信电脑版中将之前复制的内容粘贴到聊天窗口并发送。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 '微信电脑版' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2026-01-05 17:13:03 - 2026-01-05 17:13:10",
+        "involved_timestamps": [
+          "2026-01-05 17:13:03",
+          "2026-01-05 17:13:10"
+        ],
+        "app_name": "微信电脑版",
+        "app_type": "黑名单",
+        "behavior_category": "直接外发",
+        "operation_type": "粘贴外发",
+        "original_filename": "《智能图像增强系统技术设计文档》文件级别：绝密系统名称：VisionBoost-X一、系统概述VisionBoost-X 是一套基于扩散模型的图像增强系统，主要用于低质量图像修复与细节重建。二、系统架构系统采用分层架构设计，分为数据处理层、模型推理层、服务接口层三部分。三、核心算法说明系统核心采用改进型扩散生成模型，通过引入多尺度特征融合机制提升细节恢复能力。四、关键技术参数模型参数规模：约 8.2 亿平均推理时间：单张图像 320ms五、安全设计系统内部数据传输采用 AES-256 加密，模型访问权限基于角色进行控制。",
+        "modified_filename": "未知",
+        "description": "用户在微信电脑版中将之前复制的内容粘贴到聊天窗口并发送。"
+      }
+    },
+    {
+      "event_id": "2026-01-05T17:12:33_modified_1251363115982555124",
+      "timestamp": "2026-01-05T17:12:33.215",
+      "file_path": "D:/dingxinyao/desktop/智能图像增强系统技术设计文档.docx",
+      "file_name": "智能图像增强系统技术设计文档.docx",
+      "original_file": "D:/dingxinyao/desktop/智能图像增强系统技术设计文档.docx",
+      "upload_content": "D:/dingxinyao/desktop/《智能图像增强系统技术设计文档》文件级别：绝密系统名称：VisionBoost-X...（文档内容）",
+      "upload_content_mapping_link": "无",
+      "app_name": "微信",
+      "app_category": "blacklist",
+      "behavior_category": "直接外发",
+      "operation_type": "粘贴外发",
+      "time_range": "2026-01-05 17:13:00 - 2026-01-05 17:13:08",
+      "involved_timestamps": [
+        "2026-01-05 17:13:00",
+        "2026-01-05 17:13:03",
+        "2026-01-05 17:13:08"
+      ],
+      "description": "用户将文档内容复制并在微信中粘贴发送给联系人Abstract。",
+      "should_alert": true,
+      "alert_level": "critical",
+      "alert_reason": "检测到黑名单应用 '微信' 的文件外发行为",
+      "extra_info": {
+        "time_range": "2026-01-05 17:13:00 - 2026-01-05 17:13:08",
+        "involved_timestamps": [
+          "2026-01-05 17:13:00",
+          "2026-01-05 17:13:03",
+          "2026-01-05 17:13:08"
+        ],
+        "app_name": "微信",
+        "app_type": "黑名单",
+        "behavior_category": "直接外发",
+        "operation_type": "粘贴外发",
+        "original_filename": "《智能图像增强系统技术设计文档》文件级别：绝密系统名称：VisionBoost-X...（文档内容）",
+        "modified_filename": "未知",
+        "description": "用户将文档内容复制并在微信中粘贴发送给联系人Abstract。"
+      }
+    }
+  ]
+}

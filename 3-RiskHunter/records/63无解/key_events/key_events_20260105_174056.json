@@ -1,5 +1,32 @@
 [
   {
+    "timestamp": "2026-01-05T17:41:00.243",
+    "event_type": "opened",
+    "file_path": "D:\\dingxinyao\\desktop\\公司合作合同.docx",
+    "file_name": "公司合作合同.docx",
+    "file_size": 11342,
+    "file_extension": ".docx",
+    "process_info": {
+      "pid": 18948,
+      "process_name": "fsquirt.exe",
+      "process_path": "C:\\Windows\\System32\\fsquirt.exe",
+      "cmdline": "C:\\WINDOWS\\system32\\fsquirt.exe"
+    },
+    "window_info": {
+      "window_handle": "0",
+      "window_title": "",
+      "window_class": ""
+    },
+    "user_info": {
+      "username": "dingxinyao",
+      "hostname": "LAPTOP-8LJV9DNU"
+    },
+    "disk_info": {
+      "drive_letter": "D:",
+      "disk_type": "Fixed"
+    }
+  },
+  {
     "timestamp": "2026-01-05T17:12:10.343",
     "event_type": "modified",
     "file_path": "C:\\Users\\dingxinyao\\AppData\\LocalLow\\AMD\\DxCache\\b51bf06ef1e4cdff.6f56c51b8a56b1c8.7b1f799a.dad1858.1.parc",

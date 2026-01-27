@@ -14,6 +14,7 @@ from upload_detector_state import UploadDetectorState, UploadEvent
 from upload_detection_config import config
 from worklist_manager import WorklistManager, load_log_from_json, SensitiveFileEvent
 from behavior_analysis_graph import analyze_sensitive_event_behavior
+from behavior_analysis_tools import resolve_full_path
 
 
 def initialize_node(state: UploadDetectorState) -> UploadDetectorState:
@@ -219,18 +220,27 @@ def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
             print(f"      - 原因: {alert_reason}")
             
             # 提取真正外发的文件/内容
-            # 对于直接外发行为，original_filename是真正外发的内容
+            # 对于直接外发行为，upload_content是真正外发的内容
             upload_content = event_data.get("original_filename", "")
             if not upload_content or upload_content == "未知":
                 upload_content = current_event["file_path"]  # 如果没有，默认使用当前文件
+            
+            # 使用统一的路径解析函数
+            upload_content_full_path = resolve_full_path(
+                filename=upload_content,
+                base_dir=os.path.dirname(current_event["file_path"]),
+                log_events=state.get("_log_events", []),
+                time_range=event_data.get("time_range", ""),
+                print_prefix="      "
+            )
             
             # 构建映射链：从worklist_manager获取文件映射
             upload_content_mapping_link = "无"
             try:
                 manager = state.get("_worklist_manager")
-                if manager and upload_content:
+                if manager and upload_content_full_path:
                     # 使用 get_mapping_chain 方法获取完整映射链
-                    mapping_chain = manager.get_mapping_chain(upload_content)
+                    mapping_chain = manager.get_mapping_chain(upload_content_full_path)
                     if mapping_chain:
                         upload_content_mapping_link = mapping_chain
             except Exception as e:
