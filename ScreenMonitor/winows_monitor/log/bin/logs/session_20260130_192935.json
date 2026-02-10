@@ -1,0 +1,1193 @@
+{"event": "monitor_started", "timestamp": "2026-01-30 19:29:35"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\29ac5448-4b81-4188-8192-7f41a0a33888.tmp"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\29ac5448-4b81-4188-8192-7f41a0a33888.tmp"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "Local"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "Edge"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\29ac5448-4b81-4188-8192-7f41a0a33888.tmp"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State~RF387870a.TMP"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State~RF387870a.TMP"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State~RF387870a.TMP"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State~RF387870a.TMP"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\5c1777adeb450493037605433033c10baf62f46b.tbres"}
+{"timestamp": "2026-01-30 19:29:38","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\ceb5e91cdda853ca4645c26e86d7a5bdf6805c13.tbres"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Service Worker\\ScriptCache\\25bf96bbbde72a75_0"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Service Worker\\ScriptCache\\25bf96bbbde72a75_1"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Service Worker\\ScriptCache\\25bf96bbbde72a75_s"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Service Worker\\ScriptCache\\4577271cd6fb65a1_0"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Service Worker\\ScriptCache\\4577271cd6fb65a1_1"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Service Worker\\ScriptCache\\4577271cd6fb65a1_s"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\WINDOWS\\AppPatch\\sysmain.sdb"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\WINDOWS\\apppatch\\MergeSdbFilesSource\\sysMerge.sdb"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Service Worker\\ScriptCache\\d0d42a9a7a3037c8_0"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\WINDOWS\\AppPatch\\sysmain.sdb"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\WINDOWS\\apppatch\\MergeSdbFilesSource\\sysMerge.sdb"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Service Worker\\ScriptCache\\d0d42a9a7a3037c8_1"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Service Worker\\ScriptCache\\d0d42a9a7a3037c8_s"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\WINDOWS\\AppPatch\\sysmain.sdb"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\WINDOWS\\apppatch\\MergeSdbFilesSource\\sysMerge.sdb"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\WINDOWS\\AppPatch\\sysmain.sdb"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 16544,"path": "C:\\WINDOWS\\apppatch\\MergeSdbFilesSource\\sysMerge.sdb"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome_elf.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome_elf.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome_elf.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome_elf.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome_elf.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\VERSION.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\VERSION.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome_elf.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\VERSION.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\VERSION.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\VERSION.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\VERSION.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\VERSION.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\VERSION.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\VERSION.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\VERSION.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\Globalization\\Sorting\\sortdefault.nls"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\Globalization\\Sorting\\sortdefault.nls"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\WINMM.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\WINMM.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\WINMM.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\WINMM.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\WINMM.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\WINMM.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\USERENV.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\USERENV.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\USERENV.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\USERENV.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\USERENV.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\USERENV.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\Secur32.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\Secur32.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\Secur32.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\Secur32.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\Secur32.dll"}
+{"timestamp": "2026-01-30 19:29:43","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\Secur32.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\WINHTTP.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\WINHTTP.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\WINHTTP.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\WINHTTP.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\WINHTTP.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\WINHTTP.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\DWrite.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\DWrite.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\DWrite.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\DWrite.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\DWrite.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\DWrite.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\WINSPOOL.DRV"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\WINSPOOL.DRV"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\WINSPOOL.DRV"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\WINSPOOL.DRV"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\WINSPOOL.DRV"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\WINSPOOL.DRV"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\cfgmgr32.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\cfgmgr32.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\cfgmgr32.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\cfgmgr32.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\DPAPI.DLL"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\DPAPI.DLL"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\DPAPI.DLL"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\DPAPI.DLL"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\DPAPI.DLL"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\DPAPI.DLL"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\SSPICLI.DLL"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\SSPICLI.DLL"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\SSPICLI.DLL"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\SSPICLI.DLL"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\SSPICLI.DLL"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\SSPICLI.DLL"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\MSASN1.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\MSASN1.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\MSASN1.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\MSASN1.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\icudtl.dat"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\icudtl.dat"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\v8_context_snapshot.bin"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\v8_context_snapshot.bin"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome_100_percent.pak"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome_100_percent.pak"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome_200_percent.pak"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\chrome_200_percent.pak"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\locales"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\locales"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\locales\\en-US.pak"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\locales\\en-US.pak"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\locales\\en-US.pak"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\locales\\en-US.pak"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\resources.pak"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\144.0.7559.110\\resources.pak"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\tzres.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\tzres.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\tzres.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\tzres.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\WindowsApps\\Microsoft.LanguageExperiencePackzh-CN_26100.150.236.0_neutral__8wekyb3d8bbwe\\Windows\\SYSTEM32\\zh-CN\\9f1c0a25a501c6c69c8ba8e7491286a4\\tzres.dll.mui"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\WindowsApps\\Microsoft.LanguageExperiencePackzh-CN_26100.150.236.0_neutral__8wekyb3d8bbwe\\Windows\\SYSTEM32\\zh-CN\\9f1c0a25a501c6c69c8ba8e7491286a4\\tzres.dll.mui"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\tzres.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\tzres.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\WINDOWS\\SYSTEM32\\tzres.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\WINDOWS\\SYSTEM32\\tzres.dll"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\WindowsApps\\Microsoft.LanguageExperiencePackzh-CN_26100.150.236.0_neutral__8wekyb3d8bbwe\\Windows\\SYSTEM32\\zh-CN\\9f1c0a25a501c6c69c8ba8e7491286a4\\tzres.dll.mui"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\WindowsApps\\Microsoft.LanguageExperiencePackzh-CN_26100.150.236.0_neutral__8wekyb3d8bbwe\\Windows\\SYSTEM32\\zh-CN\\9f1c0a25a501c6c69c8ba8e7491286a4\\tzres.dll.mui"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\6a401896-9838-4e1f-afa3-37be560bdaa0.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\d8ddcdb3-2e82-49c4-be33-f566f8ea319d.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\6a401896-9838-4e1f-afa3-37be560bdaa0.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\d8ddcdb3-2e82-49c4-be33-f566f8ea319d.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Local"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Local"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\users\\zbn20\\appdata\\local\\temp\\6a401896-9838-4e1f-afa3-37be560bdaa0.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\6a401896-9838-4e1f-afa3-37be560bdaa0.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\6a401896-9838-4e1f-afa3-37be560bdaa0.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\users\\zbn20\\appdata\\local\\temp\\d8ddcdb3-2e82-49c4-be33-f566f8ea319d.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\d8ddcdb3-2e82-49c4-be33-f566f8ea319d.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\d8ddcdb3-2e82-49c4-be33-f566f8ea319d.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Local"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\6a401896-9838-4e1f-afa3-37be560bdaa0.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Local"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\d8ddcdb3-2e82-49c4-be33-f566f8ea319d.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Local"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Local"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Local"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Local"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Local"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 13288,"path": "C:\\Program Files\\Google\\Chrome\\Application\\SystemResources\\chrome.dll.mun"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\6a401896-9838-4e1f-afa3-37be560bdaa0.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Local"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "Temp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 18076,"path": "C:\\Program Files\\Google\\Chrome\\Application\\SystemResources\\chrome.dll.mun"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\d8ddcdb3-2e82-49c4-be33-f566f8ea319d.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\6a401896-9838-4e1f-afa3-37be560bdaa0.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Temp\\d8ddcdb3-2e82-49c4-be33-f566f8ea319d.tmp"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\_locales"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\_locales\\en"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\_locales\\en_US"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\_locales\\en"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\_locales\\en\\messages.json"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\_locales\\en\\messages.json"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\_locales\\en"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\_locales\\en\\messages.json"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\_locales\\en\\messages.json"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey16.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey19.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey16.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey16.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey24.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey19.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey24.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey19.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey16.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey32.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey24.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey16.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey32.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey32.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey19.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey38.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey24.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey19.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey24.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey38.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey38.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey32.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey32.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey38.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey38.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey16.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey16.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey19.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey16.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey19.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey16.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey24.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey19.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey24.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey16.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey19.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey24.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey19.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey24.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey24.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey32.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey32.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey32.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey32.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey32.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey38.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey38.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey38.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey38.png"}
+{"timestamp": "2026-01-30 19:29:44","process": "chrome.exe","pid": 16544,"path": "C:\\Users\\zbn20\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Extensions\\dhdgffkkebhmkfjojejmpbldmpobfkfo\\5.4.1_0\\images\\icon_grey38.png"}
+{"timestamp": "2026-01-30 19:29:46","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\system32\\spool\\drivers\\color\\D65.camp"}
+{"timestamp": "2026-01-30 19:29:46","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\system32\\spool\\drivers\\color\\D65.camp"}
+{"timestamp": "2026-01-30 19:29:46","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\system32\\spool\\drivers\\color\\Photo.gmmp"}
+{"timestamp": "2026-01-30 19:29:46","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\system32\\spool\\drivers\\color\\Photo.gmmp"}
+{"timestamp": "2026-01-30 19:29:46","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\system32\\spool\\drivers\\color\\sRGB Color Space Profile.icm"}
+{"timestamp": "2026-01-30 19:29:46","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\9b6df64904e46d4422eaafb8b1936673e2633ec3.tbres"}
+{"timestamp": "2026-01-30 19:29:46","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\8e9aa007657a5c3f287303dfddc23f7a2e0b1b03.tbres"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\AppPatch\\sysmain.sdb"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\apppatch\\MergeSdbFilesSource\\sysMerge.sdb"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\AppPatch\\sysmain.sdb"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\apppatch\\MergeSdbFilesSource\\sysMerge.sdb"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\Prefetch\\MSEDGE.EXE-37D25FA8.pf"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\msedge_elf.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\msedge_elf.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\msedge_elf.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\ole32.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\ole32.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\usp10.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\Globalization\\Sorting\\sortdefault.nls"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\msedge.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\msedge.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\msedge.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\msedge.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\msedge.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\WINMM.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\WINMM.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\WINMM.dll"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\icudtl.dat"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\v8_context_snapshot.bin"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\msedge_100_percent.pak"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\msedge_200_percent.pak"}
+{"timestamp": "2026-01-30 19:29:47","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\Locales"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\Locales\\zh-CN.pak"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\Locales\\zh-CN.pak"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\139.0.3405.102\\resources.pak"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\IMM32.DLL"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\IMM32.DLL"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\uxtheme.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\uxtheme.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\rpcss.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\rpcss.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\kernel.appcore.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\kernel.appcore.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\WinSxS\\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.7309_none_3e05feeae336a044"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\WinSxS\\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.7309_none_3e05feeae336a044\\COMCTL32.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\WinSxS\\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.7309_none_3e05feeae336a044\\COMCTL32.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\WindowsShell.Manifest"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\shellstyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\shellstyle.dll:WofCompressedData"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\Windows.Storage.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\Windows.Storage.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\shellstyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\shellstyle.dll:WofCompressedData"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\Desktop.ini"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\CFGMGR32.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\CFGMGR32.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "code"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "DLP"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "win_monitor"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP\\win_monitor"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "test"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\Desktop.ini"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\Windows.FileExplorer.Common.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\Windows.FileExplorer.Common.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\propsys.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\propsys.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Windows\\Caches"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Windows\\Caches"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Windows\\Caches"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Windows\\Caches\\cversions.1.db"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Windows\\Caches\\{AFBF9F1A-8EE8-4C77-AF34-C647E37CA0D9}.1.ver0x000000000000005f.db"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\Desktop\\desktop.ini"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\Desktop\\desktop.ini"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\Videos\\desktop.ini"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\Videos\\administrator\\desktop.ini"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\profapi.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\profapi.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\OneDrive\\desktop.ini"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\windows.system.launcher.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\windows.system.launcher.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\apphelp.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\apphelp.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\NetworkExplorer.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\NetworkExplorer.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\comdlg32.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files\\WindowsApps\\Microsoft.LanguageExperiencePackzh-CN_26100.150.236.0_neutral__8wekyb3d8bbwe\\Windows\\System32\\zh-CN\\fd72f736da2604101e9943d8dd32290e\\comdlg32.dll.mui"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\DUI70.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\DUI70.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\DUI70.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\WinSxS\\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.7309_none_3e05feeae336a044"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\DUser.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\DUser.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files\\WindowsApps\\Microsoft.LanguageExperiencePackzh-CN_26100.150.236.0_neutral__8wekyb3d8bbwe\\Windows\\System32\\zh-CN\\a284960c04c9bcd1d23289321f222b5f\\USER32.dll.mui"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\WinSxS\\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.7309_none_3e05feeae336a044"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\uxtheme.dll.Config"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\uxtheme.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\WinSxS\\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.7309_none_3e05feeae336a044"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\WinSxS\\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.7309_none_3e05feeae336a044"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\dwmapi.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\dwmapi.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\Fonts\\staticcache.dat"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\TextShaping.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\TextShaping.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\textinputframework.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\textinputframework.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\CoreMessaging.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\CoreMessaging.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\CoreUIComponents.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\CoreUIComponents.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\CRYPTBASE.DLL"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\CRYPTBASE.DLL"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SystemResources\\USER32.dll.mun"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\9b6df64904e46d4422eaafb8b1936673e2633ec3.tbres"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\8e9aa007657a5c3f287303dfddc23f7a2e0b1b03.tbres"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\SHELL32.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\WinSxS\\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.7309_none_3e05feeae336a044"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files\\Common Files\\microsoft shared\\ink\\tiptsf.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files\\Common Files\\microsoft shared\\ink\\tiptsf.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\OLEACC.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\OLEACC.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\OLEACCRC.DLL"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\OLEACCRC.DLL"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\OLEACCRC.DLL"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\rpcss.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\rpcss.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\msiltcfg.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\msiltcfg.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\VERSION.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\VERSION.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msi.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\msi.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\msi.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\msi.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\bcrypt.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\bcrypt.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\bcrypt.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\sxs.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\sxs.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\UIAutomationCore.DLL"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\UIAutomationCore.DLL"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\UIAutomationCore.DLL"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\edputil.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\edputil.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files\\WindowsApps\\Microsoft.LanguageExperiencePackzh-CN_26100.150.236.0_neutral__8wekyb3d8bbwe\\Windows\\System32\\zh-CN\\442c9f69cbf81d49997796c0670ddeec\\SHELL32.dll.mui"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\explorerframe.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\explorerframe.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\explorerframe.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\WinSxS\\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.7309_none_3e05feeae336a044"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files\\WindowsApps\\Microsoft.LanguageExperiencePackzh-CN_26100.150.236.0_neutral__8wekyb3d8bbwe\\Windows\\system32\\zh-CN\\5a4d8ede1d2d8e926b95f0aa9dfbf4a9\\explorerframe.dll.mui"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SystemResources\\SHELL32.dll.mun"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SystemResources\\explorerframe.dll.mun"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\Windows.Storage.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\WinSxS\\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.7309_none_3e05feeae336a044"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\WinSxS\\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.7309_none_3e05feeae336a044\\WindowsCodecs.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\WindowsCodecs.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\WindowsCodecs.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local\\IconCache.db"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\thumbcache.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\thumbcache.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Windows\\Explorer"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Windows\\Explorer\\IconCacheToDelete"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Windows\\Explorer\\iconcache_idx.db"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Windows\\Explorer\\iconcache_16.db"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Windows\\Explorer"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Windows\\Explorer\\iconcache_16.db"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\dataexchange.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\dataexchange.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\twinapi.appcore.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\twinapi.appcore.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\MsftEdit.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\MsftEdit.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\MsftEdit.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\Windows.Globalization.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\Windows.Globalization.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\globinputhost.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\globinputhost.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\Bcp47Langs.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\Bcp47Langs.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SysWOW64\\propsys.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SysWOW64\\propsys.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\propsys.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SysWOW64\\propsys.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SysWOW64\\propsys.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\propsys.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\OneCoreCommonProxyStub.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\OneCoreCommonProxyStub.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\Windows.StateRepositoryPS.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\Windows.StateRepositoryPS.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\windows.staterepositoryclient.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\windows.staterepositoryclient.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP\\win_monitor\\test\\desktop.ini"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\xmllite.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\xmllite.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\vaultcli.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\vaultcli.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\SHLWAPI.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\WinSxS\\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.26100.7309_none_3e05feeae336a044"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files\\WindowsApps\\Microsoft.LanguageExperiencePackzh-CN_26100.150.236.0_neutral__8wekyb3d8bbwe\\Windows\\system32\\zh-CN\\c0ccf40bb8cd37c9b19901d147fe10a5\\propsys.dll.mui"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\StructuredQuery.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\StructuredQuery.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\icu.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\System32\\icu.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\OneCoreUAPCommonProxyStub.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\OneCoreUAPCommonProxyStub.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\atlthunk.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\atlthunk.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP\\win_monitor\\test"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP\\win_monitor\\test"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\Windows.Storage.Search.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\Windows.Storage.Search.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\windows.system.launcher.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\windows.system.launcher.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP\\win_monitor"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP\\win_monitor\\"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP\\win_monitor"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP\\win_monitor"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP\\win_monitor\\"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP\\"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP\\"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "D:\\code\\"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\desktop.ini"}
+{"timestamp": "2026-01-30 19:29:48","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Roaming"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\desktop.ini"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Windows"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Libraries"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Libraries\\desktop.ini"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Libraries"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "CameraRoll.library-ms"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Libraries\\CameraRoll.library-ms"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\windowsudk.shellcommon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32\\windowsudk.shellcommon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\Windows.UI.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\Windows.UI.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Roaming"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Windows"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Libraries"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Libraries"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Documents.library-ms"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\Windows.UI.Immersive.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\Windows.UI.Immersive.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\Windows.UI.Immersive.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\Windows.System.Launcher.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\Windows.System.Launcher.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\windows.staterepositorycore.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\windows.staterepositorycore.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\imageres.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\imageres.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\imageres.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SystemResources\\imageres.dll.mun"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Roaming"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Windows"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Libraries"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Libraries"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Music.library-ms"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Roaming"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Windows"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Libraries"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Libraries"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Pictures.library-ms"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\resources\\themes\\Aero\\Shell\\NormalColor\\ShellStyle.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "D:\\code\\DLP\\win_monitor\\test"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Roaming"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Windows"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Libraries"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Libraries"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "SavedPictures.library-ms"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Libraries\\SavedPictures.library-ms"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Program Files\\WindowsApps\\Microsoft.LanguageExperiencePackzh-CN_26100.150.236.0_neutral__8wekyb3d8bbwe\\Windows\\System32\\zh-CN\\eef2761f075f44a6e72f938df832814c\\Windows.Storage.dll.mui"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Roaming"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Windows"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Libraries"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Libraries"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Videos.library-ms"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\cldapi.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Windows\\System32\\cldapi.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\SspiCli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\SspiCli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\Desktop"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\Public\\Desktop\\desktop.ini"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\Public\\Desktop"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\Videos"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\Videos"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\Videos"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Videos"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Videos"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Favorites"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\Favorites\\desktop.ini"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\Videos"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\Videos"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Videos"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\Videos\\administrator"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20\\Videos\\administrator"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\system32"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\Users\\zbn20"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "Videos"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\urlmon.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\iertutil.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\netutils.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 26344,"path": "C:\\WINDOWS\\SYSTEM32\\srvcli.dll"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Edge"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "msedge.exe"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Edge"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "msedge.exe"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Edge"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "msedge.exe"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Edge"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "msedge.exe"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:49","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "Edge"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "Application"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "msedge.exe"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIconsRecentWorkspacesV2"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIconsRecentWorkspacesV2\\"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "*"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIconsRecentWorkspaces"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIconsRecentWorkspaces"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\HI3P5AV01GP1SJSS4Q8N.temp"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\users\\zbn20\\appdata\\roaming\\microsoft\\windows\\recent\\customdestinations\\hi3p5av01gp1sjss4q8n.temp"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\HI3P5AV01GP1SJSS4Q8N.temp"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\HI3P5AV01GP1SJSS4Q8N.temp"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms~RF387b453.TMP"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms~RF387b453.TMP"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms~RF387b453.TMP"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms~RF387b453.TMP"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIcons"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIcons"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIconsOld"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIconsOld"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\system32\\spool\\drivers\\color\\D65.camp"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\system32\\spool\\drivers\\color\\D65.camp"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\system32\\spool\\drivers\\color\\Photo.gmmp"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\system32\\spool\\drivers\\color\\Photo.gmmp"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\WINDOWS\\system32\\spool\\drivers\\color\\sRGB Color Space Profile.icm"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\9b6df64904e46d4422eaafb8b1936673e2633ec3.tbres"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\8e9aa007657a5c3f287303dfddc23f7a2e0b1b03.tbres"}
+{"timestamp": "2026-01-30 19:29:50","process": "msedge.exe","pid": 19844,"path": "D:\\code\\DLP\\win_monitor\\test\\AAA公司服务合作合同.docx"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Edge"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "msedge.exe"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Edge"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "msedge.exe"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Edge"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "msedge.exe"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Edge"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "msedge.exe"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Microsoft"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Edge"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "msedge.exe"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIconsRecentWorkspacesV2"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIconsRecentWorkspacesV2\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "*"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIconsRecentWorkspaces"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIconsRecentWorkspaces"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\8I52THBYC31KWMCSDQBO.temp"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\users\\zbn20\\appdata\\roaming\\microsoft\\windows\\recent\\customdestinations\\8i52thbyc31kwmcsdqbo.temp"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\8I52THBYC31KWMCSDQBO.temp"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\8I52THBYC31KWMCSDQBO.temp"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms~RF387c451.TMP"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\"}
+{"timestamp": "2026-01-30 19:29:52","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms~RF387c451.TMP"}
+{"timestamp": "2026-01-30 19:29:53","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\"}
+{"timestamp": "2026-01-30 19:29:53","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms"}
+{"timestamp": "2026-01-30 19:29:53","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms~RF387c451.TMP"}
+{"timestamp": "2026-01-30 19:29:53","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\ccba5a5986c77e43.customDestinations-ms~RF387c451.TMP"}
+{"timestamp": "2026-01-30 19:29:53","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIcons"}
+{"timestamp": "2026-01-30 19:29:53","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIcons"}
+{"timestamp": "2026-01-30 19:29:53","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIconsOld"}
+{"timestamp": "2026-01-30 19:29:53","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\JumpListIconsOld"}
+{"timestamp": "2026-01-30 19:29:54","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\9b6df64904e46d4422eaafb8b1936673e2633ec3.tbres"}
+{"timestamp": "2026-01-30 19:29:54","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\8e9aa007657a5c3f287303dfddc23f7a2e0b1b03.tbres"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\ac1108c2-7549-4c8e-a7ac-5f03b5d10847.tmp"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\ac1108c2-7549-4c8e-a7ac-5f03b5d10847.tmp"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "Local"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "Edge"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\ac1108c2-7549-4c8e-a7ac-5f03b5d10847.tmp"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State~RF387d393.TMP"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State~RF387d393.TMP"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State~RF387d393.TMP"}
+{"timestamp": "2026-01-30 19:29:56","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Local State~RF387d393.TMP"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\e8ddd4cbd9c0504aace6ef7a13fa20d04fd52408.tbres"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\5a2a7058cf8d1e56c20e6b19a7c48eb2386d141b.tbres"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\0dbdf306fe7a2949cdcc5b1719f562b775609e35.tbres"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\TokenBroker\\Cache\\d6492cdaa876e5bf4346044acdca458d139f7fbc.tbres"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\8cb6ed20-85a0-4058-bcae-d6712e3ebcc1.tmp"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\8cb6ed20-85a0-4058-bcae-d6712e3ebcc1.tmp"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "Users"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "zbn20"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "AppData"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "Local"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "Edge"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "Default"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Preferences"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Preferences"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\8cb6ed20-85a0-4058-bcae-d6712e3ebcc1.tmp"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Preferences~RF387d8b4.TMP"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Preferences~RF387d8b4.TMP"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Preferences"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Preferences~RF387d8b4.TMP"}
+{"timestamp": "2026-01-30 19:29:57","process": "msedge.exe","pid": 19844,"path": "C:\\Users\\zbn20\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Preferences~RF387d8b4.TMP"}

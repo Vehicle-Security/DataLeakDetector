@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>所有录制会话 - 文件监控录制系统</title>
+    <link rel="stylesheet" href="static/css/style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <a href="/" class="back-link">← 返回主页</a>
+            <h1>📋 所有录制会话</h1>
+        </header>
+
+        <main>
+            <section class="sessions-list">
+                <div class="filter-bar">
+                    <input type="text" id="searchInput" placeholder="🔍 搜索Session ID...">
+                    <select id="sortBy">
+                        <option value="date">按时间排序</option>
+                        <option value="events">按事件数排序</option>
+                    </select>
+                </div>
+
+                <div id="sessionsList" class="sessions-grid">
+                    <div class="loading">加载中...</div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="static/js/sessions.js"></script>
+</body>
+
+</html>
