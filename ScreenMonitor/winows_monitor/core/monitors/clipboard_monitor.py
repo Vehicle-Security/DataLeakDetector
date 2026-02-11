@@ -21,6 +21,7 @@ try:
     import win32con
     import win32gui
     import win32api
+    import win32process
     HAS_WIN32 = True
 except ImportError:
     HAS_WIN32 = False
@@ -213,12 +214,6 @@ class ClipboardMonitor:
             except Exception as e:
                 app_logger.error(f"[CLIPBOARD] Callback error: {e}")
 
-
-# 添加缺失的导入
-try:
-    import win32process
-except ImportError:
-    pass
 
 
 def get_clipboard_monitor(callback=None) -> ClipboardMonitor:

@@ -1,7 +1,7 @@
 # 忽略无关文件
 */__pycache__/
-**/__init__.py
 **/.vscode/
+**/.vs/
 **/*.pyc
 **/*.pyo
 **/.idea/
@@ -24,6 +24,8 @@
 # 忽略数据文件
 **/data/memory.json
 #**/logs/
+**/C++ETW/logs/
+**/C++ETW/bin/logs/
 **/test/
 **/tests/
 **/checkMemory.py
@@ -32,8 +34,7 @@
 **/.env
 **/.env.local
 
-# 日志
-**/.gitignore
+
 
 # 忽略旧的无用开发文件
 unknown_threat_agent/

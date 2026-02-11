@@ -368,7 +368,7 @@ if __name__ == "__main__":
     extractor = KeyLogExtractor()
     
     # 测试日志文件
-    test_log = "d:/code/win_monitor/logs/monitor_20251207_19.json"
+    test_log = os.path.join(os.path.dirname(__file__), "..", "..", "recordings", "example_session", "logs", "logs.json")
     
     if os.path.exists(test_log):
         try:

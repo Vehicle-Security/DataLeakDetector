@@ -215,11 +215,12 @@ class Engine:
                 sensitive_keywords=sensitive_list
             )
             self.etw_monitor.start()
-            app_logger.info("绺缂 ETW 文件监控已启动")
+            app_logger.info("🔍 Python ETW 文件监控已启动 (pywintrace)")
+            app_logger.info("   💡 C++ ETW (EtwMonitor.exe) 将在录制开始时自动启动，两者可同时工作")
         except ImportError:
-            app_logger.warning("ETW 监控不可用 (pywintrace 未安装)")
+            app_logger.warning("Python ETW 监控不可用 (pywintrace 未安装), 仅使用 C++ ETW")
         except Exception as e:
-            app_logger.warning(f"ETW 监控启动失败: {e}")
+            app_logger.warning(f"Python ETW 监控启动失败 (将依赖 C++ ETW): {e}")
             
         # 3. 剪贴板监控
         try:

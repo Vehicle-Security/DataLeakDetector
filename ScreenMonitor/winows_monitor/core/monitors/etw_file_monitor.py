@@ -28,7 +28,6 @@ except ImportError:
 from typing import Callable, Optional, Dict, Any, List, Tuple
 
 from ..utils import app_logger
-from ..utils import app_logger
 
 # ETW 相关常量
 KERNEL_FILE_PROVIDER_GUID = "{EDD08927-9CC4-4E65-B970-C2560FB5C289}"
@@ -233,7 +232,7 @@ class ETWFileMonitor:
             sensitive_keywords: 敏感文件关键词列表
         """
         self.event_callback = event_callback
-        self.debug = True # 强制开启调试模式以排查问题
+        self.debug = debug
         self.browser_processes = [name.lower() for name in (browser_processes or [])] or BROWSER_PROCESSES
         
         # 预处理敏感关键词（转为小写以优化性能）
@@ -241,8 +240,6 @@ class ETWFileMonitor:
         self.sensitive_keywords_lower = [k.lower() for k in raw_keywords]
         # 保留原始列表用于调试（可选）
         self.sensitive_keywords = raw_keywords
-
-        self.is_running = False
 
         self.is_running = False
         self._thread: Optional[threading.Thread] = None
@@ -271,8 +268,7 @@ class ETWFileMonitor:
         self._create_event_count = 0
         self._seen_task_names = set() # 诊断用
         
-        # 进程名缓存
-        self._process_cache = {}
+        # 进程名缓存锁 (线程安全)
         self._process_cache_lock = threading.Lock()
         
         # FileObject -> FileName 映射 (用于解析 READ 事件)
@@ -407,37 +403,19 @@ class ETWFileMonitor:
             
         return name
     
-    def _normalize_app_name(self, process_name: str) -> str:
-        """规范化应用名称"""
-        if not process_name:
-            return ""
-        
-        # 移除 .exe 后缀
-        name = process_name.lower()
-        if name.endswith('.exe'):
-            process_name = process_name[:-4]
-            name = name[:-4]
-            
-        # 常见应用映射
-        app_map = {
-            "msedge": "Edge",
-            "chrome": "Chrome",
-            "firefox": "Firefox",
-            "qq": "QQ",
-            "wechat": "微信",
-            "weixin": "微信",
-            "dingtalk": "钉钉",
-            "feishu": "飞书",
-            "wps": "WPS",
-            "explorer": "Explorer"
-        }
-        
-        return app_map.get(name, process_name)
+    # _normalize_app_name 定义在文件末尾 (L944+)，包含完整映射表
 
     def _run_etw_trace(self):
         """ETW 跟踪主循环"""
         try:
             import etw
+            import logging as _logging
+            
+            # 抑制 pywintrace 内部的 WARNING 日志
+            # pywintrace 在解析 Kernel-File ETW 事件时，某些字段无法解析会打印:
+            # "Failed to get data field data for FileName, incrementing by reported size"
+            # 这是已知限制，不影响功能（我们在回调中已处理缺失字段）
+            _logging.getLogger('etw.etw').setLevel(_logging.ERROR)
             
             # 定义 Provider
             # Microsoft-Windows-Kernel-File: {EDD08927-9CC4-4E65-B970-C2560FB5C289}
@@ -472,6 +450,7 @@ class ETWFileMonitor:
             import traceback
             app_logger.error(traceback.format_exc())
             self.is_running = False
+
     def _log_debug(self, message):
         """发送调试日志到事件流"""
         if self.debug and self.event_callback:
@@ -517,11 +496,11 @@ class ETWFileMonitor:
                          
                          log_msg = f"[ETW_KEYS] Dump #{current_dump_count} ({task_name}): {keys_list}"
                          self._log_debug(log_msg)
-                         print(log_msg) # Force console output too
+                         app_logger.debug(log_msg)
                          
                          self._dump_count = current_dump_count + 1
                  except Exception as e:
-                     print(f"[ETW_DUMP_ERROR] {e}")
+                     app_logger.debug(f"[ETW_DUMP_ERROR] {e}")
                      self._log_debug(f"[ETW_DUMP_ERROR] {e}")
 
             # 状态追踪：从任何包含 FileName 和 FileObject 的事件中学习映射
@@ -649,7 +628,7 @@ class ETWFileMonitor:
             if self.debug and file_path and not is_browser:
                  # Debug: 看看我们忽略了哪些进程的读取
                  if pid not in getattr(self, '_ignored_pids', []):
-                     print(f"[ETW_DEBUG] Ignored read from non-browser: {file_path} (PID={pid}, Name={process_name})")
+                     app_logger.debug(f"[ETW_DEBUG] Ignored read from non-browser: {file_path} (PID={pid}, Name={process_name})")
                      if not hasattr(self, '_ignored_pids'): self._ignored_pids = []
                      self._ignored_pids.append(pid)
 
@@ -682,9 +661,9 @@ class ETWFileMonitor:
                             "upload_type": "Browser Upload",
                             "detection_method": "sliding_window_correlation"
                         }
-                        print(f"[ETW] 📤 检测到上传! 原始文件: {original_path}")
-                        print(f"[ETW]    → 临时文件: {dos_path}")
-                        print(f"[ETW]    → 进程: {process_name} (PID: {pid})")
+                        app_logger.info(f"[ETW] 📤 检测到上传! 原始文件: {original_path}")
+                        app_logger.info(f"[ETW]    → 临时文件: {dos_path}")
+                        app_logger.info(f"[ETW]    → 进程: {process_name} (PID: {pid})")
                 elif is_user_file:
                     # 🆕 直接标记为浏览器访问用户文件（可能是上传）
                     self._file_read_context.add_read(pid, dos_path, file_name)
@@ -709,15 +688,15 @@ class ETWFileMonitor:
                             "upload_type": "Browser File Access",
                             "detection_method": "browser_user_file_access"
                         }
-                        print(f"[ETW] 📤 浏览器文件访问: {dos_path}")
-                        print(f"[ETW]    → 进程: {process_name} (PID: {pid})")
+                        app_logger.info(f"[ETW] 📤 浏览器文件访问: {dos_path}")
+                        app_logger.info(f"[ETW]    → 进程: {process_name} (PID: {pid})")
                 else:
                     # 其他文件读取: 也记录到滑动窗口
                     self._file_read_context.add_read(pid, dos_path, file_name)
             
             # 打印所有浏览器访问用户文件的事件
             if is_browser and is_user_file:
-                print(f"[ETW] 📂 {event_type}: {dos_path} <- {process_name}")
+                app_logger.debug(f"[ETW] 📂 {event_type}: {dos_path} <- {process_name}")
 
             
             # 构建标准化事件
@@ -841,28 +820,7 @@ class ETWFileMonitor:
         
         return False
     
-    def _get_process_name(self, pid: int) -> str:
-        """获取进程名称 (带缓存)"""
-        if pid == 0:
-            return ""
-        
-        now = time.time()
-        
-        # 检查缓存
-        if pid in self._process_cache:
-            if now - self._cache_times.get(pid, 0) < self._cache_ttl:
-                return self._process_cache[pid]
-        
-        # 查询进程名
-        try:
-            import psutil
-            proc = psutil.Process(pid)
-            name = proc.name()
-            self._process_cache[pid] = name
-            self._cache_times[pid] = now
-            return name
-        except:
-            return ""
+    # _get_process_name 已在上方 L383 定义 (使用 _process_cache_lock 的线程安全版本)
     
     def _build_event(self, event_type: str, file_path: str, 
                      pid: int, process_name: str) -> Dict[str, Any]:
