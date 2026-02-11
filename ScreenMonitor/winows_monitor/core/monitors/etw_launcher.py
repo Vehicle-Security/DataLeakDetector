@@ -46,11 +46,11 @@ class EtwLauncher:
     def _find_etw_monitor(self):
         """定位 EtwMonitor.exe 的路径"""
         # 相对于 core/monitors/etw_launcher.py
-        # 路径: win_monitor/log/bin/EtwMonitor.exe
+        # 路径: core/C++ETW/bin/EtwMonitor.exe
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(os.path.dirname(current_dir))
+        core_dir = os.path.dirname(current_dir)  # core/
         
-        etw_bin_dir = os.path.join(project_root, "log", "bin")
+        etw_bin_dir = os.path.join(core_dir, "C++ETW", "bin")
         
         # 优先使用 V2 版本 (支持优雅退出)
         etw_exe_path = os.path.join(etw_bin_dir, "EtwMonitorV2.exe")

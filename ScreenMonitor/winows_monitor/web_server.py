@@ -454,10 +454,7 @@ def api_config():
 
 def main():
     """主函数"""
-    # 初始化日志系统
     from core.utils import app_logger
-    log_dir = os.path.join(os.path.dirname(__file__), "logs")
-    app_logger.get_logger().setup_file_logging(log_dir)
     
     app_logger.info("=" * 60)
     app_logger.info("  Win Monitor - Web 控制界面")
