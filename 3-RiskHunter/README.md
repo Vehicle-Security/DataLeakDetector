@@ -25,7 +25,7 @@
 ├── 图层
 │   └── upload_detector_graph.py      # LangGraph图定义
 └── 应用层
-    └── example_upload_detection.py   # 使用示例
+    └── run_upload_detection.py   # 使用示例
 ```
 
 ## 模块间调用关系
@@ -92,7 +92,7 @@ records/{record_id}/
 
 ```bash
 cd /home/dxy/Projects/DataLeakDetector/3-RiskHunter
-python example_upload_detection.py
+python run_upload_detection.py
 ```
 
 ### 4. 查看结果
@@ -366,7 +366,7 @@ langgraph>=0.0.1
 ├── upload_detector_state.py        # 状态定义
 ├── upload_detector_nodes.py        # 节点实现
 ├── upload_detector_graph.py        # 图定义
-├── example_upload_detection.py     # 使用示例
+├── run_upload_detection.py     # 使用示例
 ├── README.md                        # 本文档
 └── records/                         # 分析记录
     └── {record_id}/
