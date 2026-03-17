@@ -12,14 +12,14 @@ import re
 import logging
 from datetime import timedelta
 from typing import List, Dict
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 import prompts  
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from schema import AgentState
 from thefuzz import fuzz
 
-load_dotenv()
+load_dotenv(find_dotenv())
 logger = logging.getLogger("VideoAgent")
 
 class VideoFileOperationAgent:

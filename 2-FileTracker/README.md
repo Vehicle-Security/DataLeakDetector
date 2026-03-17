@@ -82,7 +82,7 @@ if result.get("has_hidden_behavior"):
 ├── behavior_analysis_state.py       # 状态定义
 ├── behavior_analysis_tools.py       # 分析工具
 ├── behavior_analysis_prompts.py     # Prompt 模板
-├── example_behavior_analysis.py     # 完整使用示例
+├── run_behavior_analysis.py     # 完整使用示例
 ├── BEHAVIOR_ANALYSIS.md             # 详细文档
 └── README.md                        # 本文件
 ```
@@ -136,7 +136,7 @@ TEMPERATURE=0.01
 
 ```bash
 cd 2-FileTracker
-python example_behavior_analysis.py
+python run_behavior_analysis.py
 ```
 
 ## 数据格式
@@ -291,7 +291,7 @@ result = analyze_sensitive_event_behavior(
 
 更多信息请参阅：
 - [BEHAVIOR_ANALYSIS.md](./BEHAVIOR_ANALYSIS.md) - 隐藏行为分析详细文档
-- [example_behavior_analysis.py](./example_behavior_analysis.py) - 完整使用示例
+- [run_behavior_analysis.py](./run_behavior_analysis.py) - 完整使用示例
 
 ## 开发者信息
 

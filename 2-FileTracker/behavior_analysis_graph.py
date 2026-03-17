@@ -7,7 +7,7 @@
 import os
 import json
 from typing import Dict, Any
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
@@ -24,7 +24,7 @@ from behavior_analysis_nodes import (
 )
 from worklist_manager import WorklistManager, SensitiveFileEvent
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 
 class BehaviorAnalysisGraph:

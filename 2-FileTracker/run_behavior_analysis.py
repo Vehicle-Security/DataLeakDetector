@@ -1,4 +1,4 @@
-# example_behavior_analysis.py
+# run_behavior_analysis.py
 """
 隐藏行为分析示例
 演示如何使用 behavior_analysis_graph 分析敏感事件
