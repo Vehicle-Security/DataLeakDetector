@@ -14,6 +14,122 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../1-FrameAnalyzer"))
 from relavance_frame import analyze_video_behavior
 
 
+def normalize_timestamp_display(timestamp: str) -> str:
+    """
+    统一时间格式为 YYYY-MM-DD HH:MM:SS
+
+    Args:
+        timestamp: 原始时间字符串
+
+    Returns:
+        规范化后的时间字符串
+    """
+    if not timestamp:
+        return ""
+
+    text = str(timestamp).strip().replace("T", " ")
+    if text.endswith("Z"):
+        text = text[:-1]
+    if "." in text:
+        text = text.split(".", 1)[0]
+
+    return text
+
+
+def select_operation_time(event_data: Dict[str, Any], fallback_timestamp: str) -> str:
+    """
+    选择敏感操作时间：优先取 involved_timestamps[0]，否则回退到传入时间
+
+    Args:
+        event_data: 模块1单条事件数据
+        fallback_timestamp: 回退时间（通常为当前worklist事件时间）
+
+    Returns:
+        格式化后的操作时间
+    """
+    involved_timestamps = event_data.get("involved_timestamps", [])
+    if isinstance(involved_timestamps, list) and involved_timestamps:
+        selected = involved_timestamps[0]
+    else:
+        selected = fallback_timestamp
+
+    return normalize_timestamp_display(selected)
+
+
+def build_operation_text(
+    behavior_category: str,
+    operation_type: str,
+    transformed_file_path: str = "",
+) -> str:
+    """
+    构建操作描述文本
+
+    Args:
+        behavior_category: 行为类别
+        operation_type: 操作类型
+        transformed_file_path: 变换后文件路径（可选）
+
+    Returns:
+        操作描述文本
+    """
+    if behavior_category and operation_type:
+        if behavior_category == "潜在隐藏行为" and transformed_file_path:
+            return f"{behavior_category}-{operation_type}-{transformed_file_path}"
+        return f"{behavior_category}-{operation_type}"
+
+    return behavior_category or operation_type or "未知操作"
+
+
+def build_sensitive_operation_record(
+    recording_start_time: str,
+    sensitive_file_path: str,
+    event_data: Dict[str, Any],
+    fallback_timestamp: str,
+    transformed_file_path: str = "",
+) -> Dict[str, Any]:
+    """
+    构建敏感操作记录
+
+    Args:
+        recording_start_time: 录屏开始时间
+        sensitive_file_path: 敏感文件路径
+        event_data: 模块1单条事件数据
+        fallback_timestamp: 回退时间（通常为当前worklist事件时间）
+        transformed_file_path: 变换后文件路径（可选）
+
+    Returns:
+        敏感操作记录字典
+    """
+    behavior_category = event_data.get("behavior_category", "")
+    operation_type = event_data.get("operation_type", "")
+
+    return {
+        # "recording_start_time": recording_start_time,
+        "operation_time": select_operation_time(event_data, fallback_timestamp),
+        "sensitive_file_path": sensitive_file_path,
+        "operation": build_operation_text(
+            behavior_category=behavior_category,
+            operation_type=operation_type,
+            transformed_file_path=transformed_file_path,
+        ),
+    }
+
+
+def build_sensitive_operation_dedup_key(operation_record: Dict[str, Any]) -> str:
+    """
+    生成敏感操作去重键
+
+    规则：同时间 + 同文件 + 同操作
+    """
+    return "|".join(
+        [
+            operation_record.get("operation_time", ""),
+            operation_record.get("sensitive_file_path", ""),
+            operation_record.get("operation", ""),
+        ]
+    )
+
+
 @tool
 def analyze_frame_behavior(
     event_timestamp: str,
@@ -38,9 +154,11 @@ def analyze_frame_behavior(
     print(f"   [Tool] 调用模块1分析帧行为...")
     print(f"   - 事件时间: {event_timestamp}")
     print(f"   - 文件: {current_file}")
+
+    rec_start_time = ""
     
     try:
-        rec_start_time = _read_recording_start_time(index_path)
+        rec_start_time = read_recording_start_time(index_path)
         print(f"   - 录屏开始时间: {rec_start_time}")
         
         # 支持两种时间格式：带毫秒和不带毫秒
@@ -76,12 +194,15 @@ def analyze_frame_behavior(
         )
         
         if result:
+            result = dict(result)
+            result["recording_start_time"] = rec_start_time
             print(f"   ✅ 模块1分析完成，发现 {result.get('total_events', 0)} 个事件")
             print(f"   - 结果预览: {json.dumps(result.get('events', [])[:3], ensure_ascii=False)}")
             return result
         else:
             print(f"   ⚠️ 模块1未返回结果")
             return {
+                "recording_start_time": rec_start_time,
                 "search_range": {
                     "start": search_start_time,
                     "end": search_end_time
@@ -94,13 +215,14 @@ def analyze_frame_behavior(
         print(f"   ❌ 调用模块1失败: {e}")
         return {
             "error": str(e),
+            "recording_start_time": rec_start_time,
             "search_range": {"start": event_timestamp, "end": event_timestamp},
             "total_events": 0,
             "events": []
         }
 
 
-def _read_recording_start_time(index_path: str) -> str:
+def read_recording_start_time(index_path: str) -> str:
     """
     从 INDEX.md 文件读取录屏开始时间
     

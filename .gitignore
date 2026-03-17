@@ -19,6 +19,8 @@
 **/output/
 **/*.log
 **/output*/
+**/*debug*/
+**/records/
 
 # 数据文件
 # 忽略数据文件

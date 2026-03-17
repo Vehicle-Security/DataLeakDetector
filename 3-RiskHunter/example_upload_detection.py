@@ -29,11 +29,13 @@ def main():
     
     # ========== 配置参数 ==========
     # 记录ID（可修改为不同的会话）
-    # 可用ID：41 42 43 44 49 50 52 53 54 55 56 57 59 61 62 64 70
-    # 无用ID：45\58(模块1无法识别截图操作及生成的照片文件) 46\47(两块屏幕像素低)  48 51 60
+    # 可用ID：41 42 43 44 49 50 52 53 54 55 56 57 59 61 62 64 65 70
+    #        
+    # 无用ID：45\58(模块1无法识别截图操作及生成的照片文件)
+    #        46\47(两块屏幕像素低)  48 51 60
     # 待重测ID：65
     # 现有逻辑无法解决ID：63
-    record_id = 65
+    record_id = 43
     
     # 模块1视频搜索时间范围（秒）
     # 从敏感文件事件发生时刻开始往后搜索的时长
@@ -54,9 +56,9 @@ def main():
         return
     print(f"📄 INDEX文件: {index_path}")
     
-    video_files = glob.glob(f"{base_path}/video/*.mp4")
+    video_files = glob.glob(f"{base_path}/video/*.mp4") + glob.glob(f"{base_path}/video/*.mov")
     if not video_files:
-        print(f"❌ 错误: 在 {base_path}/video/ 中找不到 .mp4 文件")
+        print(f"❌ 错误: 在 {base_path}/video/ 中找不到 .mp4/.mov 文件")
         return
     video_path = video_files[0]
     print(f"🎥 视频文件: {os.path.basename(video_path)}")
@@ -90,9 +92,11 @@ def main():
     
     try:
         app = create_upload_detector_graph()
+        # 默认 recursion_limit=25，worklist事件稍多时会触发上限
+        graph_config = {"recursion_limit": 35}
         
         final_state = None
-        for state in app.stream(initial_state):
+        for state in app.stream(initial_state, config=graph_config):
             final_state = state
         
         if final_state:
@@ -102,20 +106,21 @@ def main():
         
         # ========== 保存结果 ==========
         print(f"\n💾 保存结果...")
-        
-        output_dir = f"{base_path}/upload_detection_results"
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_base_dir = f"{base_path}/results"
+        output_dir = f"{output_base_dir}/{timestamp}"
         os.makedirs(output_dir, exist_ok=True)
         
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+        '''
         # 保存完整状态
-        state_output_path = f"{output_dir}/full_state_{timestamp}.json"
+        state_output_path = f"{output_dir}/full_state.json"
         save_state_to_json(final_state, state_output_path)
         print(f"   ✅ 完整状态: {state_output_path}")
-        
+        '''
         # 保存报警事件
         if final_state["alert_events"]:
-            alerts_output_path = f"{output_dir}/alerts_{timestamp}.json"
+            alerts_output_path = f"{output_dir}/alert_events.json"
             alerts_data = {
                 "record_id": record_id,
                 "timestamp": timestamp,
@@ -128,7 +133,7 @@ def main():
         
         # 保存信息事件
         if final_state["info_events"]:
-            info_output_path = f"{output_dir}/info_events_{timestamp}.json"
+            info_output_path = f"{output_dir}/info_events.json"
             info_data = {
                 "record_id": record_id,
                 "timestamp": timestamp,
@@ -138,9 +143,46 @@ def main():
             with open(info_output_path, 'w', encoding='utf-8') as f:
                 json.dump(info_data, f, ensure_ascii=False, indent=2)
             print(f"   ℹ️ 信息事件: {info_output_path}")
+
+        # 保存敏感操作明细（用于与groundtruth做正确率评估）
+        operation_records = final_state.get("operation_records", [])
+        operation_records = sorted(
+            operation_records,
+            key=lambda item: item.get("operation_time", "")
+        )
+        operations_output_path = f"{output_dir}/sensitive_operations.json"
+        operations_data = {
+            "record_id": record_id,
+            "timestamp": timestamp,
+            "recording_start_time": final_state.get("recording_start_time", ""),
+            "total_operations": len(operation_records),
+            "operations": operation_records
+        }
+        with open(operations_output_path, 'w', encoding='utf-8') as f:
+            json.dump(operations_data, f, ensure_ascii=False, indent=2)
+        print(f"   🧪 敏感操作明细: {operations_output_path}")
+
+        # 保存文件映射关系（直接映射关系 + 完整映射链）
+        mappings_output_path = f"{output_dir}/file_mappings.json"
+        mappings_data = {
+            "record_id": record_id,
+            "timestamp": timestamp,
+            "direct_file_mappings": {},
+            "full_file_mapping_chains": {}
+        }
+
+        manager = final_state.get("_worklist_manager") if isinstance(final_state, dict) else None
+        if manager and hasattr(manager, "export_file_mappings"):
+            mappings_data.update(manager.export_file_mappings())
+        else:
+            print("   ⚠️ 未获取到WorklistManager，文件映射关系将输出为空")
+
+        with open(mappings_output_path, 'w', encoding='utf-8') as f:
+            json.dump(mappings_data, f, ensure_ascii=False, indent=2)
+        print(f"   🔗 文件映射关系: {mappings_output_path}")
         
         # 保存简要报告
-        report_output_path = f"{output_dir}/report_{timestamp}.txt"
+        report_output_path = f"{output_dir}/report.txt"
         with open(report_output_path, 'w', encoding='utf-8') as f:
             f.write("=" * 80 + "\n")
             f.write("文件上传检测报告\n")
@@ -153,6 +195,7 @@ def main():
             stats = final_state["statistics"]
             f.write(f"  - 已处理事件: {stats['total_events_processed']}\n")
             f.write(f"  - 检测到的上传事件: {stats['upload_events_detected']}\n")
+            f.write(f"  - 敏感操作记录数（去重后）: {len(final_state.get('operation_records', []))}\n")
             f.write(f"  - 黑名单应用报警: {stats['blacklist_alerts']}\n")
             f.write(f"  - 白名单应用上传: {stats['whitelist_uploads']}\n")
             f.write(f"  - 其他应用上传: {stats['unknown_uploads']}\n\n")

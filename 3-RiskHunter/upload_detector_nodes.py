@@ -14,7 +14,59 @@ from upload_detector_state import UploadDetectorState, UploadEvent
 from upload_detection_config import config
 from worklist_manager import WorklistManager, load_log_from_json, SensitiveFileEvent
 from behavior_analysis_graph import analyze_sensitive_event_behavior
-from behavior_analysis_tools import resolve_full_path
+from behavior_analysis_tools import (
+    resolve_full_path,
+    read_recording_start_time,
+    normalize_timestamp_display,
+    build_sensitive_operation_record,
+    build_sensitive_operation_dedup_key,
+)
+
+
+def _extract_hidden_transformed_paths(module2_result: Dict[str, Any]) -> list:
+    """
+    直接从模块2结果提取变换后文件路径列表（按模块2输出顺序）
+    """
+    new_events = module2_result.get("new_events", []) if isinstance(module2_result, dict) else []
+    transformed_paths = []
+
+    for new_event in new_events:
+        if isinstance(new_event, dict):
+            path = new_event.get("current_file", "")
+        else:
+            path = getattr(new_event, "current_file", "")
+
+        if path:
+            transformed_paths.append(path)
+
+    return transformed_paths
+
+
+def _append_operation_record_with_dedup(
+    state: UploadDetectorState,
+    operation_record: Dict[str, Any],
+) -> bool:
+    """
+    添加操作记录并去重。
+    去重键：同时间 + 同文件 + 同操作
+
+    Returns:
+        True: 新增成功
+        False: 重复记录，已忽略
+    """
+    dedup_key = build_sensitive_operation_dedup_key(operation_record)
+
+    keys = state.get("_operation_record_keys")
+    if not isinstance(keys, set):
+        keys = set()
+        state["_operation_record_keys"] = keys
+
+    if dedup_key in keys:
+        return False
+
+    keys.add(dedup_key)
+    state["operation_records"].append(operation_record)
+    return True
 
 
 def initialize_node(state: UploadDetectorState) -> UploadDetectorState:
@@ -49,6 +101,9 @@ def initialize_node(state: UploadDetectorState) -> UploadDetectorState:
         state["worklist_size"] = manager.size()
         state["_worklist_manager"] = manager  # 保存manager实例（不会被序列化到JSON）
         state["_log_events"] = log_events  # 保存日志事件（不会被序列化到JSON）
+        state["_operation_record_keys"] = set()
+        state["_hidden_transformed_paths"] = []
+        state["recording_start_time"] = ""
         
         stats = manager.get_statistics()
         print(f"\n📊 Worklist统计:")
@@ -120,8 +175,34 @@ def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
             log_events=log_events,
             search_duration=state["search_duration"]
         )
+
+        # 直接复用模块2已解析出的变换后路径列表（不重新推断）
+        state["_hidden_transformed_paths"] = _extract_hidden_transformed_paths(result)
         
         state["module1_result"] = result.get("frame_analysis_result", result)
+
+        # 优先复用模块2（behavior_analysis_tools）已经读取出的录屏开始时间
+        module2_recording_time = ""
+        if isinstance(state["module1_result"], dict):
+            module2_recording_time = normalize_timestamp_display(
+                state["module1_result"].get("recording_start_time", "")
+            )
+
+        if module2_recording_time:
+            state["recording_start_time"] = module2_recording_time
+        elif not state.get("recording_start_time"):
+            # 仅在模块2结果缺失时兜底读取，避免重复解析
+            try:
+                fallback_time = normalize_timestamp_display(
+                    read_recording_start_time(state.get("index_path", ""))
+                )
+            except Exception:
+                fallback_time = ""
+
+            if not fallback_time and log_events:
+                fallback_time = normalize_timestamp_display(log_events[0].get("timestamp", ""))
+
+            state["recording_start_time"] = fallback_time
         
         state["worklist_size"] = manager.size()
         
@@ -176,12 +257,46 @@ def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
         if not events:
             print(f"   ℹ️ 未检测到相关行为")
             return state
+
+        hidden_transformed_paths = state.get("_hidden_transformed_paths", [])
+        hidden_path_cursor = 0
         
         # 分析每个检测到的事件
         for event_data in events:
             app_name = event_data.get("app_name", "未知应用")
             behavior_category = event_data.get("behavior_category", "")
             operation_type = event_data.get("operation_type", "")
+
+            transformed_file_path = ""
+            if behavior_category == "潜在隐藏行为":
+                original_filename = event_data.get("original_filename", "")
+                modified_filename = event_data.get("modified_filename", "")
+                is_hidden_transform = (
+                    original_filename
+                    and modified_filename
+                    and original_filename != modified_filename
+                )
+                if is_hidden_transform and hidden_path_cursor < len(hidden_transformed_paths):
+                    transformed_file_path = hidden_transformed_paths[hidden_path_cursor]
+                    hidden_path_cursor += 1
+
+            # 为每个worklist事件增量记录敏感操作（先记录，再做上传过滤）
+            operation_record = build_sensitive_operation_record(
+                recording_start_time=state.get("recording_start_time", ""),
+                sensitive_file_path=current_event.get("file_path", ""),
+                event_data=event_data,
+                fallback_timestamp=current_event.get("timestamp", ""),
+                transformed_file_path=transformed_file_path,
+            )
+            if _append_operation_record_with_dedup(state, operation_record):
+                print(
+                    "      📝 记录敏感操作: "
+                    f"{operation_record['operation_time']} | "
+                    f"{operation_record['sensitive_file_path']} | "
+                    f"{operation_record['operation']}"
+                )
+            else:
+                print("      ♻️ 敏感操作重复，已去重")
             
             print(f"\n   📊 分析检测结果:")
             print(f"      - 应用: {app_name}")
@@ -320,6 +435,7 @@ def finalize_node(state: UploadDetectorState) -> UploadDetectorState:
     print(f"\n📊 最终统计:")
     print(f"   - 已处理事件: {stats['total_events_processed']}")
     print(f"   - 检测到的上传事件: {stats['upload_events_detected']}")
+    print(f"   - 敏感操作记录数（去重后）: {len(state['operation_records'])}")
     print(f"   - 黑名单应用报警: {stats['blacklist_alerts']}")
     print(f"   - 白名单应用上传: {stats['whitelist_uploads']}")
     print(f"   - 其他应用上传: {stats['unknown_uploads']}")

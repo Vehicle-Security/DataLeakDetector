@@ -105,6 +105,10 @@ class UploadDetectorState(TypedDict):
     
     # 检测到的上传事件列表
     upload_events: List[UploadEvent]
+
+    # 敏感操作记录（用于与groundtruth做评估）
+    recording_start_time: str
+    operation_records: List[Dict[str, Any]]
     
     # 报警事件列表（黑名单应用上传）
     alert_events: List[UploadEvent]
@@ -128,6 +132,8 @@ class UploadDetectorState(TypedDict):
     # 内部状态（不序列化到JSON）
     _worklist_manager: Any  # WorklistManager实例
     _log_events: List[Dict[str, Any]]  # 日志事件列表
+    _operation_record_keys: Any  # 操作去重索引
+    _hidden_transformed_paths: List[str]  # 模块2输出的变换后路径列表
 
 
 def create_initial_state(
@@ -184,6 +190,10 @@ def create_initial_state(
         
         # 检测到的上传事件列表
         upload_events=[],
+
+        # 敏感操作记录
+        recording_start_time="",
+        operation_records=[],
         
         # 报警事件列表
         alert_events=[],
@@ -213,6 +223,8 @@ def create_initial_state(
         # 内部状态（稍后在initialize_node中设置）
         _worklist_manager=None,
         _log_events=[],
+        _operation_record_keys=set(),
+        _hidden_transformed_paths=[],
     )
 
 
@@ -233,6 +245,8 @@ def save_state_to_json(state: UploadDetectorState, output_path: str):
     # 排除不可序列化的内部状态字段
     state_dict.pop("_worklist_manager", None)
     state_dict.pop("_log_events", None)
+    state_dict.pop("_operation_record_keys", None)
+    state_dict.pop("_hidden_transformed_paths", None)
     
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(state_dict, f, ensure_ascii=False, indent=2)

@@ -280,6 +280,41 @@ class WorklistManager:
         
         # 返回映射链字符串
         return " -> ".join(chain)
+
+    def get_direct_file_mappings(self) -> Dict[str, str]:
+        """
+        获取直接文件映射关系（子文件 -> 直接父文件）
+
+        Returns:
+            直接映射字典
+        """
+        return dict(sorted(self.file_mappings.items()))
+
+    def get_full_file_mapping_chains(self) -> Dict[str, str]:
+        """
+        获取所有派生文件的完整映射链
+
+        Returns:
+            字典，key为当前派生文件，value为完整映射链字符串
+        """
+        chains: Dict[str, str] = {}
+        for derived_file in sorted(self.file_mappings.keys()):
+            chain = self.get_mapping_chain(derived_file)
+            if chain:
+                chains[derived_file] = chain
+        return chains
+
+    def export_file_mappings(self) -> Dict[str, Any]:
+        """
+        导出文件映射关系（用于输出JSON）
+
+        Returns:
+            包含直接映射关系和完整映射链的字典
+        """
+        return {
+            "direct_file_mappings": self.get_direct_file_mappings(),
+            "full_file_mapping_chains": self.get_full_file_mapping_chains(),
+        }
     
     def get_statistics(self) -> Dict[str, Any]:
         """

@@ -24,11 +24,18 @@ class UploadDetectionConfig:
             "D:\\dingxinyao\\desktop\\公司机密\\公司内部资料\\公司高层秘密会议纪要.docx", #61 复制粘贴
             "D:\\dingxinyao\\desktop\\重点客户信息汇总表.docx", #48 录屏泄露 62 截图泄露 65 云端上传泄露 50白名单分享黑名单
             "D:\\dingxinyao\\desktop\\2025—2028年公司发展战略规划.docx", #48
+            "D:\\dingxinyao\\desktop\\公司机密\\公司内部资料\\【绝密】「星芒」项目市场分析暨「Aether 2.0」产品预发布简报.docx",#6 外发 10屏幕共享+外发
+            "D:\\dingxinyao\\desktop\\xiaoding\\研究生\\研0\\开学后\\专业培养方案.docx",#7转成音频后外发
+            "D:\\dingxinyao\\desktop\\公司机密\\发票信息.docx", #8 复制内容外发
+            "D:\\dingxinyao\\desktop\\公司机密\\法定代表人授权委托书.doc",#9外发
+            "D:\\dingxinyao\\desktop\\公司机密\\食品生产许可证申请书.pdf",#9外发
+            "D:\\dingxinyao\\desktop\\公司机密\\公司内部资料\\24年11月9会议纪要.docx",#10屏幕共享+外发
 
             "/Users/tujiali/Documents/需求设计.docx", # 41 重命名
             "/Users/tujiali/Documents/AAA公司员工守则.docx", # 44 复制粘贴 57 OCR识别文字 58 截图泄露
             "/Users/tujiali/Documents/BBB公司员工绩效表.xlsx", #56 文件上传
             "/Users/tujiali/Documents/AAA公司合同.docx", #58 截屏
+            "/Users/tujiali/Documents/prompt-数据泄漏识别.docx", #1 外发
 
             "/Users/qwer/Downloads/test/XX有限公司内部管理制度汇编.pdf", #52 文件分段成图片 55 文本嵌入图片像素
             "/Users/qwer/Downloads/test/AAA公司合同.docx", #53 云端上传 54 VPN/代理泄露 
