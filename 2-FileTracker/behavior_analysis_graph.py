@@ -48,6 +48,7 @@ class BehaviorAnalysisGraph:
             temperature=float(os.getenv("TEMPERATURE", "0.01")),
             streaming=False
         )
+        print("===========使用的ai模型名称：", os.getenv("MODEL_NAME", "gpt-4"),"==========")
         
         self.graph = self._build_graph()
     

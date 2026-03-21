@@ -102,11 +102,15 @@ def build_sensitive_operation_record(
     """
     behavior_category = event_data.get("behavior_category", "")
     operation_type = event_data.get("operation_type", "")
+    app_name = event_data.get("app_name", "")
+    description = event_data.get("description", "")
 
     return {
         # "recording_start_time": recording_start_time,
         "operation_time": select_operation_time(event_data, fallback_timestamp),
         "sensitive_file_path": sensitive_file_path,
+        "app_name": app_name,
+        "description": description,
         "operation": build_operation_text(
             behavior_category=behavior_category,
             operation_type=operation_type,

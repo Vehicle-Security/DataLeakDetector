@@ -35,17 +35,20 @@ def main():
     #        46\47(两块屏幕像素低)  48 51 60
     # 待重测ID：65
     # 现有逻辑无法解决ID：63
-    record_id = 43
+    record_id = "5-screen-record-1"
     
     # 模块1视频搜索时间范围（秒）
     # 从敏感文件事件发生时刻开始往后搜索的时长
     search_duration = 30
     
-    base_path = f"records/{record_id}"
+    # base_path = f"records/{record_id}"
+    base_path = f"recordings/stage2/{record_id}"
     
-    log_files = glob.glob(f"{base_path}/key_events/key_events_*.json")
+    # log_files = glob.glob(f"{base_path}/key_events/key_events_*.json")
+    log_files = glob.glob(f"{base_path}/logs/keyevents.json")
     if not log_files:
-        print(f"❌ 错误: 在 {base_path}/key_events/ 中找不到 key_events_*.json 文件")
+        # print(f"❌ 错误: 在 {base_path}/key_events/ 中找不到 key_events_*.json 文件")
+        print(f"❌ 错误: 在 {base_path}/logs/ 中找不到 keyevents.json 文件")
         return
     log_file = log_files[0]
     print(f"📄 日志文件: {os.path.basename(log_file)}")

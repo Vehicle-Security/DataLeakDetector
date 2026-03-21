@@ -23,7 +23,7 @@ load_dotenv(find_dotenv())
 logger = logging.getLogger("VideoAgent")
 
 class VideoFileOperationAgent:
-    def __init__(self, model_name="qwen2.5-vl-72b-instruct"):
+    def __init__(self, model_name=os.getenv("VL_MODEL_NAME", "gpt-5")):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self._init_models()
         self.llm_model = model_name
@@ -59,7 +59,7 @@ class VideoFileOperationAgent:
             with torch.no_grad():
                 curr_feat = self.feature_model(img_t).flatten()
 
-            if prev_feat is None or torch.nn.functional.cosine_similarity(prev_feat.unsqueeze(0), curr_feat.unsqueeze(0)).item() < 0.98:
+            if prev_feat is None or torch.nn.functional.cosine_similarity(prev_feat.unsqueeze(0), curr_feat.unsqueeze(0)).item() < 0.985:
                 state.candidate_frames.append({'idx': curr_idx, 'frame': frame})
                 prev_feat = curr_feat
         
@@ -138,12 +138,16 @@ class VideoFileOperationAgent:
             return state
 
         logger.info(f"Step 4: 正在发送关键帧至 VLM 模型进行深层行为意图分析...")
-        
+        # --- 新增：创建保存图片的目录 ---
+        save_dir = "vlm_debug_frames"
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        # ---------------------------
         state.hit_frames.sort(key=lambda x: x['idx'])
         llm = ChatOpenAI(
             model=self.llm_model,
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            api_key=os.getenv("DASHSCOPE_API_KEY"), 
+            base_url=os.getenv("OPENAI_BASE_URL"),#"https://www.DMXapi.com/v1",
+            api_key=os.getenv("OPENAI_API_KEY"),#os.getenv("DMX_API_KEY"), 
         )
 
         table_rows = [
@@ -159,7 +163,11 @@ class VideoFileOperationAgent:
 
         contents = [{"type": "text", "text": final_prompt}]
         for f in state.hit_frames:
-            
+            safe_time = f['time'].replace(":", "-").replace(" ", "_")
+            file_name = f"frame_{f['idx']}_{safe_time}_{f['type']}.jpg"
+            save_path = os.path.join(save_dir, file_name)
+            cv2.imwrite(save_path, f['frame'])
+            logger.debug(f"已保存 VLM 输入帧至: {save_path}")
             _, buffer = cv2.imencode('.jpg', f['frame'], [cv2.IMWRITE_JPEG_QUALITY, 75])
             img_b64 = base64.b64encode(buffer).decode('utf-8')
             contents.append({
@@ -185,12 +193,13 @@ class VideoFileOperationAgent:
                 final_events = []
                 for event in raw_events:
                     original_name = event.get("original_filename", "").lower()
+                    final_events.append(event)
                     if any(kw.lower() in original_name for kw in state.target_keywords):
                         final_events.append(event)
                     else:
                         logger.info(f"🗑️ 剔除无关文件名: {original_name}")
 
-            
+            # 2. 生成最终报告
             state.final_report = {
                 "search_range": {
                     "start": state.time_range['search_start'].strftime("%Y-%m-%d %H:%M:%S"), 

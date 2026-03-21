@@ -14,59 +14,14 @@ from upload_detector_state import UploadDetectorState, UploadEvent
 from upload_detection_config import config
 from worklist_manager import WorklistManager, load_log_from_json, SensitiveFileEvent
 from behavior_analysis_graph import analyze_sensitive_event_behavior
-from behavior_analysis_tools import (
+from upload_detector_tools import (
     resolve_full_path,
     read_recording_start_time,
     normalize_timestamp_display,
     build_sensitive_operation_record,
-    build_sensitive_operation_dedup_key,
+    extract_hidden_transformed_paths,
+    append_operation_record_with_dedup,
 )
-
-
-def _extract_hidden_transformed_paths(module2_result: Dict[str, Any]) -> list:
-    """
-    直接从模块2结果提取变换后文件路径列表（按模块2输出顺序）
-    """
-    new_events = module2_result.get("new_events", []) if isinstance(module2_result, dict) else []
-    transformed_paths = []
-
-    for new_event in new_events:
-        if isinstance(new_event, dict):
-            path = new_event.get("current_file", "")
-        else:
-            path = getattr(new_event, "current_file", "")
-
-        if path:
-            transformed_paths.append(path)
-
-    return transformed_paths
-
-
-def _append_operation_record_with_dedup(
-    state: UploadDetectorState,
-    operation_record: Dict[str, Any],
-) -> bool:
-    """
-    添加操作记录并去重。
-    去重键：同时间 + 同文件 + 同操作
-
-    Returns:
-        True: 新增成功
-        False: 重复记录，已忽略
-    """
-    dedup_key = build_sensitive_operation_dedup_key(operation_record)
-
-    keys = state.get("_operation_record_keys")
-    if not isinstance(keys, set):
-        keys = set()
-        state["_operation_record_keys"] = keys
-
-    if dedup_key in keys:
-        return False
-
-    keys.add(dedup_key)
-    state["operation_records"].append(operation_record)
-    return True
 
 
 def initialize_node(state: UploadDetectorState) -> UploadDetectorState:
@@ -177,7 +132,7 @@ def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
         )
 
         # 直接复用模块2已解析出的变换后路径列表（不重新推断）
-        state["_hidden_transformed_paths"] = _extract_hidden_transformed_paths(result)
+        state["_hidden_transformed_paths"] = extract_hidden_transformed_paths(result)
         
         state["module1_result"] = result.get("frame_analysis_result", result)
 
@@ -288,7 +243,7 @@ def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
                 fallback_timestamp=current_event.get("timestamp", ""),
                 transformed_file_path=transformed_file_path,
             )
-            if _append_operation_record_with_dedup(state, operation_record):
+            if append_operation_record_with_dedup(state, operation_record):
                 print(
                     "      📝 记录敏感操作: "
                     f"{operation_record['operation_time']} | "
