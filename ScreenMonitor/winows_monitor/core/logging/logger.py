@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Optional, IO, Dict, Any, List
 
 from ..utils import app_logger
+from .log_contract import normalize_app_name, normalize_event_entry
 
 try:
     import win32api
@@ -116,13 +117,13 @@ class Logger:
         """关闭日志文件 - 将内存中的数据写入 JSON 文件"""
         try:
             # 写入 logs.json
-            if self._log_path and self._log_entries:
+            if self._log_path is not None:
                 with open(self._log_path, 'w', encoding='utf-8') as f:
                     json.dump(self._log_entries, f, ensure_ascii=False, indent=2)
                 app_logger.info(f"📊 日志已保存: {self._log_path} ({self._event_count} 条)")
             
             # 写入 keyevents.json
-            if self._keyevents_path and self._keyevent_entries:
+            if self._keyevents_path is not None:
                 with open(self._keyevents_path, 'w', encoding='utf-8') as f:
                     json.dump(self._keyevent_entries, f, ensure_ascii=False, indent=2)
                 app_logger.info(f"🔑 关键事件已保存: {self._keyevents_path} ({self._keyevent_count} 条)")
@@ -191,6 +192,7 @@ class Logger:
                 "relative_timestamp": relative_ts
             }
         }
+        entry = normalize_event_entry(entry)
         
         self._write_entry(entry)
         
@@ -210,17 +212,13 @@ class Logger:
         proc_info = event.get("process_info", {})
         process_name = proc_info.get("process_name", "")
         app_name = self._normalize_app_name(process_name)
-        
-        # 检查是否为敏感文件
-        file_name = event.get("file_name", "")
-        upload_detection = self._check_sensitive_file(file_name, event.get("file_path", ""), app_name)
-        
+
         # 构建与 Mac 完全一致的格式
         entry = {
             "timestamp": event.get("timestamp", datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]),
             "event_type": event.get("event_type", ""),
             "file_path": event.get("file_path", ""),
-            "file_name": file_name,
+            "file_name": event.get("file_name", ""),
             "file_size": event.get("file_size", 0),
             "file_extension": event.get("file_extension", ""),
             "process_info": event.get("process_info", {
@@ -238,17 +236,31 @@ class Logger:
             }),
             "app_name": app_name,
         }
-        
-        # 添加 upload_detection（如果是敏感文件）
-        if upload_detection:
-            entry["upload_detection"] = upload_detection
-        
+
         # 添加 extra 对象（与 Mac 一致）
         entry["extra"] = {
             "raw_operation": event.get("event_type", ""),
             "category": "",
             "source": event.get("detection_method", "watchdog_fs_monitor")
         }
+        if "destination_path" in event:
+            entry["destination_path"] = event.get("destination_path", "")
+            entry["destination_name"] = event.get("destination_name", "")
+            entry["destination_extension"] = event.get("destination_extension", "")
+
+        entry = normalize_event_entry(entry)
+
+        upload_detection = event.get("upload_detection")
+        if not isinstance(upload_detection, dict):
+            upload_detection = self._check_sensitive_file(
+                entry.get("file_name", ""),
+                entry.get("file_path", ""),
+                app_name,
+            )
+
+        if upload_detection:
+            entry["upload_detection"] = upload_detection
+            entry = normalize_event_entry(entry)
         
         self._write_entry(entry)
         
@@ -302,6 +314,12 @@ class Logger:
             }),
             "app_name": app_name,
         }
+        if "destination_path" in event:
+            entry["destination_path"] = event.get("destination_path", "")
+            entry["destination_name"] = event.get("destination_name", "")
+            entry["destination_extension"] = event.get("destination_extension", "")
+
+        entry = normalize_event_entry(entry)
 
         # 敏感信息检测 (如果 Monitor 没做)
         if "upload_detection" in event:
@@ -330,6 +348,7 @@ class Logger:
                 "category": "",
                 "source": event.get("detection_method", "unknown_monitor")
             }
+        entry = normalize_event_entry(entry)
 
         self._write_entry(entry)
         
@@ -341,34 +360,7 @@ class Logger:
     
     def _normalize_app_name(self, process_name: str) -> str:
         """规范化应用名称"""
-        if not process_name:
-            return ""
-        
-        # 移除 .exe 后缀
-        if process_name.lower().endswith('.exe'):
-            process_name = process_name[:-4]
-        
-        # 常见应用名称映射
-        app_name_map = {
-            "chrome": "Chrome",
-            "msedge": "Edge",
-            "firefox": "Firefox",
-            "explorer": "Explorer",
-            "notepad": "记事本",
-            "code": "VS Code",
-            "wechat": "微信",
-            "qq": "QQ",
-            "wps": "WPS",
-            "wpsoffice": "WPS",
-            "et": "WPS Excel",
-            "wpp": "WPS PPT",
-            "wpsclouddrive": "WPS云盘",
-            "dingtalk": "钉钉",
-            "feishu": "飞书",
-            "lark": "飞书",
-        }
-        
-        return app_name_map.get(process_name.lower(), process_name)
+        return normalize_app_name(process_name)
     
     def _check_sensitive_file(self, file_name: str, file_path: str, app_name: str) -> Optional[Dict[str, Any]]:
         """检查是否为敏感文件，返回 upload_detection 对象"""
@@ -516,7 +508,8 @@ class Logger:
             return
         
         try:
-            self._log_entries.append(entry)
+            normalized_entry = normalize_event_entry(entry)
+            self._log_entries.append(normalized_entry)
             self._event_count += 1
             
             # 每 100 条自动保存一次，防止意外丢失
@@ -532,15 +525,25 @@ class Logger:
             return
         
         try:
+            normalized_entry = normalize_event_entry(entry, drop_invalid_file_event=True)
+            if normalized_entry is None:
+                app_logger.warning(
+                    "⚠️ 跳过 file_path 无法修复的关键事件: "
+                    f"type={entry.get('event_type', '')}, "
+                    f"path={entry.get('file_path', '')}, "
+                    f"process_path={entry.get('process_info', {}).get('process_path', '')}"
+                )
+                return
+
             # 直接使用原始日志条目，保持与 logs.json 相同的格式
             # keyevents.json 是 logs.json 的子集
-            self._keyevent_entries.append(entry)
+            self._keyevent_entries.append(normalized_entry)
             self._keyevent_count += 1
             
             # 控制台输出
-            app_name = entry.get("app_name", "")
-            file_name = entry.get("file_name", "")
-            window_title = entry.get("window_info", {}).get("window_title", "")[:30] if entry.get("window_info") else ""
+            app_name = normalized_entry.get("app_name", "")
+            file_name = normalized_entry.get("file_name", "")
+            window_title = normalized_entry.get("window_info", {}).get("window_title", "")[:30] if normalized_entry.get("window_info") else ""
             app_logger.info(f"🔑 关键事件: [{reason}] {app_name} - {file_name or window_title}")
             
         except Exception as e:

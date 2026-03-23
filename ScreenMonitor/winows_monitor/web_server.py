@@ -19,6 +19,7 @@ API 端点:
 import os
 import sys
 import json
+import re
 import threading
 from datetime import datetime
 from flask import Flask, jsonify, request, render_template, send_from_directory, Response
@@ -28,6 +29,17 @@ import logging
 # 禁用 Flask/Werkzeug 请求日志
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
+
+# Ensure console logging and print() do not fail in legacy code pages.
+def _configure_stdio():
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (AttributeError, ValueError):
+            pass
+
+
+_configure_stdio()
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -144,37 +156,68 @@ def parse_session(session_id: str, session_path: str) -> dict:
     # 查找日志
     logs_dir = os.path.join(session_path, "logs")
     if os.path.exists(logs_dir):
-        for f in os.listdir(logs_dir):
-            if f.endswith(".json"):
-                session["log_path"] = os.path.join(logs_dir, f)
-                break
+        logs_json = os.path.join(logs_dir, "logs.json")
+        if os.path.exists(logs_json):
+            session["log_path"] = logs_json
+        else:
+            for f in sorted(os.listdir(logs_dir)):
+                if f.endswith(".json"):
+                    session["log_path"] = os.path.join(logs_dir, f)
+                    break
+
+        keyevents_json = os.path.join(logs_dir, "keyevents.json")
+        if os.path.exists(keyevents_json):
+            session["events_path"] = keyevents_json
+            session["risk_events"] = _count_json_events(keyevents_json)
+
+    # 兼容旧 key_events 目录
+    if session["events_path"] is None:
+        events_dir = os.path.join(session_path, "key_events")
+        if os.path.exists(events_dir):
+            for f in sorted(os.listdir(events_dir)):
+                if "key_events" in f and f.endswith(".json"):
+                    session["events_path"] = os.path.join(events_dir, f)
+                    session["risk_events"] = _count_json_events(session["events_path"])
+                    break
+
+    session["duration"] = _read_session_duration(session_path, session_id)
     
-    # 查找关键事件
-    events_dir = os.path.join(session_path, "key_events")
-    if os.path.exists(events_dir):
-        for f in os.listdir(events_dir):
-            if "key_events" in f and f.endswith(".json"):
-                session["events_path"] = os.path.join(events_dir, f)
-                # 统计风险事件
-                try:
-                    with open(session["events_path"], "r", encoding="utf-8") as ef:
-                        events = json.load(ef)
-                        session["risk_events"] = len(events) if isinstance(events, list) else 0
-                except:
-                    pass
-                break
-    
-    # 读取 summary 获取时长
+    return session
+
+
+def _count_json_events(json_path: str) -> int:
+    """统计 JSON 数组文件中的事件数量。"""
+    try:
+        with open(json_path, "r", encoding="utf-8") as handle:
+            events = json.load(handle)
+            return len(events) if isinstance(events, list) else 0
+    except Exception:
+        return 0
+
+
+def _read_session_duration(session_path: str, session_id: str):
+    """优先从 INDEX.md 读取新结构时长，回退到旧 summary 文件。"""
+    index_path = os.path.join(session_path, "INDEX.md")
+    if os.path.exists(index_path):
+        try:
+            with open(index_path, "r", encoding="utf-8") as handle:
+                content = handle.read()
+            match = re.search(r"\*\*Duration\*\*:\s*([0-9]+(?:\.[0-9]+)?)\s+seconds", content)
+            if match:
+                return float(match.group(1))
+        except Exception:
+            pass
+
     summary_path = os.path.join(session_path, "key_events", f"summary_{session_id}.json")
     if os.path.exists(summary_path):
         try:
-            with open(summary_path, "r", encoding="utf-8") as sf:
-                summary = json.load(sf)
-                session["duration"] = summary.get("duration_seconds", 0)
-        except:
-            pass
-    
-    return session
+            with open(summary_path, "r", encoding="utf-8") as handle:
+                summary = json.load(handle)
+                return summary.get("duration_seconds", 0)
+        except Exception:
+            return None
+
+    return None
 
 
 # ====== Web UI 路由 ======
@@ -219,7 +262,7 @@ def api_start():
     
     return jsonify({
         "success": result,
-        "message": "监控已启动 (强制录制模式)" if result else "启动失败"
+        "message": "监控已启动 (手动持续录制模式)" if result else "启动失败"
     })
 
 
@@ -258,8 +301,6 @@ def api_status():
         status["display_state"] = "空闲"
     elif status["state"] == "recording":
         status["display_state"] = "录制中"
-    elif status["state"] == "cooldown":
-        status["display_state"] = "冷却中"
     else:
         status["display_state"] = "监控中"
     
@@ -471,4 +512,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

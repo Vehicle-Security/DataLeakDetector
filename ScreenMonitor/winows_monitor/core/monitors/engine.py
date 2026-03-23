@@ -26,7 +26,12 @@ from .file_system_monitor import FileSystemMonitor
 from .clipboard_monitor import ClipboardMonitor
 from .etw_launcher import get_etw_launcher, EtwLauncher
 from ..detection.rule_matcher import RuleMatcher, MatchResult
+from ..logging.keyevent_cleanup import finalize_keyevents
 from ..logging.logger import Logger
+from ..logging.log_contract import (
+    build_browser_file_access_event,
+    normalize_event_entry,
+)
 
 
 class State(Enum):
@@ -58,9 +63,6 @@ class Engine:
     
     # 事件回溯缓冲区容量 (保存录制前的事件)
     MAX_EVENT_BUFFER = 2000
-    
-    # 最大录制时长（秒）
-    MAX_RECORDING_DURATION = 3600  # 1小时
     
     def __init__(self, config_loader, recorder_service=None, output_dir: str = "./recordings"):
         """
@@ -143,16 +145,30 @@ class Engine:
         
         self.running = True
         self.state = State.IDLE
+        self.last_window = None
+        self.last_dialog_info = None
+        self.dialog_trigger_window = None
+        self.current_session_id = None
+        self.current_session_dir = None
+        self.recording_start_time = None
+        self._clear_event_buffer()
         
-        self._add_log("info", f"监控引擎已启动 (轮询间隔: {self.poll_interval}s)")
+        self._add_log("info", f"监控引擎已启动 (手动持续录制, 轮询间隔: {self.poll_interval}s)")
         app_logger.info(f"🚀 监控引擎已启动")
+        app_logger.info("   模式: 手动持续录制（开始后立即录制，直到手动停止）")
         app_logger.info(f"   轮询间隔: {self.poll_interval}s")
-        app_logger.info(f"   最大录制时长: {self.MAX_RECORDING_DURATION // 60} 分钟")
         
         # 1. 启动所有监控器 (持续运行)
         self._start_monitors()
+
+        # 2. 立即开始本次手动录制会话
+        if not self._start_recording():
+            self.running = False
+            self._stop_monitors()
+            self._add_log("error", "监控引擎启动失败：无法创建录制会话")
+            return False
         
-        # 2. 启动主循环线程
+        # 3. 启动主循环线程
         self.monitor_thread = threading.Thread(
             target=self._main_loop, 
             daemon=True,
@@ -181,6 +197,10 @@ class Engine:
             
         # 停止所有监控器
         self._stop_monitors()
+        self._clear_event_buffer()
+        self.last_window = None
+        self.last_dialog_info = None
+        self.dialog_trigger_window = None
         
         self._add_log("info", "监控引擎已停止")
         app_logger.info("🛑 监控引擎已停止")
@@ -296,23 +316,17 @@ class Engine:
                                 "category": match_result.category,
                                 "window_title": window_data.window_title[:50]
                             })
-                        
-                        # 3. 状态机决策
-                        self._process_state(match_result, window_data)
-                        
-                        # 🆕 4. 文件对话框检测和上传推理
+
+                        # 3. 文件对话框检测和上传推理
                         if self.state == State.RECORDING:
                             self._detect_file_operations(window_data)
                         
-                        # 5. 日志记录（持续记录窗口切换）
+                        # 4. 日志记录（持续记录窗口切换）
                         if self.state == State.RECORDING:
                             self.logger.log(window_data, match_result, time.time())
                         
                         # 更新上次窗口
                         self.last_window = window_data
-                
-                # 检查录制时长
-                self._check_recording_duration()
                 
             except Exception as e:
                 app_logger.error(f"主循环异常: {e}")
@@ -330,41 +344,42 @@ class Engine:
                 current.window_title != self.last_window.window_title)
     
     def _process_state(self, match_result: MatchResult, window_data: WindowData):
-        """状态机处理"""
-        with self.state_lock:
-            if match_result.is_match:
-                # 命中规则
-                if self.state == State.IDLE:
-                    # IDLE -> RECORDING
-                    self._start_recording(match_result)
-            # 注意：不再有冷却逻辑，录制会持续进行
-    
-    def _start_recording(self, match_result: MatchResult, session_id: str = None):
+        """手动持续录制模式下保留接口，但不再由黑名单驱动录制状态切换。"""
+        _ = match_result
+        _ = window_data
+
+    def _start_recording(self, session_id: str = None) -> bool:
         """开始录制"""
-        self.state = State.RECORDING
+        started_at = time.time()
         if session_id:
             self.current_session_id = session_id
         else:
-            self.current_session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.recording_start_time = time.time()
+            self.current_session_id = datetime.fromtimestamp(started_at).strftime("%Y%m%d_%H%M%S")
+        self.recording_start_time = started_at
         
         # 创建会话目录
-        # 如果是绝对路径，直接使用；否则拼接 output_dir
-        # 这里假设 session_id 只是 ID
         self.current_session_dir = os.path.join(self.output_dir, f"session_{self.current_session_id}")
         os.makedirs(os.path.join(self.current_session_dir, "logs"), exist_ok=True)
         os.makedirs(os.path.join(self.current_session_dir, "video"), exist_ok=True)
         
         # 启动日志记录 (使用 logs.json 以匹配 API 期望)
         log_path = os.path.join(self.current_session_dir, "logs", "logs.json")
-        self.logger.open(log_path, time.time())
+        if not self.logger.open(log_path, started_at):
+            self.current_session_id = None
+            self.current_session_dir = None
+            self.recording_start_time = None
+            return False
+
+        self.state = State.RECORDING
         
-        self._add_log("info", f"开始录制 - 触发: {match_result.app_name} ({match_result.category})")
-        print(f"🎬 开始录制 - 触发: {match_result.app_name} ({match_result.category})")
+        self._add_log("info", "开始录制 - 手动启动")
+        print("🎬 开始录制 - 手动持续录制模式")
         print(f"   会话目录: {self.current_session_dir}")
         
-        # 🌟 关键：将缓冲区中的“案发前”事件写入日志
-        self._flush_event_buffer()
+        # 将启动瞬间已经到达缓冲区的事件写入本次会话
+        flushed_count = self._flush_event_buffer()
+        if flushed_count:
+            app_logger.info(f"🧾 已补写启动阶段缓存事件: {flushed_count} 条")
         
         # 启动屏幕录制
         if self.recorder:
@@ -382,6 +397,8 @@ class Engine:
                 self.etw_launcher.start(logs_dir)
         except Exception as e:
             app_logger.warning(f"启动 EtwMonitor 失败: {e}")
+        
+        return True
 
     def _flush_event_buffer(self):
         """将缓存的事件写入日志文件"""
@@ -394,20 +411,18 @@ class Engine:
                 self.logger.log_raw_event(event)
                 count += 1
         return count
+
+    def _clear_event_buffer(self):
+        """清空缓存事件，避免跨会话串台。"""
+        with self.buffer_lock:
+            self.event_buffer.clear()
     
     # 注意：不再需要 _start_file_monitor 和 _on_file_event，
     # 因为已经由 _start_monitors 和 _handle_monitor_event 统一接管
     
     def _check_recording_duration(self):
-        """检查录制时长是否超过最大值"""
-        if self.state != State.RECORDING or not self.recording_start_time:
-            return
-        
-        elapsed = time.time() - self.recording_start_time
-        if elapsed >= self.MAX_RECORDING_DURATION:
-            print(f"⏰ 录制已达到最大时长 ({self.MAX_RECORDING_DURATION // 60} 分钟)，自动停止")
-            self._add_log("warning", f"录制已达到最大时长 ({self.MAX_RECORDING_DURATION // 60} 分钟)")
-            self._stop_recording()
+        """手动持续录制模式下不再自动停止，保留接口仅为兼容。"""
+        return
     
     def _stop_recording(self):
         """停止录制（但不停止监控器，监控器持续运行直到引擎停止）"""
@@ -463,15 +478,16 @@ class Engine:
         # 生成INDEX.md (包含 EtwMonitor 事件数)
         self._generate_index(duration, event_count + etw_merged_count)
         
+        self.last_dialog_info = None
+        self.dialog_trigger_window = None
         self.current_session_id = None
         self.current_session_dir = None
         self.recording_start_time = None
     
     def _cleanup_keyevents(self):
-        """合并 ETW 事件到 keyevents.json，然后使用严格的白名单过滤"""
-        import re
-        import json
+        """合并 ETW 事件到 keyevents.json，并清理 logs 目录中的临时 ETW JSON。"""
         import glob
+        import json
         
         logs_dir = os.path.join(self.current_session_dir, "logs")
         keyevents_path = os.path.join(logs_dir, "keyevents.json")
@@ -483,20 +499,37 @@ class Engine:
         for etw_file in etw_files:
             try:
                 with open(etw_file, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line:
+                    content = f.read().strip()
+                    if not content:
+                        continue
+
+                    raw_events = []
+                    if content.startswith('['):
+                        try:
+                            parsed = json.loads(content)
+                            if isinstance(parsed, list):
+                                raw_events = parsed
+                        except json.JSONDecodeError:
+                            raw_events = []
+
+                    if not raw_events:
+                        for line in content.splitlines():
+                            line = line.strip()
+                            if not line:
+                                continue
                             try:
-                                event = json.loads(line)
-                                # 跳过 monitor_started/stopped 元事件
-                                if 'event' in event:
-                                    continue
-                                # 转换为 keyevent 格式
-                                converted = self._convert_etw_event(event)
-                                if converted:
-                                    etw_events.append(converted)
+                                raw_events.append(json.loads(line))
                             except json.JSONDecodeError:
                                 continue
+
+                    for event in raw_events:
+                        # 跳过 monitor_started/stopped 元事件
+                        if 'event' in event:
+                            continue
+                        # 转换为 keyevent 格式
+                        converted = self._convert_etw_event(event)
+                        if converted:
+                            etw_events.append(converted)
             except Exception as e:
                 app_logger.warning(f"读取 ETW 日志失败: {e}")
         
@@ -508,173 +541,71 @@ class Engine:
             try:
                 with open(keyevents_path, 'r', encoding='utf-8') as f:
                     existing_events = json.load(f)
+                    if not isinstance(existing_events, list):
+                        existing_events = []
             except Exception:
                 existing_events = []
         
         # ============ 3. 合并所有事件 ============
         all_events = existing_events + etw_events
+        normalized_events = []
+        dropped_invalid = 0
+
+        for event in all_events:
+            normalized = normalize_event_entry(event, drop_invalid_file_event=True)
+            if normalized is None:
+                dropped_invalid += 1
+                app_logger.warning(
+                    "⚠️ 丢弃 file_path 无法修复的关键事件: "
+                    f"type={event.get('event_type', '')}, "
+                    f"path={event.get('file_path', '')}, "
+                    f"process_path={event.get('process_info', {}).get('process_path', '')}"
+                )
+                continue
+            normalized_events.append(normalized)
         
-        # ============ 4. 严格过滤：使用黑名单路径和扩展名 ============
-        
-        # 系统路径黑名单（不区分大小写）
-        system_path_patterns = [
-            r'c:\\windows\\',
-            r'c:\\program files\\',
-            r'c:\\program files \(x86\)\\',
-            r'c:\\programdata\\',
-            r'\\appdata\\local\\temp\\',
-            r'\\appdata\\local\\google\\chrome\\user data\\',
-            r'\\appdata\\local\\microsoft\\',
-            r'\\appdata\\roaming\\microsoft\\windows\\recent\\',
-            r'\\google\\chrome\\application\\',
-            r'\\mozilla firefox\\',
-            r'\\microsoft\\edge\\',
-        ]
-        
-        # 系统文件扩展名黑名单
-        system_extensions = {
-            '.dll', '.exe', '.sys', '.drv', '.ocx',  # 可执行/库文件
-            '.pf', '.sdb', '.nls', '.mui', '.cat',    # Windows 系统文件
-            '.etl', '.log', '.bak', '.tmp', '.temp',  # 日志/临时文件
-            '.lnk', '.url',                           # 快捷方式（一般不需要）
-            '.dat', '.db', '.sqlite', '.db-journal',  # 数据库/缓存
-            '.manifest', '.config',                   # 配置文件
-            '.crdownload', '.partial',                # 下载中的文件
-        }
-        
-        # 有意义的文档扩展名白名单
-        meaningful_extensions = {
-            # 文档
-            '.doc', '.docx', '.pdf', '.txt', '.rtf', '.odt', '.wps',
-            '.xls', '.xlsx', '.csv', '.ods',
-            '.ppt', '.pptx', '.odp',
-            # 图片
-            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg',
-            # 压缩包
-            '.zip', '.rar', '.7z', '.tar', '.gz',
-            # 代码
-            '.py', '.js', '.java', '.cpp', '.c', '.h', '.cs', '.go', '.rs',
-            '.html', '.css', '.json', '.xml', '.yaml', '.yml', '.md',
-            # 其他
-            '.mp3', '.mp4', '.avi', '.mov', '.mkv',
-        }
-        
-        def should_keep(event):
-            """判断事件是否应该保留"""
-            event_type = event.get('event_type', '')
-            file_path = event.get('file_path', '')
-            
-            # 1. 非文件事件（如 app_switch, clipboard）：始终保留
-            if not file_path or event_type in ('app_switch', 'clipboard_text', 'clipboard_image', 'clipboard_files'):
-                return True
-            
-            file_path_lower = file_path.lower()
-            
-            # 2. 检查系统路径黑名单
-            for pattern in system_path_patterns:
-                if re.search(pattern, file_path_lower):
-                    return False
-            
-            # 3. 获取文件扩展名
-            file_ext = event.get('file_extension', '') or os.path.splitext(file_path)[1]
-            file_ext_lower = file_ext.lower()
-            
-            # 4. 系统扩展名黑名单
-            if file_ext_lower in system_extensions:
-                return False
-            
-            # 5. 没有扩展名的文件（通常是缓存）
-            if not file_ext or file_ext == '.':
-                basename = os.path.basename(file_path)
-                if basename and '.' not in basename:
-                    return False
-            
-            # 6. 目录访问（路径以 \ 结尾）
-            if file_path.endswith('\\') or file_path.endswith('/'):
-                return False
-            
-            # 7. 如果有有意义的扩展名，保留
-            if file_ext_lower in meaningful_extensions:
-                return True
-            
-            # 8. 用户目录下的文件，即使扩展名未知也保留
-            user_paths = [
-                r'\\users\\[^\\]+\\documents\\',
-                r'\\users\\[^\\]+\\desktop\\',
-                r'\\users\\[^\\]+\\downloads\\',
-                r'd:\\',  # D盘通常是用户数据
-            ]
-            for pattern in user_paths:
-                if re.search(pattern, file_path_lower):
-                    return True
-            
-            # 9. 默认过滤掉
-            return False
-        
-        # 过滤
-        filtered = [e for e in all_events if should_keep(e)]
-        
-        # ============ 5. 去重 ============
-        seen = set()
-        unique = []
-        for event in filtered:
-            key = (event.get('timestamp', ''), event.get('file_path', ''), event.get('event_type', ''))
-            if key not in seen:
-                seen.add(key)
-                unique.append(event)
-        
-        # 按时间排序
-        unique.sort(key=lambda x: x.get('timestamp', ''))
+        # ============ 4. 最终导出收口 ============
+        unique, finalize_stats = finalize_keyevents(
+            normalized_events,
+            correlation_window_seconds=30.0,
+        )
         
         # 写回
         try:
             with open(keyevents_path, 'w', encoding='utf-8') as f:
                 json.dump(unique, f, ensure_ascii=False, indent=2)
-            app_logger.info(f"📋 Keyevents: {len(existing_events)} 原始 + {len(etw_events)} ETW → 过滤后 {len(unique)} 条")
+
+            deleted_etw_files = 0
+            for etw_file in etw_files:
+                try:
+                    if os.path.exists(etw_file):
+                        os.remove(etw_file)
+                        deleted_etw_files += 1
+                except OSError as remove_error:
+                    app_logger.warning(f"删除临时 ETW 日志失败 ({etw_file}): {remove_error}")
+
+            app_logger.info(
+                f"📋 Keyevents: {len(existing_events)} 原始 + {len(etw_events)} ETW "
+                f"→ 规范化 {len(normalized_events)} 条 → 最终 {len(unique)} 条"
+                f"（绑定窗口事件 {finalize_stats.get('bound_window_events', 0)} 条，"
+                f"丢弃未绑定窗口事件 {finalize_stats.get('dropped_unbound_window_events', 0)} 条，"
+                f"去重 {finalize_stats.get('deduplicated_events', 0)} 条，"
+                f"清理 ETW 文件 {deleted_etw_files} 个）"
+                + (f"（丢弃无效文件事件 {dropped_invalid} 条）" if dropped_invalid else "")
+            )
         except Exception as e:
             app_logger.error(f"保存 keyevents.json 失败: {e}")
     
     def _convert_etw_event(self, etw_event: dict) -> dict:
         """将 ETW 事件转换为 keyevent 格式"""
-        path = etw_event.get('path', '')
-        if not path:
-            return None
-        
-        raw_timestamp = etw_event.get('timestamp', '')
-        process_name = etw_event.get('process', '')
-        pid = etw_event.get('pid', 0)
-        
-        # 转换时间戳格式
-        try:
-            from datetime import datetime
-            dt = datetime.strptime(raw_timestamp, "%Y-%m-%d %H:%M:%S")
-            timestamp = dt.strftime("%Y-%m-%dT%H:%M:%S.000")
-        except Exception:
-            timestamp = raw_timestamp.replace(" ", "T") + ".000" if raw_timestamp else ""
-        
-        file_name = os.path.basename(path) if path else ''
-        _, file_ext = os.path.splitext(path)
-        
-        drive_letter = path[:2] if len(path) >= 2 and path[1] == ':' else ''
-        
-        # 应用名称映射
-        app_name_map = {'chrome.exe': 'Chrome', 'msedge.exe': 'Edge', 'firefox.exe': 'Firefox'}
-        app_name = app_name_map.get(process_name.lower(), process_name.replace('.exe', ''))
-        
-        return {
-            "timestamp": timestamp,
-            "event_type": "created",
-            "file_path": path,
-            "file_name": file_name,
-            "file_size": 0,
-            "file_extension": file_ext,
-            "process_info": {"pid": str(pid), "process_name": process_name, "process_path": "", "cmdline": ""},
-            "window_info": {"window_handle": "", "window_title": "", "window_class": ""},
-            "user_info": {"username": os.environ.get("USERNAME", ""), "hostname": os.environ.get("COMPUTERNAME", "")},
-            "disk_info": {"drive_letter": drive_letter, "disk_type": "Fixed"},
-            "app_name": app_name,
-            "extra": {"raw_operation": "browser_file_access", "category": "浏览器文件访问", "source": "etw_monitor"}
-        }
+        return build_browser_file_access_event(
+            raw_timestamp=etw_event.get('timestamp', ''),
+            process_name=etw_event.get('process', ''),
+            pid=etw_event.get('pid', 0),
+            file_path=etw_event.get('path', ''),
+            username=os.environ.get("USERNAME", ""),
+            hostname=os.environ.get("COMPUTERNAME", ""),
+        )
     
     def _generate_index(self, duration: float, event_count: int):
         """生成会话索引文件"""
@@ -701,7 +632,8 @@ class Engine:
 - `video/recording_{self.current_session_id}.mp4` - Recorded screen video
 
 ### Original Logs
-- `logs/events_{self.current_session_id}.json` - Complete monitoring log
+- `logs/logs.json` - Complete monitoring log
+- `logs/keyevents.json` - Normalized key events
 
 ---
 *Auto-generated by win_monitor*
@@ -721,13 +653,11 @@ class Engine:
                 "running": self.running,
                 "session_id": self.current_session_id,
                 "poll_interval": self.poll_interval,
-                "max_recording_duration": self.MAX_RECORDING_DURATION
             }
             
             if self.state == State.RECORDING and self.recording_start_time:
                 elapsed = time.time() - self.recording_start_time
                 status["recording_duration"] = round(elapsed, 1)
-                status["remaining_time"] = max(0, self.MAX_RECORDING_DURATION - elapsed)
                 status["event_count"] = self.logger.get_event_count()
             
             if self.last_window:
@@ -1155,4 +1085,3 @@ class Engine:
                     self.logger.log_file.flush()
             except Exception as e:
                 print(f"[ERROR] 写入上传推理日志失败: {e}")
-

@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from ..utils import app_logger
+from ..logging.log_contract import build_browser_file_access_event, normalize_app_name
 
 
 class EtwLauncher:
@@ -389,8 +390,9 @@ class EtwLauncher:
                 events = self._read_etw_log(log_file)
                 for event in events:
                     converted = self._convert_event(event)
-                    converted_events.append(converted)
-                    merged_count += 1
+                    if converted:
+                        converted_events.append(converted)
+                        merged_count += 1
             except Exception as e:
                 app_logger.warning(f"⚠️ 读取 EtwMonitor 日志失败 ({log_file}): {e}")
         
@@ -466,91 +468,25 @@ class EtwLauncher:
         Core 格式:
         {
             "timestamp": "2026-01-25T21:15:00.000",
-            "event_type": "browser_file_access",
+            "event_type": "created",
             "file_path": "...",
             "file_name": "...",
             "process_info": {...},
             ...
         }
         """
-        # 解析原始字段
-        raw_timestamp = etw_event.get("timestamp", "")
-        process_name = etw_event.get("process", "")
-        pid = etw_event.get("pid", 0)
-        file_path = etw_event.get("path", "")
-        
-        # 转换时间戳格式
-        try:
-            dt = datetime.strptime(raw_timestamp, "%Y-%m-%d %H:%M:%S")
-            timestamp = dt.strftime("%Y-%m-%dT%H:%M:%S.000")
-        except Exception:
-            timestamp = raw_timestamp.replace(" ", "T") + ".000"
-        
-        # 提取文件名和扩展名
-        file_name = os.path.basename(file_path)
-        _, file_ext = os.path.splitext(file_path)
-        
-        # 提取驱动器号
-        drive_letter = ""
-        if len(file_path) >= 2 and file_path[1] == ":":
-            drive_letter = file_path[:2]
-        
-        # 规范化应用名称
-        app_name = self._normalize_app_name(process_name)
-        
-        # 构建 core 格式
-        return {
-            "timestamp": timestamp,
-            "event_type": "browser_file_access",
-            "file_path": file_path,
-            "file_name": file_name,
-            "file_size": 0,
-            "file_extension": file_ext,
-            "process_info": {
-                "pid": str(pid),
-                "process_name": process_name,
-                "process_path": "",
-                "cmdline": ""
-            },
-            "window_info": {
-                "window_handle": "",
-                "window_title": "",
-                "window_class": ""
-            },
-            "user_info": {
-                "username": os.environ.get("USERNAME", "Unknown"),
-                "hostname": os.environ.get("COMPUTERNAME", "Unknown")
-            },
-            "disk_info": {
-                "drive_letter": drive_letter,
-                "disk_type": "Fixed"
-            },
-            "app_name": app_name,
-            "extra": {
-                "raw_operation": "file_access",
-                "category": "浏览器文件访问",
-                "source": "etw_monitor"
-            }
-        }
+        return build_browser_file_access_event(
+            raw_timestamp=etw_event.get("timestamp", ""),
+            process_name=etw_event.get("process", ""),
+            pid=etw_event.get("pid", 0),
+            file_path=etw_event.get("path", ""),
+            username=os.environ.get("USERNAME", "Unknown"),
+            hostname=os.environ.get("COMPUTERNAME", "Unknown"),
+        )
     
     def _normalize_app_name(self, process_name: str) -> str:
         """规范化应用名称"""
-        if not process_name:
-            return ""
-        
-        # 移除 .exe 后缀
-        if process_name.lower().endswith('.exe'):
-            process_name = process_name[:-4]
-        
-        # 常见应用名称映射
-        app_name_map = {
-            "chrome": "Chrome",
-            "msedge": "Edge",
-            "firefox": "Firefox",
-            "opera": "Opera",
-        }
-        
-        return app_name_map.get(process_name.lower(), process_name)
+        return normalize_app_name(process_name)
 
 
 # 单例实例

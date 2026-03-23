@@ -53,7 +53,7 @@ python web_server.py
 ### 1.4 控制界面
 启动后访问 Web UI 进行操作：
 - 地址: `http://localhost:5000`
-- 点击 **"开始监控"** 按钮开始录制
+- 点击 **"开始监控"** 按钮后会立即创建会话并开始持续录制
 - 完成操作后，点击 **"停止监控"**
 
 ---
@@ -61,8 +61,8 @@ python web_server.py
 ## 2. 配置说明 (Configuration)
 
 在采集前，请确保 `config.yaml` 已包含目标测试应用或网站。
-- **blacklist_apps**: 添加需要测试的黑名单应用（如 QQ, 微信等）
-- **blacklist_websites**: 添加需要测试的黑名单网站（如 GitHub, 网盘等）
+- **blacklist_apps**: 添加需要测试的黑名单应用（如 QQ, 微信等），用于窗口/应用风险分类，不再决定是否开始录制
+- **blacklist_websites**: 添加需要测试的黑名单网站（如 GitHub, 网盘等），用于网站风险分类，不再决定是否开始录制
 - **sensitive_keywords**: 确保测试用的文件名包含敏感关键词（如"合同", "机密"），以便触发高危告警
 
 ---
@@ -164,10 +164,21 @@ recordings/session_20260211_122729/
 
 | 文件 | 用途 | 说明 |
 | :--- | :--- | :--- |
-| **① `logs.json`** | 完整原始日志 | 包含窗口切换、剪贴板、文件创建/修改等所有事件。数据量大（通常上千条），包含大量系统噪声，**一般不直接使用** |
-| **② `etw_session_*.json`** | ETW 浏览器文件访问 | 由 C++ETW 组件 (`EtwMonitorV2.exe`) 捕获的浏览器进程文件访问记录。数据量较大，包含 DLL 加载等底层事件，**作为辅助参考** |
-| **③ `keyevents.json`** | ★ **最终关键事件** | 从 `logs.json` 和 `etw_session` 中提取、过滤后的关键事件。**这是最终用于数据集标注的文件**。包含：窗口切换 (`app_switch`)、剪贴板操作 (`clipboard_text`)、浏览器文件访问 (`browser_file_access`) 等 |
+| **① `logs.json`** | 完整原始日志 | 包含窗口切换、剪贴板、文件创建/修改等所有事件。数据量大（通常上千条），包含大量系统噪声，**一般不直接使用**。该文件保留原始窗口事件，允许 `app_switch` / `website_visit` 的 `file_path=""` |
+| **② `etw_session_*.json`** | ETW 浏览器文件访问 | 由 C++ETW 组件 (`EtwMonitorV2.exe`) 捕获的浏览器进程文件访问记录。该文件只在录制结束前作为中间产物存在，后续会被合并进 `logs.json` / `keyevents.json` 并清理掉 |
+| **③ `keyevents.json`** | ★ **最终关键事件** | 从 `logs.json` 和 ETW 中间日志中提取、过滤并归一化后的关键事件。**这是最终用于数据集标注的文件**。包含：窗口切换 (`app_switch`)、剪贴板操作 (`clipboard_text`)、浏览器文件访问（`event_type=created` 且 `extra.raw_operation=browser_file_access`）等。窗口事件只有在能绑定到精确文件路径时才会保留 |
 | **④ `recording_*.mp4`** | 屏幕录像 | 监控期间的屏幕录制视频，需要安装 ffmpeg |
+
+### `keyevents.json` 字段约定
+
+- `INDEX.md` 中的 `**Recording Time**:` 字段名和格式固定不变
+- `timestamp` 固定表示事件实际发生时间
+- `file_path` 固定表示事件涉及的完整文件路径
+- `app_switch` / `website_visit` 若存在，`file_path` 必须是完整精确路径；无法精确绑定时该事件不会出现在 `keyevents.json`
+- `clipboard_*`、`manual_note` 等真正非文件事件允许 `file_path=""`
+- `process_info.process_path` 固定表示应用程序路径，不会写入 `file_path`
+- `file_path` 不会回填文件名，也不会回填 `process_info.process_path`
+- 会话结束后的 `logs/` 目录只保留 `logs.json` 和 `keyevents.json`
 
 ### 人工补充标注
 
@@ -196,4 +207,3 @@ recordings/session_20260211_122729/
 ```
 
 > **提示**: 补充时保持 `timestamp` 时间戳与实际操作时间一致，方便与视频对照。
-

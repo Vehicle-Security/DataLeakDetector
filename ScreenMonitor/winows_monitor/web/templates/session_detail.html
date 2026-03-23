@@ -470,7 +470,9 @@
 
             tbody.innerHTML = filtered.map(log => {
                 // 对于重命名事件，显示 原路径 -> 新名称
-                let filePath = log.file_path || log.file_name || '-';
+                let filePath = currentTab === 'events'
+                    ? (log.file_path || '-')
+                    : (log.file_path || log.file_name || '-');
                 if (log.event_type === 'renamed' && log.destination_name) {
                     filePath = `${log.file_name} → ${log.destination_name}`;
                 }
