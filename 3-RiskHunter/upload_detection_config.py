@@ -31,6 +31,8 @@ class UploadDetectionConfig:
             "D:\\dingxinyao\\desktop\\公司机密\\食品生产许可证申请书.pdf",#9外发
             "D:\\dingxinyao\\desktop\\公司机密\\公司内部资料\\24年11月9会议纪要.docx",#10屏幕共享+外发
 
+            "D:\\dingxinyao\\desktop\\员工薪资明细表.xlsx", #10-1
+
             "/Users/tujiali/Documents/需求设计.docx", # 41 重命名
             "/Users/tujiali/Documents/AAA公司员工守则.docx", # 44 复制粘贴 57 OCR识别文字 58 截图泄露
             "/Users/tujiali/Documents/BBB公司员工绩效表.xlsx", #56 文件上传
@@ -48,6 +50,7 @@ class UploadDetectionConfig:
             "微信", "WeChat.exe", "WeChat", 
             "钉钉", "dingtalk.exe", "dingtalk",
             "腾讯会议", "TencentMeeting.exe", "TencentMeeting",
+            "网易UU远程", "UU远程", "网易UU",
             "钉钉会议", "Meeting.exe", "Meeting",
             "Cherry Studio", "CherryStudio.exe", "CherryStudio",
             "Chatbox", "Chatbox.exe", "Chatbox",
@@ -134,7 +137,7 @@ class UploadDetectionConfig:
             }
         }
     
-    def is_sensitive_file(self, file_path: str) -> bool:
+    def is_sensitive_file(self, file_path: str) -> bool: # 仅测试config.py用
         """
         判断文件是否为敏感文件
         

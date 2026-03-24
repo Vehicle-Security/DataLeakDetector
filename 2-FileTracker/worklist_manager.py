@@ -10,6 +10,8 @@ from datetime import datetime
 import json
 from pathlib import Path
 
+from behavior_analysis_tools import normalize_file_path
+
 
 @dataclass()
 class SensitiveFileEvent:
@@ -360,9 +362,7 @@ class WorklistManager:
         Returns:
             规范化后的路径
         """
-        normalized = file_path.replace("//", "/")
-        normalized = normalized.replace("\\", "/")
-        return normalized
+        return normalize_file_path(file_path)
     
     def _generate_event_id(self, timestamp: str, file_path: str, event_type: str) -> str:
         """
@@ -379,7 +379,8 @@ class WorklistManager:
         #return f"{timestamp}_{event_type}_{hash(file_path)}"
         # 只保留时间戳到秒级别，避免同一秒内同一文件的重复事件被多次处理
         timestamp_sec = timestamp.split('.')[0] if '.' in timestamp else timestamp
-        return f"{timestamp_sec}_{event_type}_{hash(file_path)}"
+        normalized_path = self._normalize_path(file_path)
+        return f"{timestamp_sec}_{event_type}_{hash(normalized_path)}"
     
     def _is_sensitive_event(self, event: Dict[str, Any]) -> bool:
         """

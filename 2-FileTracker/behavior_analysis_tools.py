@@ -14,6 +14,51 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../1-FrameAnalyzer"))
 from relavance_frame import analyze_video_behavior
 
 
+def normalize_file_path(file_path: str) -> str:
+    """
+    统一文件路径分隔符为 /，并清理重复分隔符
+
+    Args:
+        file_path: 原始路径
+
+    Returns:
+        规范化路径
+    """
+    if not file_path:
+        return ""
+
+    normalized = str(file_path).strip().replace("\\", "/")
+    while "//" in normalized:
+        normalized = normalized.replace("//", "/")
+    return normalized
+
+
+def get_path_basename(file_path: str) -> str:
+    """
+    获取文件名（同时兼容 Windows 和 Unix 路径分隔符）
+    """
+    normalized = normalize_file_path(file_path)
+    return normalized.rsplit("/", 1)[-1] if normalized else ""
+
+
+def is_absolute_file_path(file_path: str) -> bool:
+    """
+    判断是否为绝对路径（兼容 Windows 盘符/UNC 与 Unix）
+    """
+    if not file_path:
+        return False
+
+    path = str(file_path)
+    if os.path.isabs(path):
+        return True
+
+    if path.startswith("/") or path.startswith("\\\\"):
+        return True
+
+    # Windows 盘符路径，例如 D:\xxx 或 D:/xxx
+    return len(path) >= 3 and path[1] == ":" and path[2] in ("\\", "/")
+
+
 def normalize_timestamp_display(timestamp: str) -> str:
     """
     统一时间格式为 YYYY-MM-DD HH:MM:SS
@@ -182,7 +227,7 @@ def analyze_frame_behavior(
         search_end_dt = event_dt + timedelta(seconds=search_duration)
         search_end_time = search_end_dt.strftime("%Y-%m-%d %H:%M:%S")
         
-        filename = os.path.splitext(os.path.basename(current_file))[0]
+        filename = os.path.splitext(get_path_basename(current_file))[0]
         target_keywords = [filename]
         
         print(f"   - 搜索范围: {search_start_time} ~ {search_end_time}")
@@ -277,25 +322,35 @@ def extract_hidden_operations(frame_analysis_result: Dict[str, Any]) -> Dict[str
             if behavior_category == "潜在隐藏行为":
                 original_filename = event.get("original_filename", "")
                 modified_filename = event.get("modified_filename", "")
+                # 支持一个操作生成多个文件：按中英文逗号拆分
+                modified_filenames = [
+                    name.strip()
+                    for name in str(modified_filename).replace("，", ",").split(",")
+                    if name.strip()
+                ]
                 
                 # 文件名必须不同才算隐藏操作
-                if original_filename and modified_filename and original_filename != modified_filename:
-                    operation = {
-                        "operation_type": event.get("operation_type", "未知操作"),
-                        "original_file": original_filename,
-                        "new_file": modified_filename,
-                        "app_name": event.get("app_name", "未知应用"),
-                        "time_range": event.get("time_range", ""),
-                        "description": event.get("description", ""),
-                        "involved_timestamps": event.get("involved_timestamps", [])  # 保存实际发生时间
-                    }
-                    hidden_operations.append(operation)
-                    
-                    file_mappings.append({
-                        "original": original_filename,
-                        "derived": modified_filename,
-                        "relationship": event.get("operation_type", "未知")
-                    })
+                if original_filename and modified_filenames:
+                    for new_filename in modified_filenames:
+                        if original_filename == new_filename:
+                            continue
+
+                        operation = {
+                            "operation_type": event.get("operation_type", "未知操作"),
+                            "original_file": original_filename,
+                            "new_file": new_filename,
+                            "app_name": event.get("app_name", "未知应用"),
+                            "time_range": event.get("time_range", ""),
+                            "description": event.get("description", ""),
+                            "involved_timestamps": event.get("involved_timestamps", [])  # 保存实际发生时间
+                        }
+                        hidden_operations.append(operation)
+
+                        file_mappings.append({
+                            "original": original_filename,
+                            "derived": new_filename,
+                            "relationship": event.get("operation_type", "未知")
+                        })
         
         has_hidden_behavior = len(hidden_operations) > 0
         
@@ -330,15 +385,12 @@ def infer_full_path(base_dir: str, filename: str) -> str:
         标准化后的完整路径
     """
     # 如果已经是绝对路径，直接使用
-    if os.path.isabs(filename) or filename.startswith('/'):
+    if is_absolute_file_path(filename):
         full_path = filename
     else:
         full_path = os.path.join(base_dir, filename) if base_dir else filename
-    
-    full_path = full_path.replace("\\", "/")
-    full_path = full_path.replace("//", "/")
-    
-    return full_path
+
+    return normalize_file_path(full_path)
 
 
 def find_file_path_in_logs(filename: str, time_range: str, log_events: list) -> str:
@@ -370,20 +422,22 @@ def find_file_path_in_logs(filename: str, time_range: str, log_events: list) -> 
     except:
         pass
     
-    target_name_no_ext = os.path.splitext(filename)[0]
+    normalized_filename = normalize_file_path(filename)
+    target_basename = get_path_basename(normalized_filename)
+    target_name_no_ext = os.path.splitext(target_basename)[0]
     
     no_ext_match = None
     no_ext_in_range = False
     
     for event in log_events:
         try:
-            file_path = event.get("file_path", "")
+            file_path = normalize_file_path(event.get("file_path", ""))
             if not file_path:
                 continue
-            
-            event_filename = os.path.basename(file_path)
-            
-            if event_filename == filename:
+
+            event_filename = get_path_basename(file_path)
+
+            if event_filename == target_basename:
                 in_time_range = False
                 event_time_str = event.get("timestamp", "")
                 if event_time_str:
@@ -454,22 +508,24 @@ def resolve_full_path(
     Returns:
         解析后的完整路径
     """
+    normalized_filename = normalize_file_path(filename)
+
     # 检查是否已经是完整路径
-    if os.path.isabs(filename) or filename.startswith('/'):
-        return filename
+    if is_absolute_file_path(normalized_filename):
+        return normalized_filename
     
     # 优先从日志中查找
     if log_events:
-        found_path = find_file_path_in_logs(filename, time_range, log_events)
+        found_path = find_file_path_in_logs(normalized_filename, time_range, log_events)
         if found_path:
             print(f"{print_prefix}📍 从日志找到完整路径: {found_path}")
-            return found_path
+            return normalize_file_path(found_path)
     else:
         print(f"{print_prefix}📍 日志中未找到文件路径")
     # 日志未找到，使用同目录推断
-    full_path = infer_full_path(base_dir, filename)
+    full_path = infer_full_path(base_dir, normalized_filename)
     print(f"{print_prefix}📍 使用同目录推断路径: {full_path}")
-    return full_path
+    return normalize_file_path(full_path)
 
 
 # 工具列表
