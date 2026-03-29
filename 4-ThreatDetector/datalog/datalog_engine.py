@@ -1,6 +1,7 @@
 """
 Datalog 推理引擎核心模块
-支持 Souffle 引擎，封装污点追踪推理逻辑
+支持 Souffle 引擎 和 纯 Python 降级引擎
+运行时自动检测: Souffle 可用则使用 Souffle，否则自动降级为 Python 引擎
 """
 
 import os
@@ -56,16 +57,21 @@ class DatalogFact:
 
 
 class DatalogEngine:
-    """Souffle Datalog 推理引擎封装"""
+    """
+    Datalog 推理引擎封装
+    
+    自动检测 Souffle 是否可用:
+      - Souffle 可用 → 使用原生 Souffle 引擎（高性能）
+      - Souffle 不可用 → 自动降级为纯 Python 引擎（跨平台兼容）
+    
+    对外接口完全一致: add_fact() / query_leak() / cleanup()
+    """
     
     def __init__(self, rules_file: str = None, work_dir: str = None):
         self.rules_file = rules_file or os.path.join(
             os.path.dirname(__file__), 
             'taint_rules.dl'
         )
-        
-        if not os.path.exists(self.rules_file):
-            raise FileNotFoundError(f"Datalog rules file not found: {self.rules_file}")
         
         self.work_dir = work_dir or tempfile.mkdtemp(prefix='datalog_')
         os.makedirs(self.work_dir, exist_ok=True)
@@ -79,19 +85,37 @@ class DatalogEngine:
             'ClipboardRead': []
         }
         
-        self.souffle_bin = self._find_souffle()
-        print(f"✅ Datalog 引擎初始化成功")
+        # 自动检测引擎
+        self.use_souffle = False
+        self.souffle_bin = None
+        self._python_engine = None
+        
+        try:
+            self.souffle_bin = self._find_souffle()
+            self.use_souffle = True
+            print("[OK] Datalog 引擎初始化成功 (Souffle)")
+        except RuntimeError:
+            # Souffle 不可用，降级为 Python 引擎
+            from datalog.python_datalog_engine import PythonDatalogEngine
+            self._python_engine = PythonDatalogEngine()
+            print("[WARN] Souffle 未找到，自动切换为 Python Datalog 引擎")
+            print("[OK] Datalog 引擎初始化成功 (Python 降级模式)")
     
     def _find_souffle(self) -> str:
         candidates = ['souffle', '/usr/local/bin/souffle', '/opt/homebrew/bin/souffle']
         for candidate in candidates:
             try:
-                result = subprocess.run([candidate, '--version'], capture_output=True, timeout=5)
+                result = subprocess.run(
+                    [candidate, '--version'], 
+                    capture_output=True, 
+                    timeout=5,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+                )
                 if result.returncode == 0:
                     return candidate
-            except:
+            except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
                 continue
-        raise RuntimeError("Souffle not found. Install: brew install souffle")
+        raise RuntimeError("Souffle not found")
     
     def add_fact(self, relation: str, *args):
         if relation not in self.facts:
@@ -116,18 +140,24 @@ class DatalogEngine:
                     print(f"   写入 {len(facts)} 条 {relation} 事实")
                 # 空文件也会被创建，满足 Souffle 的要求
     
-    
     def query_leak(self) -> List[LeakPath]:
-        print("\n🔍 开始 Datalog 推理...")
+        """执行推理并返回泄露路径"""
+        if self.use_souffle:
+            return self._souffle_query_leak()
+        else:
+            return self._python_query_leak()
+    
+    def _souffle_query_leak(self) -> List[LeakPath]:
+        """使用 Souffle 引擎执行推理"""
+        print("\n[INFO] 开始 Datalog 推理 (Souffle)...")
         self._write_facts_to_files()
         
         try:
-            # 使用解释模式直接运行（不编译C++）
             run_cmd = [
                 self.souffle_bin,
                 self.rules_file,
-                '-F', self.work_dir,  # 输入目录
-                '-D', self.work_dir   # 输出目录
+                '-F', self.work_dir,
+                '-D', self.work_dir
             ]
             
             print(f"   执行: {' '.join(run_cmd)}")
@@ -136,13 +166,23 @@ class DatalogEngine:
             if result.returncode != 0:
                 raise RuntimeError(f"Souffle 执行失败:\n{result.stderr}")
             
-            print("   ✅ 推理完成")
+            print("   [OK] 推理完成")
         except subprocess.TimeoutExpired:
             raise RuntimeError("Souffle 执行超时")
         
         leak_paths = self._parse_leak_results()
-        print(f"\n✅ 发现 {len(leak_paths)} 条泄露路径")
+        print(f"\n[OK] 发现 {len(leak_paths)} 条泄露路径")
         return leak_paths
+    
+    def _python_query_leak(self) -> List[LeakPath]:
+        """使用纯 Python 引擎执行推理"""
+        # 将累积的事实传入 Python 引擎
+        for relation, facts in self.facts.items():
+            for fact in facts:
+                self._python_engine.add_fact(relation, *fact.args)
+        
+        # 执行推理
+        return self._python_engine.run_inference()
     
     def _parse_leak_results(self) -> List[LeakPath]:
         result_file = os.path.join(self.work_dir, 'leak_results.csv')
