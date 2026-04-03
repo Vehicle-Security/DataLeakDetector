@@ -95,8 +95,8 @@ def main():
     
     try:
         app = create_upload_detector_graph()
-        # 默认 recursion_limit=25，worklist事件稍多时会触发上限
-        graph_config = {"recursion_limit": 35}
+        # 动态发现派生事件后，正常工作量也可能超过默认上限
+        graph_config = {"recursion_limit": 200}
         
         final_state = None
         for state in app.stream(initial_state, config=graph_config):

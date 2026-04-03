@@ -4,6 +4,8 @@
 基于LangGraph构建上传检测Agent
 """
 
+import os
+
 from langgraph.graph import StateGraph, END
 from upload_detector_state import UploadDetectorState
 from upload_detector_nodes import (
@@ -13,6 +15,13 @@ from upload_detector_nodes import (
     finalize_node,
     should_continue_processing
 )
+
+
+def _should_render_graph_debug() -> bool:
+    """
+    调试图渲染仅在显式开启时执行，避免运行时依赖外部 mermaid 服务。
+    """
+    return os.getenv("RENDER_UPLOAD_GRAPH_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def create_upload_detector_graph():
@@ -54,9 +63,13 @@ def create_upload_detector_graph():
     
     app = workflow.compile()
 
-    graph_png = app.get_graph().draw_mermaid_png()
-    with open("upload_detector_graph.png", "wb") as f:
-        f.write(graph_png)
+    if _should_render_graph_debug():
+        try:
+            graph_png = app.get_graph().draw_mermaid_png()
+            with open("upload_detector_graph.png", "wb") as f:
+                f.write(graph_png)
+        except Exception as exc:
+            print(f"⚠️ 跳过上传检测图渲染: {exc}")
     
     return app
 

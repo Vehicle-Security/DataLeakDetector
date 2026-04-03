@@ -12,6 +12,8 @@
   剪贴板: ClipboardWrite × ClipboardRead → CrossProcessTransfer
 """
 
+import os
+from collections import deque
 from typing import List, Dict, Set, Tuple, NamedTuple, TYPE_CHECKING
 from dataclasses import dataclass
 
@@ -156,27 +158,38 @@ class PythonDatalogEngine:
         # 第1步: 规则1 — 初始化污染源头
         #   Tainted(p, f, id, timestamp) :- OpenFile(id, p, f, timestamp).
         tainted: Set[TaintedTuple] = set()
+        best_tainted: Dict[Tuple[str, str], TaintedTuple] = {}
+        frontier = deque()
         for of in self.open_files:
-            tainted.add(TaintedTuple(
+            initial = TaintedTuple(
                 process=of.process,
                 data=of.file,
                 path=of.op_id,
                 timestamp=of.timestamp
-            ))
+            )
+            state_key = (initial.process, initial.data)
+            if state_key in best_tainted:
+                continue
+            tainted.add(initial)
+            best_tainted[state_key] = initial
+            frontier.append(initial)
 
         print(f"   规则1 (污染源头): {len(tainted)} 条初始污点")
 
         # 第2-4步: 不动点迭代 — 反复应用传播规则直到集合不再增长
+        max_iterations = int(os.getenv("DATALOG_MAX_ITERS", "5000") or "0")
         iteration = 0
-        while True:
+        while frontier:
             iteration += 1
             new_tainted: Set[TaintedTuple] = set()
+            current_batch = list(frontier)
+            frontier.clear()
 
             # 规则2: 同进程内文件传播
             #   Tainted(p, dst, cat(history, " -> ", id), new_ts) :-
             #       Tainted(p, src, history, _),
             #       TransferFile(id, p, src, dst, new_ts).
-            for t in tainted:
+            for t in current_batch:
                 for tf in self.transfer_files:
                     if tf.process == t.process and tf.src == t.data:
                         new_path = f"{t.path} -> {tf.op_id}"
@@ -186,14 +199,20 @@ class PythonDatalogEngine:
                             path=new_path,
                             timestamp=tf.timestamp
                         )
-                        if candidate not in tainted:
+                        state_key = (candidate.process, candidate.data)
+                        existing = best_tainted.get(state_key)
+                        if existing is None or len(candidate.path) < len(existing.path):
+                            if existing is not None:
+                                tainted.discard(existing)
+                            tainted.add(candidate)
+                            best_tainted[state_key] = candidate
                             new_tainted.add(candidate)
 
             # 规则3: 跨进程污染传播
             #   Tainted(p2, shared_data, cat(history, " -> ", id), new_ts) :-
             #       Tainted(p1, shared_data, history, _),
             #       CrossProcessTransfer(id, p1, p2, shared_data, new_ts).
-            for t in tainted:
+            for t in current_batch:
                 for cpt in self.cross_process_transfers:
                     if cpt.from_process == t.process and cpt.shared_data == t.data:
                         new_path = f"{t.path} -> {cpt.op_id}"
@@ -203,7 +222,13 @@ class PythonDatalogEngine:
                             path=new_path,
                             timestamp=cpt.timestamp
                         )
-                        if candidate not in tainted:
+                        state_key = (candidate.process, candidate.data)
+                        existing = best_tainted.get(state_key)
+                        if existing is None or len(candidate.path) < len(existing.path):
+                            if existing is not None:
+                                tainted.discard(existing)
+                            tainted.add(candidate)
+                            best_tainted[state_key] = candidate
                             new_tainted.add(candidate)
 
             # 规则4: 含 "copy" 的副本传播
@@ -211,7 +236,7 @@ class PythonDatalogEngine:
             #       Tainted(p, src, history, _),
             #       TransferFile(id, p, src, dst, new_ts),
             #       contains("copy", id).
-            for t in tainted:
+            for t in current_batch:
                 for tf in self.transfer_files:
                     if (tf.process == t.process and
                             tf.src == t.data and
@@ -223,15 +248,25 @@ class PythonDatalogEngine:
                             path=new_path,
                             timestamp=tf.timestamp
                         )
-                        if candidate not in tainted:
+                        state_key = (candidate.process, candidate.data)
+                        existing = best_tainted.get(state_key)
+                        if existing is None or len(candidate.path) < len(existing.path):
+                            if existing is not None:
+                                tainted.discard(existing)
+                            tainted.add(candidate)
+                            best_tainted[state_key] = candidate
                             new_tainted.add(candidate)
 
             # 检查不动点
             if not new_tainted:
                 break
 
-            tainted.update(new_tainted)
+            frontier.extend(new_tainted)
             print(f"   迭代 {iteration}: 新增 {len(new_tainted)} 条污点，总计 {len(tainted)} 条")
+
+            if max_iterations > 0 and iteration >= max_iterations:
+                print(f"   ⚠️ 已达到最大迭代次数 {max_iterations}，停止推理以避免过久运行")
+                break
 
         print(f"   不动点收敛: 共 {iteration} 轮迭代，最终 {len(tainted)} 条污点记录")
 
@@ -240,12 +275,12 @@ class PythonDatalogEngine:
         #       Tainted(p, f, history, _),
         #       LeakFile(leak_id, p, f, channel, leak_ts).
         leak_paths: List[LeakPath] = []
-        seen_leaks: Set[Tuple[str, str, str, str]] = set()  # 去重
+        seen_leaks: Set[Tuple[str, str, str]] = set()  # 同一进程/文件/渠道只保留最短路径
 
         for t in tainted:
             for lf in self.leak_files:
                 if lf.process == t.process and lf.file == t.data:
-                    dedup_key = (t.path, lf.op_id, lf.process, lf.file)
+                    dedup_key = (lf.process, lf.file, lf.leak_channel)
                     if dedup_key not in seen_leaks:
                         seen_leaks.add(dedup_key)
                         full_path = f"{t.path} -> {lf.op_id}"
