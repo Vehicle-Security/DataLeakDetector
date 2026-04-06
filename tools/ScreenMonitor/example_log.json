@@ -1,0 +1,174 @@
+[
+    {
+        "timestamp": "2026-02-11T12:27:29.457",
+        "event_type": "clipboard_text",
+        "file_path": "",
+        "file_name": "",
+        "file_size": 0,
+        "file_extension": "",
+        "process_info": {
+            "pid": "11488",
+            "process_name": "chrome.exe",
+            "process_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+        },
+        "window_info": {
+            "window_handle": "",
+            "window_title": "",
+            "window_class": ""
+        },
+        "user_info": {
+            "username": "zbn20",
+            "hostname": "zbn"
+        },
+        "disk_info": {
+            "drive_letter": "",
+            "disk_type": ""
+        },
+        "app_name": "Chrome",
+        "content_preview": "python web_server.py",
+        "content_hash": "a82b1ab641bf8838",
+        "extra": {
+            "raw_operation": "clipboard_text",
+            "category": "",
+            "source": "clipboard_monitor"
+        }
+    },
+    {
+        "timestamp": "2026-02-11T12:27:30.133",
+        "event_type": "app_switch",
+        "file_path": "",
+        "file_name": "",
+        "file_size": 0,
+        "file_extension": "",
+        "process_info": {
+            "pid": "11488",
+            "process_name": "chrome.exe",
+            "process_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+            "cmdline": ""
+        },
+        "window_info": {
+            "window_handle": "656328",
+            "window_title": "Win Monitor - 数据泄露行为监控系统 - Google Chrome",
+            "window_class": "Chrome_WidgetWin_1"
+        },
+        "user_info": {
+            "username": "zbn20",
+            "hostname": "zbn"
+        },
+        "disk_info": {
+            "drive_letter": "",
+            "disk_type": ""
+        },
+        "app_name": "Chrome",
+        "extra": {
+            "raw_operation": "app",
+            "category": "浏览器",
+            "source": "window_monitor",
+            "risk_level": "高",
+            "relative_timestamp": 0.672
+        }
+    },
+    {
+        "timestamp": "2026-02-11T12:27:33.148",
+        "event_type": "app_switch",
+        "file_path": "",
+        "file_name": "",
+        "file_size": 0,
+        "file_extension": "",
+        "process_info": {
+            "pid": "21424",
+            "process_name": "chrome.exe",
+            "process_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+            "cmdline": ""
+        },
+        "window_info": {
+            "window_handle": "2098228",
+            "window_title": "打开",
+            "window_class": "#32770"
+        },
+        "user_info": {
+            "username": "zbn20",
+            "hostname": "zbn"
+        },
+        "disk_info": {
+            "drive_letter": "",
+            "disk_type": ""
+        },
+        "app_name": "Chrome",
+        "extra": {
+            "raw_operation": "app",
+            "category": "浏览器",
+            "source": "window_monitor",
+            "risk_level": "高",
+            "relative_timestamp": 3.687
+        }
+    },
+    {
+        "timestamp": "2026-02-11T12:27:36.000",
+        "event_type": "created",
+        "file_path": "D:\\code\\DLP\\win_monitor\\test\\AAA公司服务合作合同.docx",
+        "file_name": "AAA公司服务合作合同.docx",
+        "file_size": 0,
+        "file_extension": ".docx",
+        "process_info": {
+            "pid": "11488",
+            "process_name": "chrome.exe",
+            "process_path": "",
+            "cmdline": ""
+        },
+        "window_info": {
+            "window_handle": "",
+            "window_title": "",
+            "window_class": ""
+        },
+        "user_info": {
+            "username": "zbn20",
+            "hostname": "ZBN"
+        },
+        "disk_info": {
+            "drive_letter": "D:",
+            "disk_type": "Fixed"
+        },
+        "app_name": "Chrome",
+        "extra": {
+            "raw_operation": "browser_file_access",
+            "category": "浏览器文件访问",
+            "source": "etw_monitor"
+        }
+    },
+    {
+        "timestamp": "2026-02-11T12:27:36.175",
+        "event_type": "app_switch",
+        "file_path": "",
+        "file_name": "",
+        "file_size": 0,
+        "file_extension": "",
+        "process_info": {
+            "pid": "11488",
+            "process_name": "chrome.exe",
+            "process_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+            "cmdline": ""
+        },
+        "window_info": {
+            "window_handle": "656328",
+            "window_title": "Win Monitor - 数据泄露行为监控系统 - Google Chrome",
+            "window_class": "Chrome_WidgetWin_1"
+        },
+        "user_info": {
+            "username": "zbn20",
+            "hostname": "zbn"
+        },
+        "disk_info": {
+            "drive_letter": "",
+            "disk_type": ""
+        },
+        "app_name": "Chrome",
+        "extra": {
+            "raw_operation": "app",
+            "category": "浏览器",
+            "source": "window_monitor",
+            "risk_level": "高",
+            "relative_timestamp": 6.715
+        }
+    }
+]

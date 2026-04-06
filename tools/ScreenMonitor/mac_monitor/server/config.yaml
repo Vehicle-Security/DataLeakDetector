@@ -1,0 +1,334 @@
+# Mac_monitor 监控配置文件
+# 支持动态加载，修改后重启服务即可生效
+
+# 黑名单应用列表
+blacklist_apps:
+  # 即时通讯类
+  - name: "微信"
+    aliases: ["WeChat", "wechat", "微信"]
+    category: "即时通讯"
+  - name: "QQ"
+    aliases: ["qq", "QQ"]
+    category: "即时通讯"
+  - name: "钉钉"
+    aliases: ["DingTalk", "dingtalk"]
+    category: "即时通讯"
+  - name: "飞书"
+    aliases: ["Feishu", "Lark", "feishu", "lark"]
+    category: "协作办公"
+  
+  # 会议类
+  - name: "Zoom"
+    aliases: ["zoom.us", "zoom"]
+    category: "会议"
+  - name: "腾讯会议"
+    aliases: ["TencentMeeting", "tencentmeeting"]
+    category: "会议"
+  - name: "钉钉会议"
+    aliases: ["Meeting", "DingTalkMeeting"]
+    category: "会议"
+  
+  # AI 应用类
+  - name: "豆包"
+    aliases: ["Doubao", "doubao"]
+    category: "AI"
+  - name: "元宝"
+    aliases: ["yuanbao", "Yuanbao"]
+    category: "AI"
+  - name: "Cherry Studio"
+    aliases: ["cherrystudio", "Cherry Studio"]
+    category: "AI"
+  - name: "Chatbox"
+    aliases: ["chatbox"]
+    category: "AI"
+  
+  # 网盘类
+  - name: "百度网盘"
+    aliases: ["BaiduNetdisk", "baidunetdisk"]
+    category: "网盘"
+  - name: "夸克网盘"
+    aliases: ["Quark", "quark"]
+    category: "网盘"
+  - name: "阿里云盘"
+    aliases: ["AliyunDrive", "aDrive", "aliyundrive"]
+    category: "网盘"
+  - name: "坚果云"
+    aliases: ["Jianguoyun", "jianguoyun"]
+    category: "网盘"
+  - name: "迅雷"
+    aliases: ["Thunder", "thunder"]
+    category: "下载工具"
+
+  # 浏览器（用于网页端检测）
+  - name: "Chrome"
+    aliases: ["Google Chrome", "chrome", "Chromium"]
+    category: "浏览器"
+  - name: "Safari"
+    aliases: ["safari"]
+    category: "浏览器"
+  - name: "Firefox"
+    aliases: ["firefox", "Mozilla Firefox"]
+    category: "浏览器"
+  - name: "Arc"
+    aliases: ["arc"]
+    category: "浏览器"
+  - name: "Edge"
+    aliases: ["Microsoft Edge", "edge"]
+    category: "浏览器"
+
+# 黑名单网站列表
+blacklist_websites:
+  # 网盘类
+  - domain: "pan.baidu.com"
+    name: "百度网盘"
+    category: "网盘"
+  - domain: "www.aliyundrive.com"
+    name: "阿里云盘"
+    category: "网盘"
+  - domain: "pan.quark.cn"
+    name: "夸克网盘"
+    category: "网盘"
+  - domain: "www.jianguoyun.com"
+    name: "坚果云"
+    category: "网盘"
+  
+  # 代码托管类
+  - domain: "github.com"
+    name: "GitHub"
+    category: "代码托管"
+  - domain: "gist.github.com"
+    name: "GitHub Gist"
+    category: "代码托管"
+  - domain: "gitee.com"
+    name: "Gitee"
+    category: "代码托管"
+  
+  # 技术社区类
+  - domain: "www.csdn.net"
+    name: "CSDN"
+    category: "技术社区"
+  - domain: "csdn.net"
+    name: "CSDN"
+    category: "技术社区"
+  
+  # 笔记类
+  - domain: "note.youdao.com"
+    name: "有道云笔记"
+    category: "笔记"
+  
+  # 邮箱类
+  - domain: "mail.163.com"
+    name: "网易邮箱"
+    category: "邮箱"
+  - domain: "mail.qq.com"
+    name: "QQ邮箱"
+    category: "邮箱"
+  
+  # 即时通讯类
+  - domain: "weixin.qq.com"
+    name: "微信网页版"
+    category: "即时通讯"
+  - domain: "filehelper.weixin.qq.com"
+    name: "微信文件传输助手"
+    category: "即时通讯"
+  
+  # AI 类
+  - domain: "www.doubao.com"
+    name: "豆包"
+    category: "AI"
+  - domain: "www.kimi.com"
+    name: "Kimi"
+    category: "AI"
+  - domain: "kimi.moonshot.cn"
+    name: "Kimi"
+    category: "AI"
+  - domain: "tongyi.aliyun.com"
+    name: "通义千问"
+    category: "AI"
+  - domain: "yiyan.baidu.com"
+    name: "文心一言"
+    category: "AI"
+  - domain: "chat.openai.com"
+    name: "ChatGPT"
+    category: "AI"
+  - domain: "chatgpt.com"
+    name: "ChatGPT"
+    category: "AI"
+  - domain: "www.deepseek.com"
+    name: "DeepSeek"
+    category: "AI"
+  - domain: "chat.deepseek.com"
+    name: "DeepSeek"
+    category: "AI"
+  - domain: "yuanbao.tencent.com"
+    name: "元宝"
+    category: "AI"
+  
+  # 文件转换类
+  - domain: "smallpdf.com"
+    name: "SmallPDF"
+    category: "文件转换"
+  - domain: "www.ilovepdf.com"
+    name: "iLovePDF"
+    category: "文件转换"
+
+# 敏感文件关键词（文件名包含这些词则视为敏感）
+sensitive_keywords:
+  # 中文关键词
+  - "机密"
+  - "绝密"
+  - "内部"
+  - "秘密"
+  - "合同"
+  - "协议"
+  - "发票"
+  - "工资"
+  - "薪酬"
+  - "战略"
+  - "规划"
+  - "预算"
+  - "财务"
+  - "报表"
+  - "员工"
+  - "人事"
+  - "简历"
+  - "密码"
+  - "专利"
+  - "算法"
+  - "核心"
+  - "会议纪要"
+  - "会议记录"
+  - "客户"
+  - "名单"
+  # 英文关键词
+  - "confidential"
+  - "secret"
+  - "private"
+  - "salary"
+  - "contract"
+  - "budget"
+  - "finance"
+  - "resume"
+  - "password"
+  - "key"
+  - "token"
+  - "accesskey"
+  - "credential"
+  - "patent"
+  - "algorithm"
+  - "meeting"
+  - "customer"
+  - "client"
+
+# 敏感文件扩展名
+sensitive_extensions:
+  # 文档类
+  - ".doc"
+  - ".docx"
+  - ".xls"
+  - ".xlsx"
+  - ".ppt"
+  - ".pptx"
+  - ".pdf"
+  - ".txt"
+  - ".csv"
+  - ".json"
+  - ".xml"
+  # 压缩包
+  - ".zip"
+  - ".rar"
+  - ".7z"
+  - ".tar"
+  - ".gz"
+  # 多媒体
+  - ".mp3"
+  - ".mp4"
+  - ".wav"
+  - ".avi"
+  - ".mov"
+  # 图片
+  - ".jpg"
+  - ".jpeg"
+  - ".png"
+  - ".gif"
+  - ".bmp"
+  # 密钥/证书
+  - ".pem"
+  - ".key"
+  - ".crt"
+  - ".cer"
+  - ".p12"
+  # 代码
+  - ".py"
+  - ".java"
+  - ".cpp"
+  - ".c"
+  - ".h"
+  - ".go"
+  - ".rs"
+
+# 系统白名单配置（用于过滤误报）
+system_whitelist:
+  # 需要忽略的系统进程（纯后台守护进程）
+  # 注意：filecoordinationd 和 quicklookd 保留用于关联分析
+  ignore_processes:
+    - cfprefsd        # 配置服务
+    - BiomeAgent      # 生物特征代理
+    - analyticsd      # 分析服务
+    - cloudd          # iCloud 同步
+    - nsurlsessiond   # 网络会话（系统级）
+    - trustd          # 证书信任
+    - symptomsd       # 系统症状
+    - logd            # 日志服务
+    - syslogd         # 系统日志
+    - configd         # 配置守护
+    - diskarbitrationd # 磁盘仲裁
+    - coreduetd       # 核心预测
+    - contextstored   # 上下文存储
+    - powerd          # 电源管理
+    - timed           # 时间服务
+    - locationd       # 位置服务
+    - tccd            # 透明度同意控制
+    - sharingd        # 系统级共享
+    - rapportd        # 设备连接
+    - suggestd        # Siri 建议
+    - remindd         # 提醒事项
+    - CalendarAgent   # 日历代理
+    - AddressBookSourceSync # 通讯录同步
+    - mdworker        # Spotlight 索引
+    - mds             # 元数据服务
+    - mds_stores      # 元数据存储
+    - notifyd         # 通知守护
+    - bird            # iCloud 同步
+    - kernel_task     # 内核任务
+    - spotlight       # Spotlight
+    - coreaudiod      # 音频服务
+    - bluetoothd      # 蓝牙服务
+    - WindowServer    # 窗口服务
+  
+  # 需要忽略的路径前缀
+  ignore_path_prefixes:
+    - /dev/
+    - /sys
+    - /private/var/
+    - /private/tmp/
+    - /bin/
+    - /usr/
+    - /sbin/
+    - /System/
+    - /System/Library/
+    - /tmp/
+    - /opt/
+    - /Library/
+    - /Applications/
+    - /.DocumentRevisions-V100/
+    - /.Spotlight-V100/
+    - /.fseventsd/
+    - /Volumes/
+  
+  # 需要保留用于关联分析的进程
+  # 这些进程会读取用户文件，需要与前台应用关联
+  correlation_processes:
+    - filecoordinationd  # 文件协调服务
+    - quicklookd         # 快速预览
+    - QuickLookSatellite # 快速预览卫星进程

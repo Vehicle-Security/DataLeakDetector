@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>会话列表 - Win Monitor</title>
+    <style>
+        :root {
+            --bg-dark: #0f111a;
+            --bg-card: #161b22;
+            --bg-hover: #1f2937;
+            --border: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent-blue: #58a6ff;
+            --accent-purple: #a78bfa;
+            --accent-green: #3fb950;
+            --accent-red: #f85149;
+            --accent-yellow: #d29922;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        nav {
+            display: flex;
+            gap: 24px;
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-card);
+        }
+
+        nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-weight: 500;
+            padding: 8px 0;
+            border-bottom: 2px solid transparent;
+        }
+
+        nav a:hover,
+        nav a.active {
+            color: var(--text-primary);
+            border-bottom-color: var(--accent-blue);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            font-size: 1.75rem;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .filters {
+            display: flex;
+            gap: 16px;
+            align-items: flex-end;
+            background: var(--bg-card);
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .filter-group label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .filter-group input {
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .filter-group input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .btn-text {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 8px;
+        }
+
+        .btn-text:hover {
+            color: var(--text-primary);
+        }
+
+        .table-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        th,
+        td {
+            padding: 16px;
+            text-align: left;
+        }
+
+        th {
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 0.85rem;
+        }
+
+        tbody tr {
+            border-top: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        tbody tr:hover {
+            background: var(--bg-hover);
+        }
+
+        .session-id {
+            font-family: 'SF Mono', Monaco, monospace;
+            color: var(--accent-blue);
+            font-size: 0.9rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .badge-risk {
+            background: rgba(248, 81, 73, 0.2);
+            color: var(--accent-red);
+            border: 1px solid rgba(248, 81, 73, 0.3);
+        }
+
+        .badge-safe {
+            background: rgba(63, 185, 80, 0.2);
+            color: var(--accent-green);
+            border: 1px solid rgba(63, 185, 80, 0.3);
+        }
+
+        .status-text {
+            color: var(--text-secondary);
+        }
+
+        .status-text.recording {
+            color: var(--accent-yellow);
+        }
+
+        .arrow {
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            margin-top: 24px;
+        }
+
+        .pagination button {
+            padding: 8px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination span {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 60px;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+
+<body>
+    <nav>
+        <a href="/">🏠 控制面板</a>
+        <a href="/sessions" class="active">📋 会话列表</a>
+    </nav>
+
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>监控会话记录</h1>
+                <p>查看所有的录屏与行为审计日志</p>
+            </div>
+            <div class="filters">
+                <div class="filter-group">
+                    <label>开始日期</label>
+                    <input type="date" id="startDate">
+                </div>
+                <div class="filter-group">
+                    <label>结束日期</label>
+                    <input type="date" id="endDate">
+                </div>
+                <button class="btn-text" onclick="resetFilters()">重置</button>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>会话 ID</th>
+                        <th>开始时间</th>
+                        <th>时长</th>
+                        <th>风险事件</th>
+                        <th>状态</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="sessionsTable">
+                    <tr>
+                        <td colspan="6" class="empty">加载中...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="pagination" id="pagination" style="display: none;">
+            <button id="prevBtn" onclick="prevPage()">← 上一页</button>
+            <span>第 <strong id="currentPage">1</strong> 页，共 <strong id="totalPages">1</strong> 页</span>
+            <button id="nextBtn" onclick="nextPage()">下一页 →</button>
+        </div>
+    </div>
+
+    <script>
+        let allSessions = [];
+        let filteredSessions = [];
+        let page = 1;
+        const perPage = 15;
+
+        async function fetchSessions() {
+            try {
+                const res = await fetch('/api/sessions');
+                const data = await res.json();
+                allSessions = (data.sessions || []).sort((a, b) => b.id.localeCompare(a.id));
+                applyFilters();
+            } catch (e) {
+                document.getElementById('sessionsTable').innerHTML =
+                    '<tr><td colspan="6" class="empty">加载失败</td></tr>';
+            }
+        }
+
+        function applyFilters() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+
+            filteredSessions = allSessions.filter(s => {
+                if (startDate && s.start_time < startDate) return false;
+                if (endDate && s.start_time > endDate + 'T23:59:59') return false;
+                return true;
+            });
+
+            page = 1;
+            renderSessions();
+        }
+
+        function renderSessions() {
+            const tbody = document.getElementById('sessionsTable');
+            const totalPages = Math.ceil(filteredSessions.length / perPage);
+
+            document.getElementById('pagination').style.display = totalPages > 1 ? 'flex' : 'none';
+            document.getElementById('currentPage').textContent = page;
+            document.getElementById('totalPages').textContent = totalPages;
+            document.getElementById('prevBtn').disabled = page === 1;
+            document.getElementById('nextBtn').disabled = page >= totalPages;
+
+            if (filteredSessions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty">没有找到匹配的记录</td></tr>';
+                return;
+            }
+
+            const start = (page - 1) * perPage;
+            const pageData = filteredSessions.slice(start, start + perPage);
+
+            tbody.innerHTML = pageData.map(s => `
+                <tr onclick="window.location='/session/${s.id}'">
+                    <td class="session-id">${s.id}</td>
+                    <td>${s.start_time || '-'}</td>
+                    <td>${formatDuration(s.duration)}</td>
+                    <td>
+                        ${s.risk_events > 0
+                    ? `<span class="badge badge-risk">⚠️ ${s.risk_events}</span>`
+                    : '<span class="badge badge-safe">✓ Safe</span>'}
+                    </td>
+                    <td class="status-text ${s.status === 'recording' ? 'recording' : ''}">
+                        ${s.status === 'recording' ? '● 录制中' : '已完成'}
+                    </td>
+                    <td class="arrow">›</td>
+                </tr>
+            `).join('');
+        }
+
+        function formatDuration(sec) {
+            if (!sec) return '-';
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return m > 0 ? `${m}m ${s}s` : `${s}s`;
+        }
+
+        function prevPage() { if (page > 1) { page--; renderSessions(); } }
+        function nextPage() { page++; renderSessions(); }
+        function resetFilters() {
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+            applyFilters();
+        }
+
+        document.getElementById('startDate').addEventListener('change', applyFilters);
+        document.getElementById('endDate').addEventListener('change', applyFilters);
+
+        fetchSessions();
+    </script>
+</body>
+
+</html>
