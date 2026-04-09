@@ -1,118 +1,95 @@
-# upload_detector_nodes.py
 """
-模块3 LangGraph节点定义
-定义分析流程中的各个节点
+Module 3 LangGraph node definitions.
 """
 
-import sys
 import os
+import sys
+from typing import Any
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../2-FileTracker"))
 
-from typing import Dict, Any
-from upload_detector_state import UploadDetectorState, UploadEvent
-from upload_detection_config import config
-from worklist_manager import WorklistManager, load_log_from_json, SensitiveFileEvent
 from behavior_analysis_graph import analyze_sensitive_event_behavior
+from upload_detection_config import config
+from upload_detector_state import UploadDetectorState, UploadEvent
+from upload_detector_stats import sync_processed_statistics
 from upload_detector_tools import (
-    resolve_full_path,
-    read_recording_start_time,
-    normalize_timestamp_display,
+    append_operation_record_with_dedup,
+    append_upload_event_with_dedup,
     build_sensitive_operation_record,
     extract_hidden_transformed_paths,
-    append_operation_record_with_dedup,
+    normalize_timestamp_display,
+    read_recording_start_time,
+    refresh_upload_statistics,
+    resolve_full_path,
 )
-from upload_detector_stats import sync_processed_statistics
+from worklist_manager import WorklistManager, load_log_from_json
 
 
 def initialize_node(state: UploadDetectorState) -> UploadDetectorState:
-    """
-    初始化节点
-    
-    功能：
-    1. 初始化WorklistManager
-    2. 扫描日志构建worklist
-    3. 更新状态
-    """
     print("\n" + "=" * 80)
-    print("📋 初始化上传检测系统")
+    print("Initializing RiskHunter")
     print("=" * 80)
-    
+
     state["current_step"] = "initialize"
-    state["messages"].append("开始初始化...")
-    
+    state["messages"].append("Initializing pipeline")
+
     try:
         log_events = load_log_from_json(state["log_file"])
-        print(f"✅ 加载日志: {len(log_events)} 条事件")
-        state["messages"].append(f"加载日志: {len(log_events)} 条事件")
-        
         manager = WorklistManager(sensitive_files=state["sensitive_files"])
-        print(f"✅ 初始化WorklistManager: {len(state['sensitive_files'])} 个敏感文件")
-        state["messages"].append(f"初始化WorklistManager: {len(state['sensitive_files'])} 个敏感文件")
-        
         added_count = manager.scan_and_build_worklist(log_events)
-        print(f"✅ 构建worklist: 发现 {added_count} 个敏感事件")
-        state["messages"].append(f"构建worklist: {added_count} 个敏感事件")
-        
+
+        print(f"Loaded {len(log_events)} log events")
+        print(f"Initialized WorklistManager with {len(state['sensitive_files'])} sensitive files")
+        print(f"Discovered {added_count} sensitive worklist events")
+
         state["worklist_size"] = manager.size()
-        state["_worklist_manager"] = manager  # 保存manager实例（不会被序列化到JSON）
-        state["_log_events"] = log_events  # 保存日志事件（不会被序列化到JSON）
+        state["_worklist_manager"] = manager
+        state["_log_events"] = log_events
         state["_operation_record_keys"] = set()
+        state["_upload_event_index"] = {}
         state["_hidden_transformed_paths"] = []
         state["recording_start_time"] = ""
-        
-        stats = manager.get_statistics()
-        print(f"\n📊 Worklist统计:")
-        print(f"   - 大小: {stats['worklist_size']}")
-        print(f"   - 事件类型: {stats['event_types']}")
-        
         state["should_continue"] = not manager.is_empty()
-        
-    except Exception as e:
-        error_msg = f"初始化失败: {e}"
-        print(f"❌ {error_msg}")
+
+        stats = manager.get_statistics()
+        print(f"Worklist size: {stats['worklist_size']}")
+        print(f"Event types: {stats['event_types']}")
+    except Exception as exc:
+        error_msg = f"Initialization failed: {exc}"
+        print(error_msg)
         state["errors"].append(error_msg)
         state["should_continue"] = False
         import traceback
+
         traceback.print_exc()
-    
+
     return state
 
 
 def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
-    """
-    处理事件节点
-    
-    功能：
-    1. 从worklist获取下一个事件
-    2. 调用模块2分析事件（模块2会调用模块1）
-    3. 从模块2的结果中提取模块1的分析结果
-    4. 更新状态
-    """
     state["current_step"] = "process_event"
-    
+
     try:
         manager: WorklistManager = state["_worklist_manager"]
         log_events = state["_log_events"]
-        
+
         event = manager.get_next_event()
         if not event:
-            print("\n✅ Worklist已空，处理完成")
+            print("\nWorklist is empty, stopping")
             state["should_continue"] = False
             return state
-        
+
         state["processed_count"] += 1
         sync_processed_statistics(state)
-        
+
         print("\n" + "-" * 80)
-        print(f"🔹 处理事件 {state['processed_count']}")
-        print(f"   - 事件ID: {event.event_id}")
-        print(f"   - 文件: {event.current_file}")
-        print(f"   - 原始文件: {event.original_file}")
-        print(f"   - 类型: {event.event_type}")
-        print(f"   - 时间戳: {event.timestamp}")
-        
-        # 保存当前事件到状态
+        print(f"Processing event #{state['processed_count']}")
+        print(f"Event ID: {event.event_id}")
+        print(f"Current file: {event.current_file}")
+        print(f"Original file: {event.original_file}")
+        print(f"Event type: {event.event_type}")
+        print(f"Timestamp: {event.timestamp}")
+
         state["current_event"] = {
             "event_id": event.event_id,
             "file_path": event.current_file,
@@ -120,25 +97,19 @@ def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
             "event_type": event.event_type,
             "timestamp": event.timestamp,
         }
-        
-        # 调用模块2分析事件（模块2会调用模块1）
-        print(f"   🔍 调用模块2分析事件...")
-        
+
         result = analyze_sensitive_event_behavior(
             event=event,
             index_path=state["index_path"],
             video_path=state["video_path"],
             worklist_manager=manager,
             log_events=log_events,
-            search_duration=state["search_duration"]
+            search_duration=state["search_duration"],
         )
 
-        # 直接复用模块2已解析出的变换后路径列表（不重新推断）
         state["_hidden_transformed_paths"] = extract_hidden_transformed_paths(result)
-        
         state["module1_result"] = result.get("frame_analysis_result", result)
 
-        # 优先复用模块2（behavior_analysis_tools）已经读取出的录屏开始时间
         module2_recording_time = ""
         if isinstance(state["module1_result"], dict):
             module2_recording_time = normalize_timestamp_display(
@@ -148,11 +119,8 @@ def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
         if module2_recording_time:
             state["recording_start_time"] = module2_recording_time
         elif not state.get("recording_start_time"):
-            # 仅在模块2结果缺失时兜底读取，避免重复解析
             try:
-                fallback_time = normalize_timestamp_display(
-                    read_recording_start_time(state.get("index_path", ""))
-                )
+                fallback_time = normalize_timestamp_display(read_recording_start_time(state.get("index_path", "")))
             except Exception:
                 fallback_time = ""
 
@@ -160,69 +128,74 @@ def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
                 fallback_time = normalize_timestamp_display(log_events[0].get("timestamp", ""))
 
             state["recording_start_time"] = fallback_time
-        
+
         state["worklist_size"] = manager.size()
-        
-        print(f"   ✅ 分析完成")
-        print(f"   📊 当前worklist大小: {state['worklist_size']}")
-        
-        # 如果发现了新的派生文件，重新扫描日志
+        print(f"Analysis complete, current worklist size: {state['worklist_size']}")
+
         if result.get("has_hidden_behavior") and result.get("new_events"):
             new_events = result.get("new_events", [])
-            print(f"\n   🔄 发现 {len(new_events)} 个新的派生事件，重新扫描日志，动态更新worklist...")
+            print(f"Discovered {len(new_events)} derived events, rescanning logs for follow-up work")
             additional_count = manager.scan_and_build_worklist(log_events)
             if additional_count > 0:
-                print(f"   ✅ 新增 {additional_count} 个敏感事件到worklist")
                 state["worklist_size"] = manager.size()
-                print(f"   📊 更新后worklist大小: {state['worklist_size']}")
+                print(f"Added {additional_count} more sensitive events")
             else:
-                print(f"   ℹ️ 未发现额外的敏感事件")
-        
+                print("No additional sensitive events discovered")
+
         state["should_continue"] = not manager.is_empty()
-        
-    except Exception as e:
-        error_msg = f"处理事件失败: {e}"
-        print(f"   ❌ {error_msg}")
+    except Exception as exc:
+        error_msg = f"Event processing failed: {exc}"
+        print(error_msg)
         state["errors"].append(error_msg)
         import traceback
+
         traceback.print_exc()
-    
+
     return state
 
 
+def _build_alert_reason(app_name: str, app_category: str, should_alert_flag: bool) -> str:
+    if should_alert_flag:
+        if app_category == "blacklist":
+            return f"Detected file exfiltration via blacklist app '{app_name}'"
+        return "Detected suspicious file exfiltration behavior"
+
+    if app_category == "whitelist":
+        return f"Whitelisted upload through '{app_name}'"
+    if app_category == "unknown":
+        return f"Recorded upload via non-blacklist app '{app_name}'"
+    return ""
+
+
+def _should_treat_as_upload(behavior_category: str, operation_type: str) -> bool:
+    upload_keywords = ["上传", "发送", "分享", "转发", "附件", "粘贴"]
+    return "外发" in behavior_category or any(keyword in operation_type for keyword in upload_keywords)
+
+
 def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
-    """
-    分析上传行为节点
-    
-    功能：
-    1. 从模块1的结果中判断是否为上传行为
-    2. 判断应用类别（黑名单/白名单/未知）
-    3. 决定是否报警
-    4. 创建UploadEvent并添加到相应列表
-    """
     state["current_step"] = "analyze_upload"
-    
+
     try:
         module1_result = state["module1_result"]
         current_event = state["current_event"]
-        
+
         if not module1_result or not current_event:
+            refresh_upload_statistics(state)
             sync_processed_statistics(state)
             return state
-        
-        # 检查是否有外发行为
+
         events = module1_result.get("events", [])
         if not events:
-            print(f"   ℹ️ 未检测到相关行为")
+            print("No relevant behaviors detected")
+            refresh_upload_statistics(state)
             sync_processed_statistics(state)
             return state
 
         hidden_transformed_paths = state.get("_hidden_transformed_paths", [])
         hidden_path_cursor = 0
-        
-        # 分析每个检测到的事件
+
         for event_data in events:
-            app_name = event_data.get("app_name", "未知应用")
+            app_name = event_data.get("app_name", "unknown")
             behavior_category = event_data.get("behavior_category", "")
             operation_type = event_data.get("operation_type", "")
 
@@ -239,7 +212,6 @@ def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
                     transformed_file_path = hidden_transformed_paths[hidden_path_cursor]
                     hidden_path_cursor += 1
 
-            # 为每个worklist事件增量记录敏感操作（先记录，再做上传过滤）
             operation_record = build_sensitive_operation_record(
                 recording_start_time=state.get("recording_start_time", ""),
                 sensitive_file_path=current_event.get("file_path", ""),
@@ -249,80 +221,49 @@ def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
             )
             if append_operation_record_with_dedup(state, operation_record):
                 print(
-                    "      📝 记录敏感操作: "
+                    "Recorded sensitive operation: "
                     f"{operation_record['operation_time']} | "
                     f"{operation_record['sensitive_file_path']} | "
                     f"{operation_record['operation']}"
                 )
             else:
-                print("      ♻️ 敏感操作重复，已去重")
-            
-            print(f"\n   📊 分析检测结果:")
-            print(f"      - 应用: {app_name}")
-            print(f"      - 行为类别: {behavior_category}")
-            print(f"      - 操作类型: {operation_type}")
-            
-            # 判断是否为上传/外发行为
-            is_upload = "外发" in behavior_category or any(
-                keyword in operation_type 
-                for keyword in ["上传", "发送", "分享", "转发", "附件", "粘贴"]
-            )
-            
-            if not is_upload:
-                print(f"      ℹ️ 非上传行为，跳过")
+                print("Sensitive operation duplicated, skipped")
+
+            print("\nAnalyzing event result")
+            print(f"App: {app_name}")
+            print(f"Behavior category: {behavior_category}")
+            print(f"Operation type: {operation_type}")
+
+            if not _should_treat_as_upload(behavior_category, operation_type):
+                print("Non-upload behavior, skipping")
                 continue
-            
+
             app_category = config.get_app_category(app_name)
-            print(f"      - 应用类别: {app_category}")
-            
             should_alert_flag, alert_level = config.should_alert(app_category, behavior_category)
-            
-            alert_reason = ""
-            if should_alert_flag:
-                if app_category == "blacklist":
-                    alert_reason = f"检测到黑名单应用 '{app_name}' 的文件外发行为"
-                else:
-                    alert_reason = f"检测到可疑的文件外发行为"
-            else:
-                if app_category == "whitelist":
-                    alert_reason = f"白名单应用 '{app_name}' 的正常文件上传操作"
-                elif app_category == "unknown":
-                    alert_reason = f"非黑名单应用 '{app_name}' 的文件外发（仅记录）"
-            
-            print(f"      - 报警: {'是' if should_alert_flag else '否'}")
-            print(f"      - 级别: {alert_level}")
-            print(f"      - 原因: {alert_reason}")
-            
-            # 提取真正外发的文件/内容
-            # 对于直接外发行为，upload_content是真正外发的内容
+            alert_reason = _build_alert_reason(app_name, app_category, should_alert_flag)
+
             upload_content = event_data.get("original_filename", "")
             if not upload_content or upload_content == "未知":
-                upload_content = current_event["file_path"]  # 如果没有，默认使用当前文件
-            
-            # 使用统一的路径解析函数
+                upload_content = current_event["file_path"]
+
             upload_content_full_path = resolve_full_path(
                 filename=upload_content,
                 base_dir=os.path.dirname(current_event["file_path"]),
                 log_events=state.get("_log_events", []),
                 time_range=event_data.get("time_range", ""),
-                print_prefix="      "
+                print_prefix="      ",
             )
-            
-            # 构建映射链：从worklist_manager获取文件映射
-            upload_content_mapping_link = "无"
+
+            upload_content_mapping_link = ""
             try:
                 manager = state.get("_worklist_manager")
                 if manager and upload_content_full_path:
-                    # 使用 get_mapping_chain 方法获取完整映射链
                     mapping_chain = manager.get_mapping_chain(upload_content_full_path)
                     if mapping_chain:
                         upload_content_mapping_link = mapping_chain
-            except Exception as e:
-                print(f"      ⚠️ 构建映射链失败: {e}")
-            
-            print(f"      - 外发内容: {upload_content}")
-            print(f"      - 映射链: {upload_content_mapping_link}")
-            
+            except Exception as exc:
+                print(f"Failed to build mapping chain: {exc}")
+
             upload_event = UploadEvent(
                 event_id=current_event["event_id"],
                 timestamp=current_event["timestamp"],
@@ -341,113 +282,70 @@ def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
                 should_alert=should_alert_flag,
                 alert_level=alert_level,
                 alert_reason=alert_reason,
-                extra_info=event_data
+                extra_info=event_data,
             )
-            
-            state["upload_events"].append(upload_event)
-            
-            if should_alert_flag:
-                state["alert_events"].append(upload_event)
-                print(f"      ⚠️ 添加到报警列表")
+
+            was_added = append_upload_event_with_dedup(state, upload_event)
+            refresh_upload_statistics(state)
+
+            if was_added:
+                if should_alert_flag:
+                    print("Added alert event")
+                else:
+                    print("Added informational upload event")
             else:
-                state["info_events"].append(upload_event)
-                print(f"      ℹ️ 添加到信息列表")
-            
-            # 更新统计
-            state["statistics"]["upload_events_detected"] += 1
-            if app_category == "blacklist" and should_alert_flag:
-                state["statistics"]["blacklist_alerts"] += 1
-            elif app_category == "whitelist":
-                state["statistics"]["whitelist_uploads"] += 1
-            elif app_category == "unknown":
-                state["statistics"]["unknown_uploads"] += 1
-        
-    except Exception as e:
-        error_msg = f"分析上传行为失败: {e}"
-        print(f"   ❌ {error_msg}")
+                print("Duplicate upload event merged into existing result")
+    except Exception as exc:
+        error_msg = f"Upload analysis failed: {exc}"
+        print(error_msg)
         state["errors"].append(error_msg)
         import traceback
+
         traceback.print_exc()
-    
+
+    refresh_upload_statistics(state)
     sync_processed_statistics(state)
-    
     return state
 
 
 def finalize_node(state: UploadDetectorState) -> UploadDetectorState:
-    """
-    完成节点
-    
-    功能：
-    1. 生成最终报告
-    2. 保存结果到文件
-    3. 显示统计信息
-    """
     state["current_step"] = "finalize"
+    refresh_upload_statistics(state)
     sync_processed_statistics(state)
-    
+
     print("\n" + "=" * 80)
-    print("✅ 分析完成")
+    print("Analysis complete")
     print("=" * 80)
-    
-    # 显示统计
+
     stats = state["statistics"]
-    print(f"\n📊 最终统计:")
-    print(f"   - 已处理事件: {stats['total_events_processed']}")
-    print(f"   - 检测到的上传事件: {stats['upload_events_detected']}")
-    print(f"   - 敏感操作记录数（去重后）: {len(state['operation_records'])}")
-    print(f"   - 黑名单应用报警: {stats['blacklist_alerts']}")
-    print(f"   - 白名单应用上传: {stats['whitelist_uploads']}")
-    print(f"   - 其他应用上传: {stats['unknown_uploads']}")
-    
-    # 显示报警事件
+    print(f"Processed events: {stats['total_events_processed']}")
+    print(f"Upload events detected: {stats['upload_events_detected']}")
+    print(f"Sensitive operation records: {len(state['operation_records'])}")
+    print(f"Blacklist alerts: {stats['blacklist_alerts']}")
+    print(f"Whitelist uploads: {stats['whitelist_uploads']}")
+    print(f"Other uploads: {stats['unknown_uploads']}")
+
     if state["alert_events"]:
-        print(f"\n⚠️ 报警事件 ({len(state['alert_events'])} 个):")
-        for i, event in enumerate(state["alert_events"], 1):
-            print(f"\n   [{i}] {event.alert_level.upper()}")
-            print(f"      时间: {event.timestamp}")
-            print(f"      文件: {event.file_name}")
-            print(f"      应用: {event.app_name} ({event.app_category})")
-            print(f"      操作: {event.operation_type}")
-            print(f"      外发内容: {event.upload_content}")
-            print(f"      映射链: {event.upload_content_mapping_link}")
-            print(f"      原因: {event.alert_reason}")
-    else:
-        print(f"\n✅ 无报警事件")
-    
-    # 显示信息事件
+        print(f"Alert events: {len(state['alert_events'])}")
+        for idx, event in enumerate(state["alert_events"], start=1):
+            print(f"[{idx}] {event.alert_level.upper()} {event.file_name} -> {event.app_name}")
+
     if state["info_events"]:
-        print(f"\nℹ️ 信息事件 ({len(state['info_events'])} 个):")
-        for i, event in enumerate(state["info_events"], 1):
-            print(f"\n   [{i}]")
-            print(f"      时间: {event.timestamp}")
-            print(f"      文件: {event.file_name}")
-            print(f"      应用: {event.app_name} ({event.app_category})")
-            print(f"      操作: {event.operation_type}")
-            print(f"      外发内容: {event.upload_content}")
-            print(f"      映射链: {event.upload_content_mapping_link}")
-    
+        print(f"Informational events: {len(state['info_events'])}")
+        for idx, event in enumerate(state["info_events"], start=1):
+            print(f"[{idx}] {event.file_name} -> {event.app_name}")
+
     if state["errors"]:
-        print(f"\n❌ 错误 ({len(state['errors'])} 个):")
+        print(f"Errors: {len(state['errors'])}")
         for error in state["errors"]:
-            print(f"   - {error}")
-    
-    print("\n" + "=" * 80)
-    
+            print(f"- {error}")
+
+    print("=" * 80)
     state["should_continue"] = False
-    
     return state
 
 
 def should_continue_processing(state: UploadDetectorState) -> str:
-    """
-    条件边：判断是否继续处理
-    
-    Returns:
-        "continue": 继续处理下一个事件
-        "end": 结束处理
-    """
     if state["should_continue"] and state["worklist_size"] > 0:
         return "continue"
-    else:
-        return "end"
+    return "end"

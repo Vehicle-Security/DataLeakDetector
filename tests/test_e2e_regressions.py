@@ -43,6 +43,87 @@ class E2ERegressionTests(unittest.TestCase):
 
         self.assertEqual(state["statistics"]["total_events_processed"], 13)
 
+    def test_upload_event_dedup_merges_equivalent_alerts_in_same_minute(self):
+        module_dir = REPO_ROOT / "3-RiskHunter"
+        sys.path.insert(0, str(module_dir))
+        sys.path.insert(0, str(REPO_ROOT / "2-FileTracker"))
+        try:
+            tools_module = load_module_from_path(
+                "upload_detector_tools_regression_test",
+                module_dir / "upload_detector_tools.py",
+            )
+            state_module = load_module_from_path(
+                "upload_detector_state_regression_test",
+                module_dir / "upload_detector_state.py",
+            )
+        finally:
+            sys.path.pop(0)
+            sys.path.pop(0)
+
+        state = {
+            "upload_events": [],
+            "alert_events": [],
+            "info_events": [],
+            "statistics": {},
+            "_upload_event_index": {},
+        }
+
+        first_event = state_module.UploadEvent(
+            event_id="evt-created",
+            timestamp="2026-03-27T12:31:46.000",
+            file_path="C:/Users/test/Desktop/part1.xlsx",
+            file_name="part1.xlsx",
+            original_file="C:/Users/test/Desktop/orig.xlsx",
+            upload_content="C:/Users/test/Desktop/part1.xlsx",
+            upload_content_mapping_link="",
+            app_name="QQ邮箱",
+            app_category="blacklist",
+            behavior_category="直接外发",
+            operation_type="邮件附件外发",
+            time_range="2026-03-27 12:31:46 - 2026-03-27 12:31:58",
+            involved_timestamps=["2026-03-27 12:31:46"],
+            description="打开邮箱并准备发送附件",
+            should_alert=True,
+            alert_level="critical",
+            alert_reason="黑名单应用外发",
+            extra_info={},
+        )
+        richer_duplicate = state_module.UploadEvent(
+            event_id="evt-upload",
+            timestamp="2026-03-27T12:31:48.000",
+            file_path="C:/Users/test/Desktop/part1.xlsx",
+            file_name="part1.xlsx",
+            original_file="C:/Users/test/Desktop/orig.xlsx",
+            upload_content="part1.xlsx, part2.xlsx",
+            upload_content_mapping_link="orig.xlsx -> part1.xlsx",
+            app_name="QQ邮箱",
+            app_category="blacklist",
+            behavior_category="直接外发",
+            operation_type="邮件附件外发",
+            time_range="2026-03-27 12:31:48 - 2026-03-27 12:32:17",
+            involved_timestamps=[
+                "2026-03-27 12:31:48",
+                "2026-03-27 12:31:56",
+                "2026-03-27 12:32:11",
+            ],
+            description="在 QQ 邮箱中发送带多个附件的邮件",
+            should_alert=True,
+            alert_level="critical",
+            alert_reason="黑名单应用外发",
+            extra_info={},
+        )
+
+        self.assertTrue(tools_module.append_upload_event_with_dedup(state, first_event))
+        self.assertFalse(tools_module.append_upload_event_with_dedup(state, richer_duplicate))
+        tools_module.refresh_upload_statistics(state)
+
+        self.assertEqual(len(state["upload_events"]), 1)
+        self.assertEqual(len(state["alert_events"]), 1)
+        self.assertEqual(state["statistics"]["upload_events_detected"], 1)
+        self.assertEqual(state["statistics"]["blacklist_alerts"], 1)
+        self.assertEqual(state["alert_events"][0].upload_content, "part1.xlsx, part2.xlsx")
+        self.assertEqual(state["alert_events"][0].upload_content_mapping_link, "orig.xlsx -> part1.xlsx")
+
     def test_connected_fact_injection_builds_leak_path_for_derived_upload(self):
         run_e2e = load_module_from_path("run_e2e_regression_test", REPO_ROOT / "run_e2e.py")
         run_e2e.import_modules()
