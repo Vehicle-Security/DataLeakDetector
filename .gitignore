@@ -4,3 +4,10 @@ tools/ScreenMonitor/windows_monitor/core/C++ETW/src/driver/x64/Release
 tools/ScreenMonitor/windows_monitor/core/C++ETW/src/driver/FsFilter/x64/Release
 *.obj
 .DS_Store
+.env
+__pycache__/
+*.pyc
+output/
+vlm_debug_frames/
+
+.idea/
