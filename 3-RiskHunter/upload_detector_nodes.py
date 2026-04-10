@@ -17,10 +17,12 @@ from upload_detector_tools import (
     append_upload_event_with_dedup,
     build_sensitive_operation_record,
     extract_hidden_transformed_paths,
+    normalize_file_path,
     normalize_timestamp_display,
     read_recording_start_time,
     refresh_upload_statistics,
     resolve_full_path,
+    split_output_filenames,
 )
 from worklist_manager import WorklistManager, load_log_from_json
 
@@ -66,6 +68,19 @@ def initialize_node(state: UploadDetectorState) -> UploadDetectorState:
     return state
 
 
+def _snapshot_current_event(event: Any, manager: WorklistManager) -> dict:
+    refresh_method = getattr(manager, "_refresh_event_original_file", None)
+    if callable(refresh_method):
+        refresh_method(event)
+    return {
+        "event_id": event.event_id,
+        "file_path": event.current_file,
+        "original_file": event.original_file,
+        "event_type": event.event_type,
+        "timestamp": event.timestamp,
+    }
+
+
 def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
     state["current_step"] = "process_event"
 
@@ -90,13 +105,7 @@ def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
         print(f"Event type: {event.event_type}")
         print(f"Timestamp: {event.timestamp}")
 
-        state["current_event"] = {
-            "event_id": event.event_id,
-            "file_path": event.current_file,
-            "original_file": event.original_file,
-            "event_type": event.event_type,
-            "timestamp": event.timestamp,
-        }
+        state["current_event"] = _snapshot_current_event(event, manager)
 
         result = analyze_sensitive_event_behavior(
             event=event,
@@ -142,6 +151,8 @@ def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
             else:
                 print("No additional sensitive events discovered")
 
+        state["current_event"] = _snapshot_current_event(event, manager)
+
         state["should_continue"] = not manager.is_empty()
     except Exception as exc:
         error_msg = f"Event processing failed: {exc}"
@@ -170,6 +181,56 @@ def _build_alert_reason(app_name: str, app_category: str, should_alert_flag: boo
 def _should_treat_as_upload(behavior_category: str, operation_type: str) -> bool:
     upload_keywords = ["上传", "发送", "分享", "转发", "附件", "粘贴"]
     return "外发" in behavior_category or any(keyword in operation_type for keyword in upload_keywords)
+
+
+def _build_upload_content_mapping_link(
+    manager: WorklistManager | None,
+    upload_content: str,
+    current_event: dict[str, Any],
+    event_data: dict[str, Any],
+    log_events: list[dict[str, Any]],
+) -> str:
+    if not manager or not upload_content:
+        return ""
+
+    mapping_links: list[str] = []
+    seen = set()
+    base_dir = os.path.dirname(current_event.get("file_path", ""))
+    time_range = event_data.get("time_range", "")
+
+    for content_item in split_output_filenames(upload_content) or [upload_content]:
+        stripped_item = normalize_file_path(str(content_item or "").strip())
+        if not stripped_item:
+            continue
+
+        candidate_paths = [stripped_item]
+        if base_dir and not os.path.isabs(stripped_item):
+            candidate_paths.append(normalize_file_path(os.path.join(base_dir, stripped_item)))
+
+        mapping_chain = ""
+        for candidate_path in candidate_paths:
+            mapping_chain = manager.get_mapping_chain(candidate_path)
+            if mapping_chain:
+                break
+
+        if not mapping_chain:
+            full_path = resolve_full_path(
+                filename=stripped_item,
+                base_dir=base_dir,
+                log_events=log_events,
+                time_range=time_range,
+                print_prefix="      ",
+            )
+            if full_path:
+                mapping_chain = manager.get_mapping_chain(full_path)
+
+        if not mapping_chain or mapping_chain in seen:
+            continue
+
+        seen.add(mapping_chain)
+        mapping_links.append(mapping_chain)
+
+    return " | ".join(mapping_links)
 
 
 def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
@@ -246,21 +307,16 @@ def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
             if not upload_content or upload_content == "未知":
                 upload_content = current_event["file_path"]
 
-            upload_content_full_path = resolve_full_path(
-                filename=upload_content,
-                base_dir=os.path.dirname(current_event["file_path"]),
-                log_events=state.get("_log_events", []),
-                time_range=event_data.get("time_range", ""),
-                print_prefix="      ",
-            )
-
             upload_content_mapping_link = ""
             try:
                 manager = state.get("_worklist_manager")
-                if manager and upload_content_full_path:
-                    mapping_chain = manager.get_mapping_chain(upload_content_full_path)
-                    if mapping_chain:
-                        upload_content_mapping_link = mapping_chain
+                upload_content_mapping_link = _build_upload_content_mapping_link(
+                    manager=manager,
+                    upload_content=upload_content,
+                    current_event=current_event,
+                    event_data=event_data,
+                    log_events=state.get("_log_events", []),
+                )
             except Exception as exc:
                 print(f"Failed to build mapping chain: {exc}")
 
@@ -312,6 +368,10 @@ def finalize_node(state: UploadDetectorState) -> UploadDetectorState:
     state["current_step"] = "finalize"
     refresh_upload_statistics(state)
     sync_processed_statistics(state)
+
+    manager = state.get("_worklist_manager")
+    if manager and hasattr(manager, "export_file_mappings"):
+        state["file_mappings"] = manager.export_file_mappings()
 
     print("\n" + "=" * 80)
     print("Analysis complete")

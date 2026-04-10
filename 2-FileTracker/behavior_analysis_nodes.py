@@ -192,9 +192,6 @@ def update_worklist_node(state: BehaviorAnalysisState, worklist_manager) -> Dict
     print("\n📋 [UpdateWorklist] 更新 worklist...")
     
     new_events = state.get("new_events", [])
-    file_mappings = state.get("file_mappings", [])
-    current_event = state["current_event"]
-    current_dir = os.path.dirname(current_event.current_file)
     
     new_sensitive_files = []
     for event in new_events:
@@ -226,6 +223,8 @@ def update_worklist_node(state: BehaviorAnalysisState, worklist_manager) -> Dict
             print(f"   ✅ 添加映射 ({relationship}): {event.original_file} -> {event.current_file}")
         elif mapping_exists:
             print(f"   ♻️ 映射已存在，跳过: {event.original_file} -> {event.current_file}")
+
+    worklist_manager.refresh_pending_event_origins()
     
     # 如果有新的敏感文件，重新扫描日志
     if new_sensitive_files:

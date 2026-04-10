@@ -135,6 +135,13 @@ class WorklistManager:
         """
         normalized_path = self._normalize_path(file_path)
         return self.file_mapping.get(normalized_path)
+
+    def refresh_pending_event_origins(self) -> None:
+        """
+        根据当前文件映射关系，刷新工作列表中待处理事件的 original_file。
+        """
+        for event in self.worklist:
+            self._refresh_event_original_file(event)
     
     def scan_and_build_worklist(self, log_events: List[Dict[str, Any]]) -> int:
         """
@@ -175,7 +182,9 @@ class WorklistManager:
             下一个敏感文件事件，如果列表为空则返回None
         """
         if self.worklist:
-            return self.worklist.pop(0)
+            event = self.worklist.pop(0)
+            self._refresh_event_original_file(event)
+            return event
         return None
     
     def peek_next_event(self) -> Optional[SensitiveFileEvent]:
@@ -186,7 +195,9 @@ class WorklistManager:
             下一个敏感文件事件，如果列表为空则返回None
         """
         if self.worklist:
-            return self.worklist[0]
+            event = self.worklist[0]
+            self._refresh_event_original_file(event)
+            return event
         return None
     
     def add_event(self, event: SensitiveFileEvent) -> None:
@@ -196,6 +207,7 @@ class WorklistManager:
         Args:
             event: 敏感文件事件
         """
+        self._refresh_event_original_file(event)
         if event.event_id not in self.processed_events:
             self.worklist.append(event)
             self.processed_events.add(event.event_id)  # 标记为已加入，避免重复添加
@@ -246,6 +258,8 @@ class WorklistManager:
             self.file_mapping[new_normalized] = root_file
         else:
             self.file_mapping[new_normalized] = original_normalized
+
+        self.refresh_pending_event_origins()
     
     def get_mapping_chain(self, file_path: str) -> Optional[str]:
         """
@@ -450,6 +464,18 @@ class WorklistManager:
             is_hidden=is_hidden,
             raw_event=event
         )
+
+    def _refresh_event_original_file(self, event: SensitiveFileEvent) -> SensitiveFileEvent:
+        """
+        使用最新映射关系修正事件的 original_file，确保派生文件持续追溯到源文件。
+        """
+        resolved_original = self.get_original_file(event.current_file)
+        if resolved_original:
+            event.original_file = resolved_original
+        else:
+            event.original_file = self._normalize_path(event.original_file or event.current_file)
+        event.current_file = self._normalize_path(event.current_file)
+        return event
     
     def _count_event_types(self) -> Dict[str, int]:
         """

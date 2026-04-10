@@ -24,15 +24,36 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
-# Windows 控制台 UTF-8 输出
+# Windows 控制台输出编码适配
 if sys.platform == 'win32':
     import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    import locale
+
+    stdout_encoding = getattr(sys.stdout, "encoding", None) or locale.getpreferredencoding(False) or "utf-8"
+    stderr_encoding = getattr(sys.stderr, "encoding", None) or locale.getpreferredencoding(False) or stdout_encoding
+
+    sys.stdout = io.TextIOWrapper(
+        sys.stdout.buffer,
+        encoding=stdout_encoding,
+        errors='replace',
+        line_buffering=True,
+    )
+    sys.stderr = io.TextIOWrapper(
+        sys.stderr.buffer,
+        encoding=stderr_encoding,
+        errors='replace',
+        line_buffering=True,
+    )
 
 # 设置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout,
+)
 logger = logging.getLogger("E2E-Pipeline")
+logging.getLogger("easyocr").setLevel(logging.ERROR)
+logging.getLogger("easyocr.easyocr").setLevel(logging.ERROR)
 
 # 添加模块路径
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -124,6 +145,45 @@ def create_index_file(rec_start: str, output_dir: str) -> str:
     with open(index_path, 'w') as f:
         f.write(index_content)
     return index_path
+
+
+def _find_similar_files(target_path: str, limit: int = 5) -> list[str]:
+    normalized_target = os.path.normpath(target_path)
+    parent_dir = os.path.dirname(normalized_target)
+    target_name = os.path.basename(normalized_target).lower()
+
+    search_roots = []
+    if os.path.isdir(parent_dir):
+        search_roots.append(parent_dir)
+    else:
+        parent_parent = os.path.dirname(parent_dir)
+        if os.path.isdir(parent_parent):
+            search_roots.append(parent_parent)
+
+    matches: list[str] = []
+    seen = set()
+
+    for root in search_roots:
+        try:
+            for current_root, _, files in os.walk(root):
+                for file_name in files:
+                    full_path = os.path.join(current_root, file_name)
+                    normalized_full_path = os.path.normpath(full_path)
+                    file_name_lower = file_name.lower()
+                    if (
+                        target_name == file_name_lower
+                        or target_name in file_name_lower
+                        or file_name_lower in target_name
+                    ):
+                        if normalized_full_path not in seen:
+                            seen.add(normalized_full_path)
+                            matches.append(normalized_full_path)
+                            if len(matches) >= limit:
+                                return matches
+        except Exception:
+            continue
+
+    return matches
 
 
 # ==================== Datalog 数据结构 ====================
@@ -244,14 +304,7 @@ def run_module3_pipeline(log_file: str, video_path: str,
     app = create_upload_detector_graph()
     graph_config = {"recursion_limit": 200}  # 动态派生事件较多时避免提前触发上限
 
-    final_state = None
-    for state in app.stream(initial_state, config=graph_config):
-        final_state = state
-
-    if final_state:
-        # 提取实际的 state（从字典中获取最后一个节点的输出）
-        if isinstance(final_state, dict):
-            final_state = list(final_state.values())[-1]
+    final_state = app.invoke(initial_state, config=graph_config)
 
     if not final_state:
         print("   ⚠️ 模块3未返回结果")
@@ -272,10 +325,11 @@ def run_module3_pipeline(log_file: str, video_path: str,
     statistics = final_state.get("statistics", {})
 
     # 提取文件映射关系
-    file_mappings = {}
-    manager = final_state.get("_worklist_manager")
-    if manager and hasattr(manager, "export_file_mappings"):
-        file_mappings = manager.export_file_mappings()
+    file_mappings = final_state.get("file_mappings", {})
+    if not file_mappings:
+        manager = final_state.get("_worklist_manager")
+        if manager and hasattr(manager, "export_file_mappings"):
+            file_mappings = manager.export_file_mappings()
 
     print(f"\n   ✅ 模块3 Pipeline 完成")
     print(f"   📊 统计:")
@@ -1475,9 +1529,19 @@ def main():
     # 验证文件存在
     if not os.path.exists(args.log):
         print(f"❌ 日志文件不存在: {args.log}")
+        similar_logs = _find_similar_files(args.log)
+        if similar_logs:
+            print("   你可以先核对这些候选路径:")
+            for candidate in similar_logs:
+                print(f"   - {candidate}")
         sys.exit(1)
     if not os.path.exists(args.video):
         print(f"❌ 视频文件不存在: {args.video}")
+        similar_videos = _find_similar_files(args.video)
+        if similar_videos:
+            print("   你可以先核对这些候选路径:")
+            for candidate in similar_videos:
+                print(f"   - {candidate}")
         sys.exit(1)
 
     has_risk = run_full_e2e_pipeline(

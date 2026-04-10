@@ -81,6 +81,7 @@ class UploadDetectorState(TypedDict):
     operation_records: List[Dict[str, Any]]
     alert_events: List[UploadEvent]
     info_events: List[UploadEvent]
+    file_mappings: Dict[str, Any]
     statistics: Dict[str, Any]
 
     errors: List[str]
@@ -125,6 +126,7 @@ def create_initial_state(
         operation_records=[],
         alert_events=[],
         info_events=[],
+        file_mappings={},
         statistics={
             "total_events_processed": 0,
             "upload_events_detected": 0,
