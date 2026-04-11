@@ -411,3 +411,4 @@ append_evidence(session_id: str, delta_payload: dict) -> dict
 - 上游模块只负责“提取事实”，不再做风险判断
 - 下游模块只消费标准 `RiskCase`，不再自行拼装推理输入
 - 所有风险判断逻辑收敛到统一的策略与评分层，避免逻辑分散在脚本、模型提示词和临时工具中
+
