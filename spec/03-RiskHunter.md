@@ -1,4 +1,9 @@
-# 03-RiskHunter
+# 03-RiskHunter / LeakReasoner Transition Note
+
+> Status note: this document still describes the older target-state RiskHunter design.
+> The active implementation in this repository is the new Module 3 `LeakReasoner`
+> under `03-LeakReasoner/`, which already participates in the `main_v2.py --mode full`
+> acceptance path but has not yet absorbed the full target architecture described below.
 
 > 类型：Module Spec  
 > 版本：Target Architecture v2  
