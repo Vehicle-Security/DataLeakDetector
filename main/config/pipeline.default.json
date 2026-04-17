@@ -1,0 +1,77 @@
+{
+  "search_window": {
+    "fallback_pre_buffer_seconds": 10,
+    "fallback_post_buffer_seconds": 20,
+    "fallback_duration_seconds": 90
+  },
+  "suspicious_operation_keywords": [
+    "直接外发",
+    "潜在隐藏行为",
+    "屏幕共享",
+    "共享屏幕",
+    "邮件附件",
+    "邮箱附件",
+    "外发"
+  ],
+  "demo_operation_keywords": [
+    "直接外发",
+    "潜在隐藏行为",
+    "屏幕共享",
+    "共享屏幕",
+    "加入会议",
+    "会议客户端"
+  ],
+  "sensitive_filename_keywords": [
+    "薪资",
+    "工资",
+    "内部",
+    "账号",
+    "合同",
+    "财务",
+    "机密"
+  ],
+  "app_keyword_aliases": [
+    {
+      "match_any": ["QQ邮箱", "mail.qq.com", "qqmail"],
+      "keyword": "QQ邮箱"
+    },
+    {
+      "match_any": ["腾讯会议", "wemeetapp", "wemeet", "WeMeet"],
+      "keyword": "腾讯会议"
+    }
+  ],
+  "operation_rules": [
+    {
+      "name": "screen_share",
+      "match_any": ["屏幕共享", "共享屏幕"],
+      "priority": 100,
+      "pre_buffer_seconds": 16,
+      "post_buffer_seconds": 14,
+      "target_keywords": ["腾讯会议", "屏幕共享"]
+    },
+    {
+      "name": "mail_attachment",
+      "match_any": ["直接外发", "邮件附件", "邮箱附件", "邮箱", "邮件"],
+      "priority": 90,
+      "pre_buffer_seconds": 0,
+      "post_buffer_seconds": 31,
+      "target_keywords": ["QQ邮箱"]
+    },
+    {
+      "name": "hidden_transform",
+      "match_any": ["潜在隐藏行为", "分片", "导出", "拆分"],
+      "priority": 70,
+      "pre_buffer_seconds": 9,
+      "post_buffer_seconds": 10,
+      "target_keywords": ["part1", "part2"]
+    },
+    {
+      "name": "meeting_join",
+      "match_any": ["加入会议", "会议客户端"],
+      "priority": 40,
+      "pre_buffer_seconds": 5,
+      "post_buffer_seconds": 10,
+      "target_keywords": ["腾讯会议"]
+    }
+  ]
+}

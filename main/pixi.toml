@@ -1,10 +1,13 @@
 [workspace]
-authors = ["fripSide <clangllvm@126.com>"]
-channels = ["conda-forge"]
-name = "main"
-platforms = ["osx-arm64"]
+name = "data-leak-detector-main"
 version = "0.1.0"
+description = "Acceptance entry for the refactored 01 -> 02 -> 03 pipeline"
+channels = ["conda-forge"]
+platforms = ["win-64"]
 
 [tasks]
+run-full = "python main_v2.py --samples 10-2 5-2 --mode full"
+run-full-fresh = "python main_v2.py --samples 10-2 5-2 --mode full --fresh-run"
 
 [dependencies]
+python = "3.10.*"

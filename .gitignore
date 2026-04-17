@@ -9,5 +9,17 @@ __pycache__/
 *.pyc
 output/
 vlm_debug_frames/
+venv/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+*.log
+*.tmp
+*.temp
+*.bak
+.vscode/
 
 .idea/

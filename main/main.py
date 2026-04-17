@@ -2,12 +2,12 @@ import sys
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+MAIN_ROOT = Path(__file__).resolve().parent
 
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+if str(MAIN_ROOT) not in sys.path:
+    sys.path.insert(0, str(MAIN_ROOT))
 
-from run_e2e import main as pipeline_main
+from main_v2 import main as pipeline_main
 
 
 if __name__ == "__main__":

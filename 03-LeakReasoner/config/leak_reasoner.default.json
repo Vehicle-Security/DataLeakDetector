@@ -1,0 +1,17 @@
+{
+  "schema_version": "v2",
+  "high_risk_score": 80,
+  "medium_risk_score": 50,
+  "min_confidence_for_case": 0.4,
+  "trusted_sink_types": [
+    "internal_mail",
+    "internal_share"
+  ],
+  "high_risk_sink_types": [
+    "mail_attachment",
+    "chat_upload",
+    "web_post",
+    "cloud_sync",
+    "screen_share"
+  ]
+}
