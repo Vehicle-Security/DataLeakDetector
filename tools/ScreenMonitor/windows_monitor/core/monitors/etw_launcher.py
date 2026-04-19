@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from ..utils import app_logger
+from ..logging.json_io import atomic_write_json, load_json_file, read_text_with_fallback
 from ..logging.log_contract import build_browser_file_access_event, normalize_app_name
 
 
@@ -403,10 +404,9 @@ class EtwLauncher:
         existing_events = []
         if os.path.exists(target_logs_path):
             try:
-                with open(target_logs_path, 'r', encoding='utf-8') as f:
-                    existing_events = json.load(f)
-                    if not isinstance(existing_events, list):
-                        existing_events = []
+                existing_events = load_json_file(target_logs_path, default=[])
+                if not isinstance(existing_events, list):
+                    existing_events = []
             except Exception as e:
                 app_logger.warning(f"⚠️ 读取现有日志失败: {e}")
                 existing_events = []
@@ -417,8 +417,7 @@ class EtwLauncher:
         
         # 写回文件
         try:
-            with open(target_logs_path, 'w', encoding='utf-8') as f:
-                json.dump(all_events, f, ensure_ascii=False, indent=2)
+            atomic_write_json(target_logs_path, all_events)
             app_logger.info(f"✅ 已合并 {merged_count} 条 EtwMonitor 事件到 logs.json")
         except Exception as e:
             app_logger.error(f"❌ 保存合并日志失败: {e}")
@@ -428,29 +427,28 @@ class EtwLauncher:
     def _read_etw_log(self, log_file: str) -> List[Dict[str, Any]]:
         """读取 EtwMonitor 日志文件（支持 JSON Array 和 JSON Lines 格式）"""
         events = []
-        with open(log_file, 'r', encoding='utf-8') as f:
-            content = f.read().strip()
-            if not content:
-                return events
-            
-            # 尝试 JSON Array 格式（EtwMonitor.exe 默认输出格式）
-            if content.startswith('['):
+        content = read_text_with_fallback(log_file).strip()
+        if not content:
+            return events
+
+        # 尝试 JSON Array 格式（EtwMonitor.exe 默认输出格式）
+        if content.startswith('['):
+            try:
+                parsed = json.loads(content)
+                if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+        # 回退到 JSON Lines 格式
+        for line in content.splitlines():
+            line = line.strip()
+            if line:
                 try:
-                    parsed = json.loads(content)
-                    if isinstance(parsed, list):
-                        return parsed
+                    event = json.loads(line)
+                    events.append(event)
                 except json.JSONDecodeError:
-                    pass
-            
-            # 回退到 JSON Lines 格式
-            for line in content.split('\n'):
-                line = line.strip()
-                if line:
-                    try:
-                        event = json.loads(line)
-                        events.append(event)
-                    except json.JSONDecodeError:
-                        continue
+                    continue
         return events
     
     def _convert_event(self, etw_event: Dict[str, Any]) -> Dict[str, Any]:

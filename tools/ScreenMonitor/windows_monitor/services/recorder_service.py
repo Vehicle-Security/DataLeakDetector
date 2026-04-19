@@ -7,6 +7,7 @@ recorder_service.py - 屏幕录制服务
 """
 
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -23,7 +24,7 @@ class RecorderService:
     如果 ffmpeg 不可用，则使用 PIL 截图方案
     """
     
-    def __init__(self, fps: int = 10):
+    def __init__(self, fps: int = 4):
         """
         Args:
             fps: 录制帧率
@@ -32,6 +33,7 @@ class RecorderService:
         self.recording = False
         self.process: Optional[subprocess.Popen] = None
         self.output_path: Optional[str] = None
+        self.ffmpeg_path = self._resolve_ffmpeg_path()
         self._lock = threading.Lock()
     
     def start(self, output_path: str) -> bool:
@@ -95,14 +97,19 @@ class RecorderService:
     def _start_ffmpeg(self, output_path: str) -> bool:
         """使用 ffmpeg 开始录制"""
         try:
+            ffmpeg_executable = self.ffmpeg_path or self._resolve_ffmpeg_path()
+            if not ffmpeg_executable:
+                return False
+
             # Windows 使用 gdigrab
             cmd = [
-                'ffmpeg',
+                ffmpeg_executable,
                 '-f', 'gdigrab',
                 '-framerate', str(self.fps),
                 '-i', 'desktop',
                 '-c:v', 'libx264',
-                '-preset', 'ultrafast',
+                '-preset', 'veryfast',
+                '-crf', '32',
                 '-pix_fmt', 'yuv420p',
                 '-y',
                 output_path
@@ -126,3 +133,22 @@ class RecorderService:
         except Exception as e:
             app_logger.error(f"ffmpeg 启动失败: {e}")
             return False
+
+    def _resolve_ffmpeg_path(self) -> Optional[str]:
+        """解析可用的 ffmpeg 可执行文件路径。"""
+        for candidate in ("ffmpeg", "ffmpeg.exe"):
+            resolved = shutil.which(candidate)
+            if resolved:
+                return resolved
+
+        try:
+            import imageio_ffmpeg
+
+            bundled = imageio_ffmpeg.get_ffmpeg_exe()
+            if bundled and os.path.exists(bundled):
+                app_logger.info(f"📦 使用 imageio_ffmpeg 内置二进制: {bundled}")
+                return bundled
+        except Exception as e:
+            app_logger.warning(f"解析 imageio_ffmpeg 内置 ffmpeg 失败: {e}")
+
+        return None

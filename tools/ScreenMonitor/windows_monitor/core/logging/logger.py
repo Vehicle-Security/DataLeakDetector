@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Optional, IO, Dict, Any, List
 
 from ..utils import app_logger
+from .json_io import atomic_write_json
 from .log_contract import normalize_app_name, normalize_event_entry
 
 try:
@@ -118,14 +119,12 @@ class Logger:
         try:
             # 写入 logs.json
             if self._log_path is not None:
-                with open(self._log_path, 'w', encoding='utf-8') as f:
-                    json.dump(self._log_entries, f, ensure_ascii=False, indent=2)
+                atomic_write_json(self._log_path, self._log_entries)
                 app_logger.info(f"📊 日志已保存: {self._log_path} ({self._event_count} 条)")
             
             # 写入 keyevents.json
             if self._keyevents_path is not None:
-                with open(self._keyevents_path, 'w', encoding='utf-8') as f:
-                    json.dump(self._keyevent_entries, f, ensure_ascii=False, indent=2)
+                atomic_write_json(self._keyevents_path, self._keyevent_entries)
                 app_logger.info(f"🔑 关键事件已保存: {self._keyevents_path} ({self._keyevent_count} 条)")
             
             # 清空内存
@@ -553,12 +552,10 @@ class Logger:
         """将内存中的日志刷新到文件（防止丢失）"""
         try:
             if self._log_path and self._log_entries:
-                with open(self._log_path, 'w', encoding='utf-8') as f:
-                    json.dump(self._log_entries, f, ensure_ascii=False, indent=2)
+                atomic_write_json(self._log_path, self._log_entries)
             
             if self._keyevents_path and self._keyevent_entries:
-                with open(self._keyevents_path, 'w', encoding='utf-8') as f:
-                    json.dump(self._keyevent_entries, f, ensure_ascii=False, indent=2)
+                atomic_write_json(self._keyevents_path, self._keyevent_entries)
         except Exception as e:
             app_logger.warning(f"[WARN] 刷新日志失败: {e}")
     

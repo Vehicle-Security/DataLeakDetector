@@ -77,7 +77,7 @@ def get_engine() -> Engine:
             output_dir = os.path.join(os.path.dirname(__file__), "recordings")
             
             config = ConfigLoader(config_path)
-            recorder = RecorderService(fps=10)
+            recorder = RecorderService()
             
             _engine = Engine(
                 config_loader=config,
@@ -247,11 +247,17 @@ def api_start():
     """启动监控"""
     global _fs_monitor
     engine = get_engine()
-    
+
     if engine.running:
         return jsonify({
             "success": False,
             "message": "监控已在运行中"
+        }), 400
+
+    if getattr(engine, "finalizing_stop", False):
+        return jsonify({
+            "success": False,
+            "message": "监控正在停止收尾中，请稍后再试"
         }), 400
     
     result = engine.start_monitoring()
@@ -271,7 +277,13 @@ def api_stop():
     """停止监控"""
     global _fs_monitor
     engine = get_engine()
-    
+
+    if getattr(engine, "finalizing_stop", False):
+        return jsonify({
+            "success": False,
+            "message": "监控正在停止收尾中"
+        }), 400
+
     if not engine.running:
         return jsonify({
             "success": False,
@@ -295,9 +307,11 @@ def api_status():
     """获取当前状态"""
     engine = get_engine()
     status = engine.get_status()
-    status["is_running"] = engine.running
+    status["is_running"] = engine.running or status.get("finalizing_stop", False)
     
-    if not engine.running:
+    if status.get("state") == "finalizing" or status.get("finalizing_stop"):
+        status["display_state"] = "停止收尾中"
+    elif not engine.running:
         status["display_state"] = "空闲"
     elif status["state"] == "recording":
         status["display_state"] = "录制中"

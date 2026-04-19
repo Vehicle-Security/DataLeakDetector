@@ -11,6 +11,7 @@ engine.py - 监控引擎（主循环/状态机）
 对应架构角色：Controller（控制器）
 """
 
+import json
 import os
 import threading
 import time
@@ -26,6 +27,7 @@ from .file_system_monitor import FileSystemMonitor
 from .clipboard_monitor import ClipboardMonitor
 from .etw_launcher import get_etw_launcher, EtwLauncher
 from ..detection.rule_matcher import RuleMatcher, MatchResult
+from ..logging.json_io import atomic_write_json, atomic_write_text, load_json_file, read_text_with_fallback
 from ..logging.keyevent_cleanup import finalize_keyevents
 from ..logging.logger import Logger
 from ..logging.log_contract import (
@@ -38,6 +40,7 @@ class State(Enum):
     """引擎状态"""
     IDLE = "idle"  # 空闲，未录制
     RECORDING = "recording"  # 录制中
+    FINALIZING = "finalizing"  # 停止后收尾中
 
 
 class Engine:
@@ -102,6 +105,7 @@ class Engine:
         
         # 运行状态
         self.running = False
+        self.finalizing_stop = False
         self.monitor_thread: Optional[threading.Thread] = None
         
         # 窗口变化检测
@@ -139,11 +143,12 @@ class Engine:
     
     def start(self):
         """启动引擎"""
-        if self.running:
+        if self.running or self.finalizing_stop:
             self._add_log("warning", "引擎已在运行")
             return False
         
         self.running = True
+        self.finalizing_stop = False
         self.state = State.IDLE
         self.last_window = None
         self.last_dialog_info = None
@@ -184,27 +189,32 @@ class Engine:
         """停止引擎"""
         if not self.running:
             return False
-        
-        self.running = False
-        
-        # 等待线程结束
-        if self.monitor_thread and self.monitor_thread.is_alive():
-            self.monitor_thread.join(timeout=2.0)
-        
-        # 如果正在录制，停止录制
-        if self.state == State.RECORDING:
-            self._stop_recording()
+
+        self.finalizing_stop = True
+        try:
+            self.running = False
+
+            # 等待线程结束
+            if self.monitor_thread and self.monitor_thread.is_alive():
+                self.monitor_thread.join(timeout=2.0)
             
-        # 停止所有监控器
-        self._stop_monitors()
-        self._clear_event_buffer()
-        self.last_window = None
-        self.last_dialog_info = None
-        self.dialog_trigger_window = None
-        
-        self._add_log("info", "监控引擎已停止")
-        app_logger.info("🛑 监控引擎已停止")
-        return True
+            # 如果正在录制，停止录制
+            if self.state == State.RECORDING:
+                self._stop_recording()
+
+            # 停止所有监控器
+            self._stop_monitors()
+            self._clear_event_buffer()
+            self.last_window = None
+            self.last_dialog_info = None
+            self.dialog_trigger_window = None
+            self.state = State.IDLE
+
+            self._add_log("info", "监控引擎已停止")
+            app_logger.info("🛑 监控引擎已停止")
+            return True
+        finally:
+            self.finalizing_stop = False
     
     # Web UI 别名
     stop_monitoring = stop
@@ -426,7 +436,7 @@ class Engine:
     
     def _stop_recording(self):
         """停止录制（但不停止监控器，监控器持续运行直到引擎停止）"""
-        self.state = State.IDLE
+        self.state = State.FINALIZING
         
         # 注意：不要在这里停止监控器！
         # 监控器应该持续运行，以便捕获下一次触发事件
@@ -487,7 +497,6 @@ class Engine:
     def _cleanup_keyevents(self):
         """合并 ETW 事件到 keyevents.json，并清理 logs 目录中的临时 ETW JSON。"""
         import glob
-        import json
         
         logs_dir = os.path.join(self.current_session_dir, "logs")
         keyevents_path = os.path.join(logs_dir, "keyevents.json")
@@ -498,38 +507,37 @@ class Engine:
         
         for etw_file in etw_files:
             try:
-                with open(etw_file, 'r', encoding='utf-8') as f:
-                    content = f.read().strip()
-                    if not content:
-                        continue
+                content = read_text_with_fallback(etw_file).strip()
+                if not content:
+                    continue
 
-                    raw_events = []
-                    if content.startswith('['):
-                        try:
-                            parsed = json.loads(content)
-                            if isinstance(parsed, list):
-                                raw_events = parsed
-                        except json.JSONDecodeError:
-                            raw_events = []
+                raw_events = []
+                if content.startswith('['):
+                    try:
+                        parsed = json.loads(content)
+                        if isinstance(parsed, list):
+                            raw_events = parsed
+                    except json.JSONDecodeError:
+                        raw_events = []
 
-                    if not raw_events:
-                        for line in content.splitlines():
-                            line = line.strip()
-                            if not line:
-                                continue
-                            try:
-                                raw_events.append(json.loads(line))
-                            except json.JSONDecodeError:
-                                continue
-
-                    for event in raw_events:
-                        # 跳过 monitor_started/stopped 元事件
-                        if 'event' in event:
+                if not raw_events:
+                    for line in content.splitlines():
+                        line = line.strip()
+                        if not line:
                             continue
-                        # 转换为 keyevent 格式
-                        converted = self._convert_etw_event(event)
-                        if converted:
-                            etw_events.append(converted)
+                        try:
+                            raw_events.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+
+                for event in raw_events:
+                    # 跳过 monitor_started/stopped 元事件
+                    if 'event' in event:
+                        continue
+                    # 转换为 keyevent 格式
+                    converted = self._convert_etw_event(event)
+                    if converted:
+                        etw_events.append(converted)
             except Exception as e:
                 app_logger.warning(f"读取 ETW 日志失败: {e}")
         
@@ -539,10 +547,9 @@ class Engine:
         existing_events = []
         if os.path.exists(keyevents_path):
             try:
-                with open(keyevents_path, 'r', encoding='utf-8') as f:
-                    existing_events = json.load(f)
-                    if not isinstance(existing_events, list):
-                        existing_events = []
+                existing_events = load_json_file(keyevents_path, default=[])
+                if not isinstance(existing_events, list):
+                    existing_events = []
             except Exception:
                 existing_events = []
         
@@ -572,8 +579,7 @@ class Engine:
         
         # 写回
         try:
-            with open(keyevents_path, 'w', encoding='utf-8') as f:
-                json.dump(unique, f, ensure_ascii=False, indent=2)
+            atomic_write_json(keyevents_path, unique)
 
             deleted_etw_files = 0
             for etw_file in etw_files:
@@ -639,8 +645,7 @@ class Engine:
 *Auto-generated by win_monitor*
 """
             index_path = os.path.join(self.current_session_dir, "INDEX.md")
-            with open(index_path, 'w', encoding='utf-8') as f:
-                f.write(content)
+            atomic_write_text(index_path, content, encoding='utf-8')
             print(f"📄 生成索引文件: INDEX.md")
         except Exception as e:
             print(f"[ERROR] 生成INDEX.md失败: {e}")
@@ -651,11 +656,12 @@ class Engine:
             status = {
                 "state": self.state.value,
                 "running": self.running,
+                "finalizing_stop": self.finalizing_stop,
                 "session_id": self.current_session_id,
                 "poll_interval": self.poll_interval,
             }
             
-            if self.state == State.RECORDING and self.recording_start_time:
+            if self.state in {State.RECORDING, State.FINALIZING} and self.recording_start_time:
                 elapsed = time.time() - self.recording_start_time
                 status["recording_duration"] = round(elapsed, 1)
                 status["event_count"] = self.logger.get_event_count()

@@ -37,6 +37,7 @@ ENV/
 # Logs
 *.log
 logs/
+recordings/
 
 # OS
 .DS_Store
