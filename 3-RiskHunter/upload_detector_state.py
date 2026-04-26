@@ -134,6 +134,8 @@ class UploadDetectorState(TypedDict):
     _log_events: List[Dict[str, Any]]  # 日志事件列表
     _operation_record_keys: Any  # 操作去重索引
     _hidden_transformed_paths: List[str]  # 模块2输出的变换后路径列表
+    _scene_segments: List[Dict[str, Any]]  # 场景分段资源列表（可选）
+    _segment_timeline: List[Dict[str, Any]]  # 分段时间轴（可选）
 
 
 def create_initial_state(
@@ -225,6 +227,8 @@ def create_initial_state(
         _log_events=[],
         _operation_record_keys=set(),
         _hidden_transformed_paths=[],
+        _scene_segments=[],
+        _segment_timeline=[],
     )
 
 
@@ -247,6 +251,8 @@ def save_state_to_json(state: UploadDetectorState, output_path: str):
     state_dict.pop("_log_events", None)
     state_dict.pop("_operation_record_keys", None)
     state_dict.pop("_hidden_transformed_paths", None)
+    state_dict.pop("_scene_segments", None)
+    state_dict.pop("_segment_timeline", None)
     
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(state_dict, f, ensure_ascii=False, indent=2)

@@ -10,6 +10,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), "../2-FileTracker"))
 
 from typing import Dict, Any
+from datetime import datetime
 from upload_detector_state import UploadDetectorState, UploadEvent
 from upload_detection_config import config
 from worklist_manager import WorklistManager, load_log_from_json, SensitiveFileEvent
@@ -22,6 +23,89 @@ from upload_detector_tools import (
     extract_hidden_transformed_paths,
     append_operation_record_with_dedup,
 )
+
+
+def _parse_event_timestamp(timestamp: str):
+    """解析事件时间戳，兼容常见格式。"""
+    if not timestamp:
+        return None
+
+    text = str(timestamp).strip().replace("Z", "").replace("T", " ")
+    for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _build_segment_timeline(scene_segments: list) -> list:
+    """
+    构建分段时间轴：每段包含 [start_time, end_time] 与资源路径。
+    """
+    timeline = []
+
+    for seg in scene_segments:
+        seg_log_events = load_log_from_json(seg["log_file"])
+        seg_events = []
+        for event in seg_log_events:
+            event_copy = dict(event)
+            event_copy["__segment_name"] = seg.get("segment_name", "")
+            event_copy["__segment_log_file"] = seg.get("log_file", "")
+            seg_events.append(event_copy)
+
+        parsed_times = [
+            _parse_event_timestamp(item.get("timestamp", ""))
+            for item in seg_events
+            if item.get("timestamp")
+        ]
+        parsed_times = [item for item in parsed_times if item is not None]
+
+        start_time = min(parsed_times) if parsed_times else None
+        end_time = max(parsed_times) if parsed_times else None
+
+        timeline.append(
+            {
+                "segment_name": seg.get("segment_name", ""),
+                "log_file": seg.get("log_file", ""),
+                "index_path": seg.get("index_path", ""),
+                "video_path": seg.get("video_path", ""),
+                "start_time": start_time,
+                "end_time": end_time,
+                "log_events": seg_events,
+            }
+        )
+
+    # 保底按目录名排序，保持顺序稳定
+    timeline.sort(key=lambda item: item.get("segment_name", ""))
+    return timeline
+
+
+def _select_segment_for_event(event_timestamp: str, timeline: list) -> Dict[str, Any]:
+    """
+    根据事件时间戳选择对应分段。
+    优先命中时间窗口；若未命中，回退到“开始时间最接近且不晚于事件时间”的分段。
+    """
+    if not timeline:
+        return {}
+
+    event_dt = _parse_event_timestamp(event_timestamp)
+    if event_dt is None:
+        return timeline[0]
+
+    for seg in timeline:
+        start_time = seg.get("start_time")
+        end_time = seg.get("end_time")
+        if start_time and end_time and start_time <= event_dt <= end_time:
+            return seg
+
+    fallback = timeline[0]
+    for seg in timeline:
+        start_time = seg.get("start_time")
+        if start_time and start_time <= event_dt:
+            fallback = seg
+
+    return fallback
 
 
 def initialize_node(state: UploadDetectorState) -> UploadDetectorState:
@@ -41,9 +125,35 @@ def initialize_node(state: UploadDetectorState) -> UploadDetectorState:
     state["messages"].append("开始初始化...")
     
     try:
-        log_events = load_log_from_json(state["log_file"])
-        print(f"✅ 加载日志: {len(log_events)} 条事件")
-        state["messages"].append(f"加载日志: {len(log_events)} 条事件")
+        scene_segments = state.get("_scene_segments", [])
+
+        if scene_segments:
+            timeline = _build_segment_timeline(scene_segments)
+            merged_log_events = []
+            for seg in timeline:
+                merged_log_events.extend(seg.get("log_events", []))
+
+            merged_log_events.sort(
+                key=lambda item: _parse_event_timestamp(item.get("timestamp", "")) or datetime.min
+            )
+
+            log_events = merged_log_events
+            state["_segment_timeline"] = timeline
+            print(f"✅ 加载多段日志: {len(scene_segments)} 段，共 {len(log_events)} 条事件")
+            state["messages"].append(f"加载多段日志: {len(scene_segments)} 段，共 {len(log_events)} 条事件")
+
+            for idx, seg in enumerate(timeline, 1):
+                start_text = seg["start_time"].strftime("%Y-%m-%d %H:%M:%S") if seg.get("start_time") else "未知"
+                end_text = seg["end_time"].strftime("%Y-%m-%d %H:%M:%S") if seg.get("end_time") else "未知"
+                print(
+                    f"   [{idx}] {seg.get('segment_name', '')} | "
+                    f"时间范围: {start_text} ~ {end_text} | "
+                    f"事件数: {len(seg.get('log_events', []))}"
+                )
+        else:
+            log_events = load_log_from_json(state["log_file"])
+            print(f"✅ 加载日志: {len(log_events)} 条事件")
+            state["messages"].append(f"加载日志: {len(log_events)} 条事件")
         
         manager = WorklistManager(sensitive_files=state["sensitive_files"])
         print(f"✅ 初始化WorklistManager: {len(state['sensitive_files'])} 个敏感文件")
@@ -93,6 +203,7 @@ def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
     try:
         manager: WorklistManager = state["_worklist_manager"]
         log_events = state["_log_events"]
+        timeline = state.get("_segment_timeline", [])
         
         event = manager.get_next_event()
         if not event:
@@ -121,11 +232,22 @@ def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
         
         # 调用模块2分析事件（模块2会调用模块1）
         print(f"   🔍 调用模块2分析事件...")
+
+        selected_segment = _select_segment_for_event(event.timestamp, timeline)
+        selected_index_path = selected_segment.get("index_path", state["index_path"])
+        selected_video_path = selected_segment.get("video_path", state["video_path"])
+
+        if selected_segment:
+            print(
+                f"   🧭 时间路由到分段: {selected_segment.get('segment_name', 'unknown')}"
+            )
+            print(f"      - INDEX: {selected_index_path}")
+            print(f"      - VIDEO: {selected_video_path}")
         
         result = analyze_sensitive_event_behavior(
             event=event,
-            index_path=state["index_path"],
-            video_path=state["video_path"],
+            index_path=selected_index_path,
+            video_path=selected_video_path,
             worklist_manager=manager,
             log_events=log_events,
             search_duration=state["search_duration"]
@@ -149,7 +271,7 @@ def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
             # 仅在模块2结果缺失时兜底读取，避免重复解析
             try:
                 fallback_time = normalize_timestamp_display(
-                    read_recording_start_time(state.get("index_path", ""))
+                    read_recording_start_time(selected_index_path)
                 )
             except Exception:
                 fallback_time = ""

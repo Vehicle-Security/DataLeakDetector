@@ -8,9 +8,67 @@ import json
 import glob
 import os
 from datetime import datetime
+from typing import Dict, Any, List
 from upload_detector_graph import create_upload_detector_graph
 from upload_detector_state import create_initial_state, save_state_to_json
 from upload_detection_config import config
+
+
+def _find_segment_assets(segment_dir: str) -> Dict[str, Any]:
+    """
+    在单个分段目录中查找日志/INDEX/视频资源。
+    返回空字典表示该目录不是有效分段。
+    """
+    log_file = os.path.join(segment_dir, "logs", "keyevents.json")
+    index_path = os.path.join(segment_dir, "INDEX.md")
+    video_candidates = sorted(
+        glob.glob(os.path.join(segment_dir, "video", "*.mp4"))
+        + glob.glob(os.path.join(segment_dir, "video", "*.mov"))
+    )
+
+    if not (os.path.exists(log_file) and os.path.exists(index_path) and video_candidates):
+        return {}
+
+    return {
+        "segment_dir": segment_dir,
+        "segment_name": os.path.basename(segment_dir),
+        "log_file": log_file,
+        "index_path": index_path,
+        "video_path": video_candidates[0],
+    }
+
+
+def discover_scene_segments(base_path: str) -> List[Dict[str, Any]]:
+    """
+    发现一个场景下的分段数据。
+
+    支持两种结构：
+    1) 旧结构：base_path 本身就是单段目录
+    2) 新结构：base_path 下有多个按时间命名的子目录，每个子目录是一段
+    """
+    segments: List[Dict[str, Any]] = []
+
+    # 兼容旧结构：base_path 自身就是一段
+    current = _find_segment_assets(base_path)
+    if current:
+        segments.append(current)
+        return segments
+
+    # 新结构：按目录名排序后作为时间顺序
+    child_dirs = sorted(
+        [
+            os.path.join(base_path, name)
+            for name in os.listdir(base_path)
+            if os.path.isdir(os.path.join(base_path, name))
+        ]
+    ) if os.path.isdir(base_path) else []
+
+    for child_dir in child_dirs:
+        segment = _find_segment_assets(child_dir)
+        if segment:
+            segments.append(segment)
+
+    return segments
 
 
 def main():
@@ -44,12 +102,23 @@ def main():
     # base_path = f"records/{record_id}"
     base_path = f"recordings/stage4/{record_id}"
     
+    """
+    分段前的旧代码
     # log_files = glob.glob(f"{base_path}/key_events/key_events_*.json")
     log_files = glob.glob(f"{base_path}/logs/keyevents.json")
     if not log_files:
         # print(f"❌ 错误: 在 {base_path}/key_events/ 中找不到 key_events_*.json 文件")
         print(f"❌ 错误: 在 {base_path}/logs/ 中找不到 keyevents.json 文件")
         return
+    """
+    # 分段新代码-begin
+    segments = discover_scene_segments(base_path)
+    if not segments:
+        print(f"❌ 错误: 在 {base_path} 下找不到有效分段（需包含 logs/keyevents.json、INDEX.md、video/*.mp4|*.mov）")
+        return
+    # 分段新代码-end
+    
+    """
     log_file = log_files[0]
     print(f"📄 日志文件: {os.path.basename(log_file)}")
     
@@ -65,7 +134,21 @@ def main():
         return
     video_path = video_files[0]
     print(f"🎥 视频文件: {os.path.basename(video_path)}")
-    
+    """
+    #分段新代码-begin
+    print(f"📦 场景分段数: {len(segments)}")
+    for idx, seg in enumerate(segments, 1):
+        print(f"   [{idx}] {seg['segment_name']}")
+        print(f"       📄 日志: {seg['log_file']}")
+        print(f"       📄 INDEX: {seg['index_path']}")
+        print(f"       🎥 视频: {seg['video_path']}")
+
+    # 保留单段字段以兼容现有流程，默认取第一段；真正按时间段路由在节点中处理
+    log_file = segments[0]["log_file"]
+    index_path = segments[0]["index_path"]
+    video_path = segments[0]["video_path"]
+    #分段新代码-end
+
     sensitive_files = config.sensitive_files
     blacklist_apps = config.blacklist_apps
     whitelist_apps = config.whitelist_apps
@@ -89,6 +172,7 @@ def main():
         whitelist_apps=whitelist_apps,
         search_duration=search_duration
     )
+    initial_state["_scene_segments"] = segments
     
     # ========== 创建并运行图 ==========
     print(f"🚀 启动上传检测Agent...")
