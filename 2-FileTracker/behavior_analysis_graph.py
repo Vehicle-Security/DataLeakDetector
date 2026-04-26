@@ -27,6 +27,13 @@ from worklist_manager import WorklistManager, SensitiveFileEvent
 load_dotenv(find_dotenv())
 
 
+def _should_render_graph_debug() -> bool:
+    """
+    调试图渲染仅在显式开启时执行，避免运行时依赖外部 mermaid 服务。
+    """
+    return os.getenv("RENDER_BEHAVIOR_GRAPH_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 class BehaviorAnalysisGraph:
     """
     隐藏行为分析工作流图
@@ -125,9 +132,13 @@ class BehaviorAnalysisGraph:
             "messages": []
         }
 
-        graph_png = self.graph.get_graph().draw_mermaid_png()
-        with open("behavior_analysis_graph.png", "wb") as f:
-            f.write(graph_png)
+        if _should_render_graph_debug():
+            try:
+                graph_png = self.graph.get_graph().draw_mermaid_png()
+                with open("behavior_analysis_graph.png", "wb") as f:
+                    f.write(graph_png)
+            except Exception as exc:
+                print(f"   ⚠️ 跳过行为分析图渲染: {exc}")
         
         result = self.graph.invoke(initial_state)
         

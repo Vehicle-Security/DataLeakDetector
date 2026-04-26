@@ -13,6 +13,7 @@ from behavior_analysis_state import BehaviorAnalysisState
 from behavior_analysis_tools import (
     analyze_frame_behavior,
     extract_hidden_operations,
+    normalize_file_path,
     resolve_full_path
 )
 from behavior_analysis_prompts import BEHAVIOR_ANALYSIS_SYSTEM_PROMPT
@@ -197,23 +198,34 @@ def update_worklist_node(state: BehaviorAnalysisState, worklist_manager) -> Dict
     
     new_sensitive_files = []
     for event in new_events:
-        worklist_manager.add_event(event)
-        # 输出event_id
-        print(f"   ✅ 添加到 worklist: {event.current_file}")
+        normalized_current = normalize_file_path(event.current_file)
+        normalized_original = normalize_file_path(event.original_file)
+        existing_original = normalize_file_path(worklist_manager.get_original_file(event.current_file) or "")
+        is_known_sensitive = normalized_current in worklist_manager.sensitive_files
+        mapping_exists = existing_original == normalized_original and normalized_current != ""
+
+        if event.event_type.startswith("derived_from_") and is_known_sensitive:
+            print(f"   ♻️ 已知敏感文件，跳过重复入队: {event.current_file}")
+        else:
+            worklist_manager.add_event(event)
+            print(f"   ✅ 添加到 worklist: {event.current_file}")
         
-        if event.current_file not in worklist_manager.sensitive_files:
+        if not is_known_sensitive:
             worklist_manager.add_sensitive_file(event.current_file)
             new_sensitive_files.append(event.current_file)
             print(f"   ✅ 添加到敏感文件列表: {event.current_file}")
         
         # 获取relationship信息
         relationship = event.raw_event.get("operation_type", "未知关系") if event.raw_event else "未知关系"
-        
-        worklist_manager.update_file_mapping(
-            original_file=event.original_file,
-            new_file=event.current_file
-        )
-        print(f"   ✅ 添加映射 ({relationship}): {event.original_file} -> {event.current_file}")
+
+        if normalized_current and normalized_current != normalized_original and not mapping_exists:
+            worklist_manager.update_file_mapping(
+                original_file=event.original_file,
+                new_file=event.current_file
+            )
+            print(f"   ✅ 添加映射 ({relationship}): {event.original_file} -> {event.current_file}")
+        elif mapping_exists:
+            print(f"   ♻️ 映射已存在，跳过: {event.original_file} -> {event.current_file}")
     
     # 如果有新的敏感文件，重新扫描日志
     if new_sensitive_files:

@@ -4,9 +4,10 @@
 """
 
 import os
+import re
 import sys
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from langchain_core.tools import tool
 
@@ -179,6 +180,29 @@ def build_sensitive_operation_dedup_key(operation_record: Dict[str, Any]) -> str
     )
 
 
+def split_output_filenames(filename_text: Any) -> List[str]:
+    """
+    拆分模型返回的输出文件名列表。
+
+    VLM 可能同时返回中英文逗号、分号连接的多个文件名，这里统一拆分并去重。
+    """
+    raw_text = str(filename_text or "").strip()
+    if not raw_text:
+        return []
+
+    seen = set()
+    filenames: List[str] = []
+
+    for part in re.split(r"[，,；;]+", raw_text):
+        name = part.strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        filenames.append(name)
+
+    return filenames
+
+
 @tool
 def analyze_frame_behavior(
     event_timestamp: str,
@@ -315,6 +339,7 @@ def extract_hidden_operations(frame_analysis_result: Dict[str, Any]) -> Dict[str
         events = frame_analysis_result.get("events", [])
         hidden_operations = []
         file_mappings = []
+        seen_hidden_operations = set()
         
         for event in events:
             behavior_category = event.get("behavior_category", "")
@@ -322,18 +347,26 @@ def extract_hidden_operations(frame_analysis_result: Dict[str, Any]) -> Dict[str
             if behavior_category == "潜在隐藏行为":
                 original_filename = event.get("original_filename", "")
                 modified_filename = event.get("modified_filename", "")
-                # 支持一个操作生成多个文件：按中英文逗号拆分
-                modified_filenames = [
-                    name.strip()
-                    for name in str(modified_filename).replace("，", ",").split(",")
-                    if name.strip()
-                ]
+                # 支持一个操作生成多个文件：统一拆分中英文逗号/分号
+                modified_filenames = split_output_filenames(modified_filename)
                 
                 # 文件名必须不同才算隐藏操作
                 if original_filename and modified_filenames:
                     for new_filename in modified_filenames:
                         if original_filename == new_filename:
                             continue
+
+                        operation_key = (
+                            event.get("operation_type", "未知操作"),
+                            original_filename,
+                            new_filename,
+                            event.get("time_range", ""),
+                            tuple(event.get("involved_timestamps", [])),
+                        )
+                        if operation_key in seen_hidden_operations:
+                            continue
+
+                        seen_hidden_operations.add(operation_key)
 
                         operation = {
                             "operation_type": event.get("operation_type", "未知操作"),

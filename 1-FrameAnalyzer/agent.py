@@ -13,11 +13,11 @@ import logging
 from datetime import timedelta
 from typing import List, Dict
 from dotenv import load_dotenv, find_dotenv
-import prompts  
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from schema import AgentState
 from thefuzz import fuzz
+from prompt_loader import PROMPTS
 
 load_dotenv(find_dotenv())
 logger = logging.getLogger("VideoAgent")
@@ -156,7 +156,7 @@ class VideoFileOperationAgent:
         ]
         table_str = "输入顺序 | 原始帧索引 | 现实时间戳 (%Y-%m-%d %H:%M:%S) | 类型\n" + "-"*75 + "\n" + "\n".join(table_rows)
 
-        final_prompt = prompts.RETRIEVE_FRAMES_PROMPT.format(
+        final_prompt = PROMPTS.RETRIEVE_FRAMES_PROMPT.format(
             frame_count=len(state.hit_frames),
             frame_info_table=table_str
         )

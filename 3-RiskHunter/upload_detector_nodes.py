@@ -22,6 +22,7 @@ from upload_detector_tools import (
     build_sensitive_operation_record,
     extract_hidden_transformed_paths,
     append_operation_record_with_dedup,
+    sync_processed_statistics,
 )
 
 
@@ -212,6 +213,7 @@ def process_event_node(state: UploadDetectorState) -> UploadDetectorState:
             return state
         
         state["processed_count"] += 1
+        sync_processed_statistics(state)
         
         print("\n" + "-" * 80)
         print(f"🔹 处理事件 {state['processed_count']}")
@@ -327,12 +329,14 @@ def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
         current_event = state["current_event"]
         
         if not module1_result or not current_event:
+            sync_processed_statistics(state)
             return state
         
         # 检查是否有外发行为
         events = module1_result.get("events", [])
         if not events:
             print(f"   ℹ️ 未检测到相关行为")
+            sync_processed_statistics(state)
             return state
 
         hidden_transformed_paths = state.get("_hidden_transformed_paths", [])
@@ -487,7 +491,7 @@ def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
         import traceback
         traceback.print_exc()
     
-    state["statistics"]["total_events_processed"] = state["processed_count"]
+    sync_processed_statistics(state)
     
     return state
 
@@ -502,6 +506,7 @@ def finalize_node(state: UploadDetectorState) -> UploadDetectorState:
     3. 显示统计信息
     """
     state["current_step"] = "finalize"
+    sync_processed_statistics(state)
     
     print("\n" + "=" * 80)
     print("✅ 分析完成")

@@ -5,9 +5,9 @@ import re
 import os
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
-import prompts 
 import easyocr
 import torch
+from prompt_loader import PROMPTS
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 reader = easyocr.Reader(['ch_sim', 'en'], gpu=(DEVICE == 'cuda'))
 
@@ -35,7 +35,7 @@ def analyze_scene_deep_dive(filtered_frames, output_path="./output/deep_report.j
     table_str = "序号 | 帧索引 | 时间戳(秒) | OCR 辅助关键词\n" + "-"*70 + "\n" + "\n".join(table_rows)
 
     
-    final_prompt = prompts.SCENE_DEEP_DIVE_PROMPT.format(
+    final_prompt = PROMPTS.SCENE_DEEP_DIVE_PROMPT.format(
         frame_count=len(filtered_frames),
         frame_info_table=table_str
     )

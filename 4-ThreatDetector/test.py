@@ -19,7 +19,7 @@ except ImportError:
 
 # 导入实际模块
 from datalog.datalog_engine import DatalogEngine, LeakPath
-from prompts import PromptTemplates
+from threat_prompts import PromptTemplates
 
 # ==================== 数据结构（复用demo.py的定义）====================
 

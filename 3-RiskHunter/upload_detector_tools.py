@@ -19,6 +19,13 @@ from behavior_analysis_tools import (
     build_sensitive_operation_dedup_key,
 )
 
+from typing import MutableMapping, Any
+
+
+def sync_processed_statistics(state: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
+    statistics = state.setdefault("statistics", {})
+    statistics["total_events_processed"] = state.get("processed_count", 0)
+    return state
 
 def extract_hidden_transformed_paths(module2_result: Dict[str, Any]) -> List[str]:
     """
