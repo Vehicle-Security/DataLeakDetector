@@ -1493,7 +1493,7 @@ def generate_evidence_report(log_file: str, video_file: str,
                              output_dir: str = None) -> str:
     """生成完整的泄露证据报告"""
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
     if output_dir is None:
         output_dir = os.path.join(PROJECT_DIR, 'output')
