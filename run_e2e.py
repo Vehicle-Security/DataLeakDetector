@@ -200,6 +200,13 @@ def _normalize_log_path(file_path: str) -> str:
     return normalized
 
 
+def _canonical_log_sensitive_path(file_path: str) -> str:
+    normalized = _normalize_log_path(file_path)
+    # Cloud clients often create sidecar markers such as
+    # "report.docx.baiduyun.uploading.cfg". Treat those as the source file.
+    return re.sub(r"(?i)(?:\.baiduyun)?\.uploading\.cfg$", "", normalized)
+
+
 def _is_log_candidate_file(file_path: str, event: Dict[str, Any]) -> bool:
     normalized = _normalize_log_path(file_path)
     if not normalized:
@@ -209,7 +216,8 @@ def _is_log_candidate_file(file_path: str, event: Dict[str, Any]) -> bool:
     if any(segment in lowered for segment in LOG_DERIVED_NOISE_SEGMENTS):
         return False
 
-    basename = normalized.rsplit("/", 1)[-1]
+    canonical = _canonical_log_sensitive_path(normalized)
+    basename = canonical.rsplit("/", 1)[-1]
     lowered_basename = basename.casefold()
     if lowered_basename in LOG_DERIVED_NOISE_BASENAMES:
         return False
@@ -245,6 +253,7 @@ def derive_sensitive_files_from_logs(logs: List[Dict], seed_files: List[str]) ->
         file_path = _normalize_log_path(event.get("file_path", ""))
         if not _is_log_candidate_file(file_path, event):
             continue
+        file_path = _canonical_log_sensitive_path(file_path)
         key = file_path.casefold()
         if key in seen:
             continue
@@ -342,7 +351,8 @@ def run_module3_pipeline(log_file: str, video_path: str,
     for log in logs_data:
         file_path = log.get('file_path', '')
         file_name = log.get('file_name', '')
-        if file_path and any(kw in file_name for kw in sensitive_keywords):
+        if file_path and _is_log_candidate_file(file_path, log) and any(kw in file_name for kw in sensitive_keywords):
+            file_path = _canonical_log_sensitive_path(file_path)
             normalized = file_path.replace('\\', '/').lower()
             if normalized not in existing_normalized:
                 sensitive_files.append(file_path)

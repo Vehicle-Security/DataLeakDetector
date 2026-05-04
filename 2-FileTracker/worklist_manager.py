@@ -144,7 +144,7 @@ class WorklistManager:
         self.sensitive_files: Set[str] = set()
         if sensitive_files:
             for file_path in sensitive_files:
-                self.sensitive_files.add(self._normalize_path(file_path))
+                self.sensitive_files.add(self._canonical_sensitive_path(self._normalize_path(file_path)))
     
     def add_sensitive_file(self, file_path: str) -> None:
         """
@@ -153,7 +153,7 @@ class WorklistManager:
         Args:
             file_path: 文件路径
         """
-        self.sensitive_files.add(self._normalize_path(file_path))
+        self.sensitive_files.add(self._canonical_sensitive_path(self._normalize_path(file_path)))
     
     def add_sensitive_files(self, file_paths: List[str]) -> None:
         """
@@ -176,8 +176,11 @@ class WorklistManager:
             是否为敏感文件
         """
         normalized_path = self._normalize_path(file_path)
+        canonical_path = self._canonical_sensitive_path(normalized_path)
         
         if normalized_path in self.sensitive_files:
+            return True
+        if canonical_path in self.sensitive_files:
             return True
         
         # 检查是否是某个敏感文件的派生文件（重命名、复制等）
@@ -434,6 +437,18 @@ class WorklistManager:
             规范化后的路径
         """
         return normalize_file_path(file_path)
+
+    def _canonical_sensitive_path(self, file_path: str) -> str:
+        normalized = self._normalize_path(file_path)
+        lowered = normalized.casefold()
+        suffixes = (
+            ".baiduyun.uploading.cfg",
+            ".uploading.cfg",
+        )
+        for suffix in suffixes:
+            if lowered.endswith(suffix):
+                return normalized[:-len(suffix)]
+        return normalized
     
     def _generate_event_id(self, timestamp: str, file_path: str, event_type: str) -> str:
         """
@@ -456,8 +471,14 @@ class WorklistManager:
     def _generate_semantic_event_key(self, event: Dict[str, Any]) -> str:
         timestamp = str(event.get("timestamp", ""))
         timestamp_sec = timestamp.split('.')[0] if '.' in timestamp else timestamp
+        try:
+            dt = datetime.fromisoformat(timestamp_sec)
+            timestamp_sec = str(int(dt.timestamp()) // 3)
+        except Exception:
+            pass
         file_path = self._normalize_path(event.get("file_path", ""))
-        original_file = self._normalize_path(event.get("original_file", "")) or file_path
+        file_path = self._canonical_sensitive_path(file_path)
+        original_file = self._canonical_sensitive_path(self._normalize_path(event.get("original_file", ""))) or file_path
         return f"{timestamp_sec}|{original_file}|{file_path}"
     
     def _is_sensitive_event(self, event: Dict[str, Any]) -> bool:
@@ -515,8 +536,9 @@ class WorklistManager:
         """
         file_path = event.get("file_path", "")
         normalized_path = self._normalize_path(file_path)
+        canonical_path = self._canonical_sensitive_path(normalized_path)
         
-        original_file = self.get_original_file(file_path) or normalized_path
+        original_file = self.get_original_file(file_path) or canonical_path
         
         # 隐藏行为判断由 behavior_analysis_graph 模块完成
         is_hidden = False
@@ -524,7 +546,7 @@ class WorklistManager:
         return SensitiveFileEvent(
             event_id=event_id,
             original_file=original_file,
-            current_file=normalized_path,
+            current_file=canonical_path,
             event_type=event.get("event_type", ""),
             process_info=event.get("process_info", {}),
             timestamp=event.get("timestamp", ""),
