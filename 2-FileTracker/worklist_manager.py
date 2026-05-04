@@ -121,6 +121,10 @@ class WorklistManager:
         
         # 已加入工作列表的事件ID集合（避免重复处理）
         self.processed_events: Set[str] = set()
+
+        # 同一秒内同一文件可能同时出现 browser_file_access/opened 等多条日志，
+        # 对模块2/模块1而言它们描述的是同一次用户操作，合并处理即可。
+        self.processed_semantic_events: Set[str] = set()
         
         # 敏感文件集合（规范化后的文件路径）
         self.sensitive_files: Set[str] = set()
@@ -206,9 +210,15 @@ class WorklistManager:
                 continue
             
             if self._is_sensitive_event(event):
+                semantic_key = self._generate_semantic_event_key(event)
+                if semantic_key in self.processed_semantic_events:
+                    self.processed_events.add(event_id)
+                    continue
+
                 sensitive_event = self._create_sensitive_event(event, event_id)
                 self.worklist.append(sensitive_event)
                 self.processed_events.add(event_id)
+                self.processed_semantic_events.add(semantic_key)
                 added_count += 1
         
         return added_count
@@ -395,6 +405,7 @@ class WorklistManager:
         self.file_mapping.clear()
         self.file_mappings.clear()
         self.processed_events.clear()
+        self.processed_semantic_events.clear()
     
     # ==================== 私有方法 ====================
     
@@ -427,6 +438,13 @@ class WorklistManager:
         timestamp_sec = timestamp.split('.')[0] if '.' in timestamp else timestamp
         normalized_path = self._normalize_path(file_path)
         return f"{timestamp_sec}_{event_type}_{hash(normalized_path)}"
+
+    def _generate_semantic_event_key(self, event: Dict[str, Any]) -> str:
+        timestamp = str(event.get("timestamp", ""))
+        timestamp_sec = timestamp.split('.')[0] if '.' in timestamp else timestamp
+        file_path = self._normalize_path(event.get("file_path", ""))
+        original_file = self._normalize_path(event.get("original_file", "")) or file_path
+        return f"{timestamp_sec}|{original_file}|{file_path}"
     
     def _is_sensitive_event(self, event: Dict[str, Any]) -> bool:
         """

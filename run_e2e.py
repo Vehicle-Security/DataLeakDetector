@@ -1358,9 +1358,19 @@ def generate_datalog_facts(logs: List[Dict], video_frames: List[Dict]) -> List[D
     """使用 LLM 生成 Datalog 事实"""
     from openai import OpenAI
 
-    api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
-    model_name = os.getenv("LLM_MODEL_NAME", "qwen-plus")
-    base_url = os.getenv("LLM_BASE_URL")
+    api_key = os.getenv("DLD_THREAT_API_KEY") or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    model_name = (
+        os.getenv("DLD_THREAT_MODEL_NAME")
+        or os.getenv("VL_MODEL_NAME")
+        or os.getenv("MODEL_NAME")
+        or os.getenv("LLM_MODEL_NAME")
+        or "qwen-plus"
+    )
+    base_url = (
+        os.getenv("DLD_THREAT_BASE_URL")
+        or os.getenv("OPENAI_BASE_URL")
+        or os.getenv("LLM_BASE_URL")
+    )
 
     if not api_key:
         raise ValueError("❌ 未配置 LLM_API_KEY")
