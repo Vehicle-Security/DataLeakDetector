@@ -16,6 +16,13 @@ INTERNAL_ARTIFACT_BASENAMES = {
     "logs.json",
     "keyevents.json",
     "index.md",
+    "global.json",
+    "global.dat",
+    "config.ini",
+    "onceflag.ini",
+    "personalsetting.xml",
+    "appsettingapp.dat",
+    "amcache.hve",
 }
 
 INTERNAL_ARTIFACT_SEGMENTS = (
@@ -38,6 +45,13 @@ INTERNAL_ARTIFACT_SUFFIXES = (
     ".sqlite3",
     ".db",
     ".db-journal",
+    ".db-wal",
+    ".wal",
+    ".journal",
+    ".lock",
+    ".dat",
+    ".ini",
+    ".hve",
     ".log",
     ".tmp",
     ".lnk",

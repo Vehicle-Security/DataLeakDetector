@@ -133,8 +133,12 @@ def create_index_file(rec_start: str, output_dir: str) -> str:
 
 
 LOG_DERIVED_FILE_EXTENSIONS = {
-    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf", ".txt", ".md",
-    ".zip", ".rar", ".7z", ".csv", ".json", ".py", ".java", ".js", ".ts",
+    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf",
+    ".zip", ".rar", ".7z", ".csv",
+}
+
+LOG_DERIVED_SOURCE_EXTENSIONS = {
+    ".txt", ".md", ".json", ".py", ".java", ".js", ".ts",
     ".cpp", ".c", ".h", ".go", ".rs", ".sql",
 }
 
@@ -161,6 +165,13 @@ LOG_DERIVED_NOISE_BASENAMES = {
     "logs.json",
     "keyevents.json",
     "index.md",
+    "global.json",
+    "global.dat",
+    "config.ini",
+    "onceflag.ini",
+    "personalsetting.xml",
+    "appsettingapp.dat",
+    "amcache.hve",
 }
 
 LOG_DERIVED_NOISE_SUFFIXES = (
@@ -168,6 +179,13 @@ LOG_DERIVED_NOISE_SUFFIXES = (
     ".sqlite3",
     ".db",
     ".db-journal",
+    ".db-wal",
+    ".wal",
+    ".journal",
+    ".lock",
+    ".dat",
+    ".ini",
+    ".hve",
     ".log",
     ".tmp",
     ".lnk",
@@ -209,7 +227,9 @@ def _is_log_candidate_file(file_path: str, event: Dict[str, Any]) -> bool:
     file_name = str(event.get("file_name", "") or basename)
 
     has_sensitive_name = any(keyword.casefold() in file_name.casefold() for keyword in LOG_DERIVED_SENSITIVE_KEYWORDS)
-    has_candidate_ext = ext in LOG_DERIVED_FILE_EXTENSIONS
+    has_candidate_ext = ext in LOG_DERIVED_FILE_EXTENSIONS or (
+        ext in LOG_DERIVED_SOURCE_EXTENSIONS and has_sensitive_name
+    )
     has_relevant_event = event_type in LOG_DERIVED_EVENT_TYPES or raw_operation in {
         "browser_file_access", "file_selected", "upload_detected", "clipboard_text", "clipboard_image"
     }
