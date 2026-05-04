@@ -33,6 +33,7 @@ if sys.platform == 'win32':
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("E2E-Pipeline")
+run_threat_detection = None
 
 # 添加模块路径
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -57,7 +58,7 @@ def import_modules():
     """延迟导入模块，避免启动时的依赖问题"""
     global create_upload_detector_graph, create_initial_state
     global UploadDetectionConfig
-    global DatalogEngine, PromptTemplates
+    global DatalogEngine, PromptTemplates, run_threat_detection
 
     # 模块3 (RiskHunter) - LangGraph 上传检测 Agent
     # 模块3 内部会调用模块2 (FileTracker)，模块2 内部会调用模块1 (FrameAnalyzer)
@@ -77,12 +78,17 @@ def import_modules():
     # 模块4 (ThreatDetector) - Datalog 推理
     try:
         from datalog.datalog_engine import DatalogEngine
-        from threat_prompts import PromptTemplates
+        from threat_detector import run_threat_detection
+        try:
+            from threat_prompts import PromptTemplates
+        except ImportError:
+            PromptTemplates = None
         print("✅ 模块4 (ThreatDetector) 加载成功")
     except ImportError as e:
         logger.warning(f"模块4导入失败: {e}")
         DatalogEngine = None
         PromptTemplates = None
+        run_threat_detection = None
 
 
 # ==================== 辅助函数 ====================
@@ -1306,75 +1312,27 @@ def run_threat_detector(logs: List[Dict],
     print("⚖️ 模块4: ThreatDetector - Datalog 推理")
     print("=" * 80)
 
-    if DatalogEngine is None or PromptTemplates is None:
+    if run_threat_detection is None:
         print("   ⚠️ 模块4未加载，跳过")
-        return {"leak_paths": [], "datalog_facts": []}
+        return {"leak_paths": [], "datalog_facts": [], "evidence_bundle": {}, "stats": {}}
 
-    # 从模块3结果构建视频帧分析数据（用于 module4 LLM 分析）
-    video_frames = _build_video_frames_from_module3(module3_result)
-    print(f"   📊 构建视频帧数据: {len(video_frames)} 个帧事件")
-
-    # 如果模块3没有产出帧分析，从日志模拟
-    if not video_frames:
-        print("   ⚠️ 模块3无帧分析结果，使用日志模拟视频帧...")
-        for log in logs:
-            if log.get('upload_detection', {}).get('is_upload'):
-                video_frames.append({
-                    "timestamp": log.get('timestamp', ''),
-                    "app_name": log.get('process_info', {}).get('process_name', ''),
-                    "operation_type": "上传",
-                    "behavior_category": "数据外发",
-                    "description": f"文件 {log.get('file_name', '')} 被上传"
-                })
-
-    # 使用 LLM 生成 Datalog 事实
-    llm_logs = _select_logs_for_threat_detector(logs, module3_result, video_frames)
-
-    print(f"\n   🤖 调用 LLM 分析...")
-    print(f"      - 日志条目: {len(logs)} 条")
-    print(f"      - LLM输入日志: {len(llm_logs)} 条")
-    print(f"      - 视频帧: {len(video_frames)} 个")
-    
-    llm_facts = []
-    try:
-        llm_facts = generate_datalog_facts(llm_logs, video_frames)
-        print(f"   ✅ LLM 生成 {len(llm_facts)} 条 Datalog 事实")
-    except Exception as e:
-        print(f"   ⚠️ LLM 分析失败: {e}")
-        print(f"   将仅使用模块3结果进行推理...")
-    
-    for i, fact in enumerate(llm_facts, 1):
-        if fact.relation == "CrossProcessTransfer":
-            print(f"   {i}. {fact.relation}({fact.from_process} → {fact.to_process})")
-        elif fact.dst_file:
-            print(f"   {i}. {fact.relation}({fact.process}, {fact.file[:30]}... → {fact.dst_file})")
-        else:
-            print(f"   {i}. {fact.relation}({fact.process}, {fact.file[:30]}...)")
-
-    # 创建引擎并添加 LLM 生成的事实
-    print(f"\n   🔍 运行 Datalog 推理...")
-    engine = DatalogEngine()
-
-    for fact in llm_facts:
-        args = fact.to_souffle_args()
-        if args:
-            engine.add_fact(fact.relation, *args)
-
-    # 从模块3结果注入补充事实（确保污点链连通）
-    supplementary_facts = _inject_connected_facts_from_module3(engine, module3_result, logs)
-    all_facts = llm_facts + supplementary_facts
-
-    # 执行推理
-    leak_paths = engine.query_leak()
-    engine.cleanup()
+    print(f"\n   🔍 规则生成 Datalog 事实并运行推理...")
+    result = run_threat_detection(
+        logs=logs,
+        module3_result=module3_result,
+        use_llm=os.getenv("DLD_THREAT_USE_LLM", "false").lower() in {"1", "true", "yes", "on"},
+        max_logs=int(os.getenv("DLD_THREAT_MAX_LOGS", "80")),
+        window_seconds=int(os.getenv("DLD_THREAT_LOG_WINDOW_SECONDS", "90")),
+    )
+    stats = result.get("stats", {})
+    leak_paths = result.get("leak_paths", [])
 
     print(f"\n   ✅ ThreatDetector 完成")
+    print(f"   📦 证据日志: {stats.get('evidence_logs', 0)}/{stats.get('total_logs', len(logs))}")
+    print(f"   🧩 Datalog事实: {stats.get('facts', 0)} (规则 {stats.get('rule_facts', 0)}, LLM {stats.get('llm_facts', 0)})")
+    print(f"   🤖 LLM: {stats.get('llm_status', 'disabled')}")
     print(f"   🚨 泄露路径: {len(leak_paths)} 条")
-
-    return {
-        "leak_paths": leak_paths,
-        "datalog_facts": all_facts
-    }
+    return result
 
 
 def _build_video_frames_from_module3(module3_result: Dict[str, Any]) -> List[Dict]:
@@ -1551,11 +1509,18 @@ def generate_evidence_report(log_file: str, video_file: str,
                     "operation_id": f.operation_id,
                     "process": f.process,
                     "file": f.file,
+                    "dst_file": getattr(f, "dst_file", None),
+                    "from_process": getattr(f, "from_process", None),
+                    "to_process": getattr(f, "to_process", None),
+                    "shared_data": getattr(f, "shared_data", None),
+                    "source": getattr(f, "source", "rule"),
                     "description": f.description
                 }
                 for f in threat_detector_result.get("datalog_facts", [])
             ],
-            "leak_paths": [lp.to_dict() for lp in leak_paths]
+            "leak_paths": [lp.to_dict() for lp in leak_paths],
+            "evidence_bundle": threat_detector_result.get("evidence_bundle", {}),
+            "stats": threat_detector_result.get("stats", {}),
         },
         "conclusion": "🚨 发现数据泄露风险！" if (leak_paths or alert_events) else "✅ 未发现数据泄露"
     }
