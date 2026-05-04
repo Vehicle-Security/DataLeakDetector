@@ -26,6 +26,43 @@ from upload_detector_tools import (
 )
 
 
+UPLOAD_OPERATION_KEYWORDS = [
+    "上传", "发送", "分享", "转发", "附件", "粘贴", "同步", "外发",
+    "upload", "send", "share", "attach", "attachment",
+]
+
+NON_UPLOAD_OPERATION_KEYWORDS = [
+    "签名", "设置姓名", "查看监控", "监控系统", "浏览文件", "正常操作",
+    "加载", "预览", "存草稿", "取消", "返回收件箱",
+]
+
+UNKNOWN_FILE_VALUES = {"", "未知", "unknown", "none", "null"}
+
+
+def _has_real_filename(value: str) -> bool:
+    text = str(value or "").strip()
+    if text.lower() in UNKNOWN_FILE_VALUES or text in UNKNOWN_FILE_VALUES:
+        return False
+    return "." in text or "/" in text or "\\" in text
+
+
+def _is_upload_event(event_data: Dict[str, Any]) -> bool:
+    behavior_category = str(event_data.get("behavior_category", ""))
+    operation_type = str(event_data.get("operation_type", ""))
+    description = str(event_data.get("description", ""))
+    combined = f"{behavior_category} {operation_type} {description}".lower()
+
+    if any(keyword.lower() in combined for keyword in NON_UPLOAD_OPERATION_KEYWORDS):
+        return False
+
+    has_upload_operation = any(keyword.lower() in combined for keyword in UPLOAD_OPERATION_KEYWORDS)
+    has_named_file = _has_real_filename(event_data.get("original_filename", "")) or _has_real_filename(
+        event_data.get("modified_filename", "")
+    )
+
+    return has_upload_operation and (has_named_file or "外发" in behavior_category)
+
+
 def _parse_event_timestamp(timestamp: str):
     """解析事件时间戳，兼容常见格式。"""
     if not timestamp:
@@ -384,11 +421,9 @@ def analyze_upload_node(state: UploadDetectorState) -> UploadDetectorState:
             print(f"      - 行为类别: {behavior_category}")
             print(f"      - 操作类型: {operation_type}")
             
-            # 判断是否为上传/外发行为
-            is_upload = "外发" in behavior_category or any(
-                keyword in operation_type 
-                for keyword in ["上传", "发送", "分享", "转发", "附件", "粘贴"]
-            )
+            # 判断是否为上传/外发行为。VLM 偶尔会把“签名设置”等上下文事件标成
+            # “直接外发”，这里要求同时具备明确上传动作，避免黑名单应用上下文误报。
+            is_upload = _is_upload_event(event_data)
             
             if not is_upload:
                 print(f"      ℹ️ 非上传行为，跳过")

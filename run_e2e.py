@@ -437,6 +437,12 @@ def _parse_timestamp_ms(timestamp: str) -> int:
         return 0
 
 
+def _event_attr(event: Any, name: str, default: Any = "") -> Any:
+    if isinstance(event, dict):
+        return event.get(name, default)
+    return getattr(event, name, default)
+
+
 def _normalize_process_name(process_name: str) -> str:
     normalized = str(process_name or "").strip().replace("\\", "/")
     if not normalized:
@@ -457,6 +463,72 @@ def _file_identity_key(file_path: str) -> str:
 
 def _basename_key(file_path: str) -> str:
     return _file_identity_key(file_path).rsplit("/", 1)[-1]
+
+
+def _select_logs_for_threat_detector(
+    logs: List[Dict],
+    module3_result: Dict[str, Any],
+    video_frames: List[Dict],
+) -> List[Dict]:
+    max_logs = int(os.getenv("DLD_THREAT_MAX_LOGS", "80"))
+    time_window_ms = int(os.getenv("DLD_THREAT_LOG_WINDOW_SECONDS", "90")) * 1000
+    if max_logs <= 0 or len(logs) <= max_logs:
+        return logs
+
+    target_times = set()
+    target_names = set()
+    target_paths = set()
+
+    for frame in video_frames:
+        for value in frame.get("involved_timestamps", []) or []:
+            ts = _parse_timestamp_ms(str(value))
+            if ts:
+                target_times.add(ts)
+        for key in ["timestamp", "operation_time"]:
+            ts = _parse_timestamp_ms(str(frame.get(key, "")))
+            if ts:
+                target_times.add(ts)
+        for key in ["original_filename", "modified_filename", "file", "upload_content"]:
+            value = str(frame.get(key, "") or "")
+            if value and value.lower() not in {"未知", "unknown", "none", "null"}:
+                target_names.add(_basename_key(value))
+                target_paths.add(_file_identity_key(value))
+
+    for events_key in ["alert_events", "info_events", "upload_events"]:
+        for event in module3_result.get(events_key, []):
+            for key in ["timestamp"]:
+                ts = _parse_timestamp_ms(str(_event_attr(event, key, "")))
+                if ts:
+                    target_times.add(ts)
+            for key in ["file_path", "original_file", "upload_content"]:
+                value = str(_event_attr(event, key, "") or "")
+                if value:
+                    target_names.add(_basename_key(value))
+                    target_paths.add(_file_identity_key(value))
+
+    selected = []
+    seen_ids = set()
+
+    def add_log(log: Dict) -> None:
+        ident = id(log)
+        if ident not in seen_ids:
+            seen_ids.add(ident)
+            selected.append(log)
+
+    for log in logs:
+        path = _file_identity_key(log.get("file_path", ""))
+        name = _basename_key(path or log.get("file_name", ""))
+        ts = _parse_timestamp_ms(log.get("timestamp", ""))
+        if path and (path in target_paths or name in target_names):
+            add_log(log)
+            continue
+        if ts and any(abs(ts - target_ts) <= time_window_ms for target_ts in target_times):
+            add_log(log)
+
+    if len(selected) > max_logs:
+        selected = sorted(selected, key=lambda item: _parse_timestamp_ms(item.get("timestamp", "")))[:max_logs]
+
+    return selected or logs[:max_logs]
 
 
 def _paths_match(left: str, right: str) -> bool:
@@ -1256,13 +1328,16 @@ def run_threat_detector(logs: List[Dict],
                 })
 
     # 使用 LLM 生成 Datalog 事实
+    llm_logs = _select_logs_for_threat_detector(logs, module3_result, video_frames)
+
     print(f"\n   🤖 调用 LLM 分析...")
     print(f"      - 日志条目: {len(logs)} 条")
+    print(f"      - LLM输入日志: {len(llm_logs)} 条")
     print(f"      - 视频帧: {len(video_frames)} 个")
     
     llm_facts = []
     try:
-        llm_facts = generate_datalog_facts(logs, video_frames)
+        llm_facts = generate_datalog_facts(llm_logs, video_frames)
         print(f"   ✅ LLM 生成 {len(llm_facts)} 条 Datalog 事实")
     except Exception as e:
         print(f"   ⚠️ LLM 分析失败: {e}")
