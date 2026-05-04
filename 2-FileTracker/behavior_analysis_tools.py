@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import json
+import unicodedata
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from langchain_core.tools import tool
@@ -80,6 +81,87 @@ def normalize_timestamp_display(timestamp: str) -> str:
         text = text.split(".", 1)[0]
 
     return text
+
+
+def parse_log_datetime(timestamp: str) -> Optional[datetime]:
+    text = normalize_timestamp_display(timestamp)
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def normalize_keyword_text(value: Any) -> str:
+    text = unicodedata.normalize("NFKC", str(value or "")).strip()
+    return re.sub(r"\s+", " ", text)
+
+
+def add_keyword(seen: set, keywords: List[str], value: Any, *, min_len: int = 2) -> None:
+    text = normalize_keyword_text(value)
+    if not text or text.lower() in {"unknown", "none", "null"}:
+        return
+    if len(text) < min_len:
+        return
+    key = text.casefold()
+    if key not in seen:
+        seen.add(key)
+        keywords.append(text)
+
+
+def build_frame_target_keywords(current_file: str, event_timestamp: str, log_events: list) -> List[str]:
+    seen = set()
+    keywords: List[str] = []
+
+    basename = get_path_basename(current_file)
+    stem, ext = os.path.splitext(basename)
+    for value in [current_file, basename, stem, ext.lstrip(".")]:
+        add_keyword(seen, keywords, value)
+    for part in re.split(r"[\s._\-()（）【】\[\]{}]+", stem):
+        add_keyword(seen, keywords, part)
+
+    event_dt = parse_log_datetime(event_timestamp)
+    window_events = []
+    if event_dt and log_events:
+        for log in log_events:
+            log_dt = parse_log_datetime(log.get("timestamp", ""))
+            if log_dt and abs((log_dt - event_dt).total_seconds()) <= 45:
+                window_events.append(log)
+
+    for log in window_events:
+        for value in [
+            log.get("file_name", ""),
+            get_path_basename(log.get("file_path", "")),
+            os.path.splitext(get_path_basename(log.get("file_path", "")))[0],
+            log.get("app_name", ""),
+            log.get("event_type", ""),
+            log.get("extra", {}).get("raw_operation", "") if isinstance(log.get("extra"), dict) else "",
+            log.get("window_info", {}).get("window_title", "") if isinstance(log.get("window_info"), dict) else "",
+        ]:
+            add_keyword(seen, keywords, value)
+
+    for value in [
+        "发送", "上传", "附件", "添加附件", "分享", "共享", "网盘", "云盘",
+        "邮件", "邮箱", "QQ邮箱", "网易邮箱", "Gmail", "Outlook",
+        "微信", "QQ", "TIM", "钉钉", "飞书", "Lark",
+        "会议", "屏幕共享", "共享屏幕", "share", "upload", "send", "attach",
+        "mail", "email", "drive",
+    ]:
+        add_keyword(seen, keywords, value)
+
+    return keywords[:80]
+
+
+def build_frame_search_window(event_dt: datetime, search_duration: int) -> tuple[str, str]:
+    pre_seconds = int(os.getenv("FRAME_ANALYZER_PRE_BUFFER_SECONDS", "10"))
+    post_seconds = int(os.getenv("FRAME_ANALYZER_POST_BUFFER_SECONDS", str(max(search_duration, 35))))
+    search_start_dt = event_dt - timedelta(seconds=max(0, pre_seconds))
+    search_end_dt = event_dt + timedelta(seconds=max(1, post_seconds))
+    return (
+        search_start_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        search_end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+    )
 
 
 def select_operation_time(event_data: Dict[str, Any], fallback_timestamp: str) -> str:
@@ -209,7 +291,8 @@ def analyze_frame_behavior(
     current_file: str,
     index_path: str,
     video_path: str,
-    search_duration: int = 30
+    search_duration: int = 30,
+    log_events: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """
     调用模块1分析视频帧，获取敏感文件的操作行为
@@ -247,12 +330,8 @@ def analyze_frame_behavior(
                 except ValueError as e:
                     raise ValueError(f"无法解析事件时间戳: {event_timestamp}") from e
         
-        search_start_time = event_dt.strftime("%Y-%m-%d %H:%M:%S")
-        search_end_dt = event_dt + timedelta(seconds=search_duration)
-        search_end_time = search_end_dt.strftime("%Y-%m-%d %H:%M:%S")
-        
-        filename = os.path.splitext(get_path_basename(current_file))[0]
-        target_keywords = [filename]
+        search_start_time, search_end_time = build_frame_search_window(event_dt, search_duration)
+        target_keywords = build_frame_target_keywords(current_file, event_timestamp, log_events or [])
         
         print(f"   - 搜索范围: {search_start_time} ~ {search_end_time}")
         print(f"   - 目标关键词: {target_keywords}")

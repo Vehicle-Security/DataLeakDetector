@@ -55,7 +55,8 @@ def analyze_frames_node(state: BehaviorAnalysisState, worklist_manager) -> Dict[
             "current_file": event.current_file,
             "index_path": state["index_path"],
             "video_path": state["video_path"],
-            "search_duration": state["search_duration"]
+            "search_duration": state["search_duration"],
+            "log_events": state.get("log_events", [])
         })
         
         print(f"   ✅ 帧分析完成")

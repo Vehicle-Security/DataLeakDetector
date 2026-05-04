@@ -126,6 +126,83 @@ def create_index_file(rec_start: str, output_dir: str) -> str:
     return index_path
 
 
+LOG_DERIVED_FILE_EXTENSIONS = {
+    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf", ".txt", ".md",
+    ".zip", ".rar", ".7z", ".csv", ".json", ".py", ".java", ".js", ".ts",
+    ".cpp", ".c", ".h", ".go", ".rs", ".sql",
+}
+
+LOG_DERIVED_EVENT_TYPES = {
+    "created", "modified", "renamed", "moved", "opened", "file_selected",
+    "upload_detected", "clipboard_text", "clipboard_image",
+}
+
+LOG_DERIVED_SENSITIVE_KEYWORDS = [
+    "薪资", "工资", "机密", "绝密", "合同", "财务", "客户", "密码", "核心",
+    "秘密", "内部", "报表", "预算", "战略", "规划", "会议纪要", "员工",
+    "方案", "研发", "产品", "培训", "secret", "confidential", "contract",
+    "salary", "finance", "internal",
+]
+
+LOG_DERIVED_NOISE_SEGMENTS = [
+    "/appdata/", "/cache/", "/cookies/", "/history/", "/temp/", "/tmp/",
+    "/node_modules/", "/.git/", "/windows/", "/program files/",
+]
+
+
+def _normalize_log_path(file_path: str) -> str:
+    normalized = str(file_path or "").strip().replace("\\", "/")
+    while "//" in normalized:
+        normalized = normalized.replace("//", "/")
+    return normalized
+
+
+def _is_log_candidate_file(file_path: str, event: Dict[str, Any]) -> bool:
+    normalized = _normalize_log_path(file_path)
+    if not normalized:
+        return False
+
+    lowered = normalized.casefold()
+    if any(segment in lowered for segment in LOG_DERIVED_NOISE_SEGMENTS):
+        return False
+
+    basename = normalized.rsplit("/", 1)[-1]
+    _, ext = os.path.splitext(basename)
+    ext = ext.casefold()
+    if ext in {".tmp", ".log", ".db", ".sqlite", ".lnk", ".crdownload"}:
+        return False
+
+    extra = event.get("extra", {}) if isinstance(event.get("extra", {}), dict) else {}
+    raw_operation = str(extra.get("raw_operation", "")).casefold()
+    event_type = str(event.get("event_type", "")).casefold()
+    file_name = str(event.get("file_name", "") or basename)
+
+    has_sensitive_name = any(keyword.casefold() in file_name.casefold() for keyword in LOG_DERIVED_SENSITIVE_KEYWORDS)
+    has_candidate_ext = ext in LOG_DERIVED_FILE_EXTENSIONS
+    has_relevant_event = event_type in LOG_DERIVED_EVENT_TYPES or raw_operation in {
+        "browser_file_access", "file_selected", "upload_detected", "clipboard_text", "clipboard_image"
+    }
+
+    return has_candidate_ext and (has_relevant_event or has_sensitive_name)
+
+
+def derive_sensitive_files_from_logs(logs: List[Dict], seed_files: List[str]) -> List[str]:
+    seen = {_normalize_log_path(path).casefold() for path in seed_files if path}
+    derived: List[str] = []
+
+    for event in logs:
+        file_path = _normalize_log_path(event.get("file_path", ""))
+        if not _is_log_candidate_file(file_path, event):
+            continue
+        key = file_path.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        derived.append(file_path)
+
+    return derived
+
+
 # ==================== Datalog 数据结构 ====================
 
 @dataclass
@@ -220,6 +297,16 @@ def run_module3_pipeline(log_file: str, video_path: str,
                 sensitive_files.append(file_path)
                 existing_normalized.add(normalized)
                 print(f"   📌 从日志发现敏感文件: {file_name}")
+
+    log_derived_files = derive_sensitive_files_from_logs(logs_data, sensitive_files)
+    for file_path in log_derived_files:
+        normalized = file_path.replace('\\', '/').lower()
+        if normalized not in existing_normalized:
+            sensitive_files.append(file_path)
+            existing_normalized.add(normalized)
+
+    if log_derived_files:
+        print(f"   从日志自动派生敏感候选文件: {len(log_derived_files)} 个")
 
     print(f"\n   📋 配置信息:")
     print(f"      - 敏感文件: {len(sensitive_files)} 个 (配置{len(config.sensitive_files)} + 日志提取{len(sensitive_files) - len(config.sensitive_files)})")

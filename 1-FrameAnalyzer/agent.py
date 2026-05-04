@@ -10,6 +10,7 @@ import base64
 import json
 import re
 import logging
+import unicodedata
 from datetime import timedelta
 from typing import List, Dict
 from dotenv import load_dotenv, find_dotenv
@@ -19,8 +20,84 @@ from schema import AgentState
 from thefuzz import fuzz
 from prompt_loader import PROMPTS
 
+try:
+    from json_repair import repair_json
+except Exception:  # pragma: no cover - optional runtime dependency
+    repair_json = None
+
 load_dotenv(find_dotenv())
 logger = logging.getLogger("VideoAgent")
+
+
+def _normalize_match_text(value) -> str:
+    text = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    return re.sub(r"\s+", "", text)
+
+
+def _compact_match_text(value) -> str:
+    text = _normalize_match_text(value)
+    return re.sub(r"[^\w\u4e00-\u9fff]+", "", text)
+
+
+def _keyword_variants(keywords: List[str]) -> List[str]:
+    seen = set()
+    variants = []
+    for keyword in keywords or []:
+        text = _normalize_match_text(keyword)
+        if not text:
+            continue
+        basename = text.replace("\\", "/").rsplit("/", 1)[-1]
+        stem = os.path.splitext(basename)[0]
+        candidates = [text, basename, stem]
+        candidates.extend(part for part in re.split(r"[\s._\-()（）【】\[\]{}]+", stem) if len(part) >= 2)
+        for candidate in candidates:
+            compact = _compact_match_text(candidate)
+            if compact and compact not in seen:
+                seen.add(compact)
+                variants.append(compact)
+    return variants
+
+
+def _sample_evenly(items: List[Dict], limit: int) -> List[Dict]:
+    if limit <= 0:
+        return []
+    if len(items) <= limit:
+        return list(items)
+    if limit == 1:
+        return [items[len(items) // 2]]
+    indexes = sorted({round(i * (len(items) - 1) / (limit - 1)) for i in range(limit)})
+    return [items[i] for i in indexes]
+
+
+def _dedupe_events(events: List[Dict]) -> List[Dict]:
+    deduped = []
+    seen = set()
+    for event in events:
+        key = (
+            event.get("time_range", ""),
+            event.get("app_name", ""),
+            event.get("behavior_category", ""),
+            event.get("operation_type", ""),
+            event.get("original_filename", ""),
+            event.get("modified_filename", ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(event)
+    return deduped
+
+
+def _parse_vlm_json(content: str):
+    clean_text = re.sub(r"```json\n?|```", "", str(content or "")).strip()
+    try:
+        return json.loads(clean_text)
+    except json.JSONDecodeError:
+        if repair_json is None:
+            raise
+        match = re.search(r"\{.*\}", clean_text, re.S)
+        candidate = match.group(0) if match else clean_text
+        return json.loads(repair_json(candidate))
 
 class VideoFileOperationAgent:
     def __init__(self, model_name=os.getenv("VL_MODEL_NAME", "gpt-5")):
@@ -44,11 +121,18 @@ class VideoFileOperationAgent:
         state.fps = cap.get(cv2.CAP_PROP_FPS)
         state.total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        start_idx = int((state.time_range['search_start'] - state.time_range['rec_start']).total_seconds() * state.fps)
+        if not state.fps or state.fps <= 0:
+            cap.release()
+            state.final_report["_diagnostics"] = {"vision_error": "invalid_fps"}
+            return state
+
+        start_idx = max(0, int((state.time_range['search_start'] - state.time_range['rec_start']).total_seconds() * state.fps))
         end_idx = min(int((state.time_range['search_end'] - state.time_range['rec_start']).total_seconds() * state.fps), state.total_frames)
 
         prev_feat = None
-        step = int(state.fps)
+        sample_fps = float(os.getenv("FRAME_ANALYZER_SAMPLE_FPS", "2.0"))
+        step = max(1, int(round(state.fps / max(sample_fps, 0.1))))
+        similarity_threshold = float(os.getenv("FRAME_ANALYZER_VISUAL_SIM_THRESHOLD", "0.992"))
 
         for curr_idx in range(start_idx, end_idx, step):
             cap.set(cv2.CAP_PROP_POS_FRAMES, curr_idx)
@@ -59,11 +143,16 @@ class VideoFileOperationAgent:
             with torch.no_grad():
                 curr_feat = self.feature_model(img_t).flatten()
 
-            if prev_feat is None or torch.nn.functional.cosine_similarity(prev_feat.unsqueeze(0), curr_feat.unsqueeze(0)).item() < 0.985:
+            if prev_feat is None or torch.nn.functional.cosine_similarity(prev_feat.unsqueeze(0), curr_feat.unsqueeze(0)).item() < similarity_threshold:
                 state.candidate_frames.append({'idx': curr_idx, 'frame': frame})
                 prev_feat = curr_feat
         
         cap.release()
+        state.final_report["_diagnostics"] = {
+            "candidate_frames": len(state.candidate_frames),
+            "sample_fps": sample_fps,
+            "visual_similarity_threshold": similarity_threshold,
+        }
         return state
 
     def keyword_filter_node(self, state: AgentState) -> AgentState:
@@ -73,15 +162,27 @@ class VideoFileOperationAgent:
         
         if is_long_text_mode:
             # 将所有关键词拼接成一个目标长文本进行比对
-            target_text = "".join(state.target_keywords).replace(" ", "").lower()
+            target_text = _compact_match_text("".join(state.target_keywords))
             logger.info(f"Step 2: 检测到长文本，正在执行模糊相似度匹配 (目标: {target_text[:20]}...)")
         else:
             logger.info(f"Step 2: 正在执行 OCR 文本识别并匹配关键词: {state.target_keywords}...")
 
         last_hit_idx = -1
+        keyword_variants = _keyword_variants(state.target_keywords)
+        fuzzy_threshold = int(os.getenv("FRAME_ANALYZER_OCR_FUZZY_THRESHOLD", "62"))
+        ocr_scale = float(os.getenv("FRAME_ANALYZER_OCR_SCALE", "1.6"))
+        debug_ocr = os.getenv("FRAME_ANALYZER_DEBUG_OCR", "").strip().lower() in {"1", "true", "yes", "on"}
         for item in state.candidate_frames:
-            results = self.reader.readtext(item['frame'], detail=0)
-            text_blob = "".join(results).replace(" ", "").lower()
+            frame_for_ocr = item['frame']
+            if ocr_scale > 1:
+                h, w = frame_for_ocr.shape[:2]
+                frame_for_ocr = cv2.resize(
+                    frame_for_ocr,
+                    (max(1, int(w * ocr_scale)), max(1, int(h * ocr_scale))),
+                    interpolation=cv2.INTER_CUBIC,
+                )
+            results = self.reader.readtext(frame_for_ocr, detail=0)
+            text_blob = _compact_match_text("".join(results))
             
             is_match = False
             if is_long_text_mode:
@@ -90,7 +191,12 @@ class VideoFileOperationAgent:
                     is_match = True
                     logger.debug(f"帧 {item['idx']} 模糊匹配成功，得分: {score}")
             else:
-                if any(kw.lower() in text_blob for kw in state.target_keywords):
+                direct_hit = any(kw in text_blob for kw in keyword_variants)
+                fuzzy_hit = any(
+                    len(kw) >= 4 and fuzz.partial_ratio(kw, text_blob) >= fuzzy_threshold
+                    for kw in keyword_variants
+                )
+                if direct_hit or fuzzy_hit:
                     is_match = True
 
             if is_match:
@@ -102,8 +208,13 @@ class VideoFileOperationAgent:
                     'type': 'key_event'
                 })
                 last_hit_idx = item['idx']
+            elif debug_ocr:
+                logger.debug(f"OCR miss frame={item['idx']} text={text_blob[:300]}")
 
         state.final_report['_last_hit_idx'] = last_hit_idx
+        diagnostics = state.final_report.setdefault("_diagnostics", {})
+        diagnostics["ocr_hit_frames"] = len([f for f in state.hit_frames if f.get("type") == "key_event"])
+        diagnostics["keyword_variants"] = keyword_variants[:50]
         return state
 
     def context_extension_node(self, state: AgentState) -> AgentState:
@@ -126,16 +237,32 @@ class VideoFileOperationAgent:
 
     def behavior_analysis_node(self, state: AgentState) -> AgentState:
         if not state.hit_frames:
-            state.final_report = {
-                "search_range": {
-                    "start": state.time_range['search_start'].strftime("%Y-%m-%d %H:%M:%S"), 
-                    "end": state.time_range['search_end'].strftime("%Y-%m-%d %H:%M:%S")
-                },
-                "total_events": 0,
-                "events": [],
-                "status": "no_hits_found"
-            }
-            return state
+            allow_fallback = os.getenv("FRAME_ANALYZER_ALLOW_VLM_FALLBACK", "true").strip().lower() in {"1", "true", "yes", "on"}
+            fallback_limit = int(os.getenv("FRAME_ANALYZER_FALLBACK_VLM_IMAGES", os.getenv("FRAME_ANALYZER_MAX_VLM_IMAGES", "4")))
+            if allow_fallback and state.candidate_frames:
+                for item in _sample_evenly(state.candidate_frames, fallback_limit):
+                    wall_time = (state.time_range['rec_start'] + timedelta(seconds=item['idx'] / state.fps)).strftime("%Y-%m-%d %H:%M:%S")
+                    state.hit_frames.append({
+                        'idx': item['idx'],
+                        'frame': item['frame'],
+                        'time': wall_time,
+                        'type': 'fallback_context'
+                    })
+                diagnostics = state.final_report.setdefault("_diagnostics", {})
+                diagnostics["vlm_fallback_used"] = True
+                diagnostics["vlm_fallback_frames"] = len(state.hit_frames)
+            else:
+                state.final_report = {
+                    "search_range": {
+                        "start": state.time_range['search_start'].strftime("%Y-%m-%d %H:%M:%S"),
+                        "end": state.time_range['search_end'].strftime("%Y-%m-%d %H:%M:%S")
+                    },
+                    "total_events": 0,
+                    "events": [],
+                    "status": "no_hits_found",
+                    "diagnostics": state.final_report.get("_diagnostics", {})
+                }
+                return state
 
         logger.info(f"Step 4: 正在发送关键帧至 VLM 模型进行深层行为意图分析...")
         # --- 新增：创建保存图片的目录 ---
@@ -144,6 +271,16 @@ class VideoFileOperationAgent:
             os.makedirs(save_dir)
         # ---------------------------
         state.hit_frames.sort(key=lambda x: x['idx'])
+        max_vlm_images = int(os.getenv("FRAME_ANALYZER_MAX_VLM_IMAGES", "8"))
+        key_frames = [f for f in state.hit_frames if f.get('type') == 'key_event']
+        context_frames = [f for f in state.hit_frames if f.get('type') != 'key_event']
+        if max_vlm_images > 0 and len(state.hit_frames) > max_vlm_images:
+            if len(key_frames) >= max_vlm_images:
+                state.hit_frames = _sample_evenly(key_frames, max_vlm_images)
+            else:
+                state.hit_frames = key_frames + _sample_evenly(context_frames, max_vlm_images - len(key_frames))
+            state.hit_frames.sort(key=lambda x: x['idx'])
+
         llm = ChatOpenAI(
             model=self.llm_model,
             base_url=os.getenv("OPENAI_BASE_URL"),#"https://www.DMXapi.com/v1",
@@ -162,13 +299,23 @@ class VideoFileOperationAgent:
         )
 
         contents = [{"type": "text", "text": final_prompt}]
+        max_side = int(os.getenv("FRAME_ANALYZER_VLM_MAX_SIDE", "640"))
         for f in state.hit_frames:
             safe_time = f['time'].replace(":", "-").replace(" ", "_")
             file_name = f"frame_{f['idx']}_{safe_time}_{f['type']}.jpg"
             save_path = os.path.join(save_dir, file_name)
-            cv2.imwrite(save_path, f['frame'])
+            frame_for_vlm = f['frame']
+            h, w = frame_for_vlm.shape[:2]
+            if max_side > 0 and max(h, w) > max_side:
+                scale = max_side / max(h, w)
+                frame_for_vlm = cv2.resize(
+                    frame_for_vlm,
+                    (max(1, int(w * scale)), max(1, int(h * scale))),
+                    interpolation=cv2.INTER_AREA,
+                )
+            cv2.imwrite(save_path, frame_for_vlm)
             logger.debug(f"已保存 VLM 输入帧至: {save_path}")
-            _, buffer = cv2.imencode('.jpg', f['frame'], [cv2.IMWRITE_JPEG_QUALITY, 75])
+            _, buffer = cv2.imencode('.jpg', frame_for_vlm, [cv2.IMWRITE_JPEG_QUALITY, 70])
             img_b64 = base64.b64encode(buffer).decode('utf-8')
             contents.append({
                 "type": "image_url",
@@ -177,8 +324,7 @@ class VideoFileOperationAgent:
 
         try:
             resp = llm.invoke([HumanMessage(content=contents)])
-            clean_text = re.sub(r'```json\n?|```', '', resp.content).strip()
-            batch_data = json.loads(clean_text)
+            batch_data = _parse_vlm_json(resp.content)
             raw_events = batch_data["events"] if isinstance(batch_data, dict) and "events" in batch_data else batch_data
             
 
@@ -191,13 +337,17 @@ class VideoFileOperationAgent:
             else:
                 logger.info(f"🔍 普通模式：正在匹配文件名关键词: {state.target_keywords}")
                 final_events = []
+                keyword_variants = _keyword_variants(state.target_keywords)
                 for event in raw_events:
-                    original_name = event.get("original_filename", "").lower()
+                    original_name = _compact_match_text(event.get("original_filename", ""))
                     final_events.append(event)
-                    if any(kw.lower() in original_name for kw in state.target_keywords):
-                        final_events.append(event)
-                    else:
+                    if not any(kw in original_name for kw in keyword_variants):
                         logger.info(f"🗑️ 剔除无关文件名: {original_name}")
+
+            final_events = _dedupe_events(final_events)
+            diagnostics = state.final_report.get("_diagnostics", {})
+            diagnostics["vlm_input_frames"] = len(state.hit_frames)
+            diagnostics["vlm_max_side"] = max_side
 
             # 2. 生成最终报告
             state.final_report = {
@@ -207,7 +357,8 @@ class VideoFileOperationAgent:
                 },
                 "total_events": len(final_events),
                 "events": final_events,
-                "status": "success"
+                "status": "success",
+                "diagnostics": diagnostics
             }
         except Exception as e:
             state.final_report = {"error": str(e), "status": "failed"}
