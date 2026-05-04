@@ -110,6 +110,53 @@ def add_keyword(seen: set, keywords: List[str], value: Any, *, min_len: int = 2)
         keywords.append(text)
 
 
+FRAME_KEYWORD_NOISE_BASENAMES = {
+    "logs.json",
+    "keyevents.json",
+    "index.md",
+}
+
+FRAME_KEYWORD_NOISE_SEGMENTS = (
+    "/screenmonitor/",
+    "/winows_monitor/",
+    "/windows_monitor/",
+    "/recordings/session_",
+    "/logs/",
+    "/video/",
+    "/appdata/",
+    "/cache/",
+    "/cookies/",
+    "/history/",
+    "/temp/",
+    "/tmp/",
+)
+
+FRAME_KEYWORD_NOISE_SUFFIXES = (
+    ".sqlite",
+    ".sqlite3",
+    ".db",
+    ".db-journal",
+    ".log",
+    ".tmp",
+    ".lnk",
+    ".crdownload",
+)
+
+
+def is_frame_keyword_noise_path(file_path: Any) -> bool:
+    normalized = normalize_file_path(str(file_path or "")).casefold()
+    if not normalized:
+        return False
+
+    basename = get_path_basename(normalized)
+    if basename in FRAME_KEYWORD_NOISE_BASENAMES:
+        return True
+    if basename.endswith(FRAME_KEYWORD_NOISE_SUFFIXES):
+        return True
+
+    return any(segment in normalized for segment in FRAME_KEYWORD_NOISE_SEGMENTS)
+
+
 def build_frame_target_keywords(current_file: str, event_timestamp: str, log_events: list) -> List[str]:
     seen = set()
     keywords: List[str] = []
@@ -130,10 +177,14 @@ def build_frame_target_keywords(current_file: str, event_timestamp: str, log_eve
                 window_events.append(log)
 
     for log in window_events:
+        log_file_path = log.get("file_path", "")
+        if is_frame_keyword_noise_path(log_file_path):
+            continue
+
         for value in [
             log.get("file_name", ""),
-            get_path_basename(log.get("file_path", "")),
-            os.path.splitext(get_path_basename(log.get("file_path", "")))[0],
+            get_path_basename(log_file_path),
+            os.path.splitext(get_path_basename(log_file_path))[0],
             log.get("app_name", ""),
             log.get("event_type", ""),
             log.get("extra", {}).get("raw_operation", "") if isinstance(log.get("extra"), dict) else "",

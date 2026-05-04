@@ -12,6 +12,52 @@ from pathlib import Path
 
 from behavior_analysis_tools import normalize_file_path
 
+INTERNAL_ARTIFACT_BASENAMES = {
+    "logs.json",
+    "keyevents.json",
+    "index.md",
+}
+
+INTERNAL_ARTIFACT_SEGMENTS = (
+    "/screenmonitor/",
+    "/winows_monitor/",
+    "/windows_monitor/",
+    "/recordings/session_",
+    "/logs/",
+    "/video/",
+    "/appdata/",
+    "/cache/",
+    "/cookies/",
+    "/history/",
+    "/temp/",
+    "/tmp/",
+)
+
+INTERNAL_ARTIFACT_SUFFIXES = (
+    ".sqlite",
+    ".sqlite3",
+    ".db",
+    ".db-journal",
+    ".log",
+    ".tmp",
+    ".lnk",
+    ".crdownload",
+)
+
+
+def is_internal_artifact_path(file_path: str) -> bool:
+    normalized = normalize_file_path(file_path).casefold()
+    if not normalized:
+        return True
+
+    basename = normalized.rsplit("/", 1)[-1]
+    if basename in INTERNAL_ARTIFACT_BASENAMES:
+        return True
+    if basename.endswith(INTERNAL_ARTIFACT_SUFFIXES):
+        return True
+
+    return any(segment in normalized for segment in INTERNAL_ARTIFACT_SEGMENTS)
+
 
 @dataclass()
 class SensitiveFileEvent:
@@ -394,6 +440,9 @@ class WorklistManager:
         """
         file_path = event.get("file_path", "")
         event_type = event.get("event_type", "")
+
+        if is_internal_artifact_path(file_path):
+            return False
         
         # Worklist 目前关注所有下面日志的事件类型
         """ # 只关注文件打开、修改、重命名、复制、转换格式等操作

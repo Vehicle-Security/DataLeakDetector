@@ -147,7 +147,26 @@ LOG_DERIVED_SENSITIVE_KEYWORDS = [
 LOG_DERIVED_NOISE_SEGMENTS = [
     "/appdata/", "/cache/", "/cookies/", "/history/", "/temp/", "/tmp/",
     "/node_modules/", "/.git/", "/windows/", "/program files/",
+    "/screenmonitor/", "/winows_monitor/", "/windows_monitor/", "/recordings/session_",
+    "/logs/", "/video/",
 ]
+
+LOG_DERIVED_NOISE_BASENAMES = {
+    "logs.json",
+    "keyevents.json",
+    "index.md",
+}
+
+LOG_DERIVED_NOISE_SUFFIXES = (
+    ".sqlite",
+    ".sqlite3",
+    ".db",
+    ".db-journal",
+    ".log",
+    ".tmp",
+    ".lnk",
+    ".crdownload",
+)
 
 
 def _normalize_log_path(file_path: str) -> str:
@@ -167,9 +186,15 @@ def _is_log_candidate_file(file_path: str, event: Dict[str, Any]) -> bool:
         return False
 
     basename = normalized.rsplit("/", 1)[-1]
+    lowered_basename = basename.casefold()
+    if lowered_basename in LOG_DERIVED_NOISE_BASENAMES:
+        return False
+    if lowered_basename.endswith(LOG_DERIVED_NOISE_SUFFIXES):
+        return False
+
     _, ext = os.path.splitext(basename)
     ext = ext.casefold()
-    if ext in {".tmp", ".log", ".db", ".sqlite", ".lnk", ".crdownload"}:
+    if ext in {".tmp", ".log", ".db", ".sqlite", ".sqlite3", ".lnk", ".crdownload"}:
         return False
 
     extra = event.get("extra", {}) if isinstance(event.get("extra", {}), dict) else {}
