@@ -1662,6 +1662,12 @@ def main():
     parser.add_argument('--log', '-l', type=str, required=True, help='日志文件路径')
     parser.add_argument('--video', '-v', type=str, required=True, help='视频文件路径')
 
+    parser.add_argument(
+        '--fail-on-risk',
+        action='store_true',
+        help='Return exit code 1 when a leak risk is found. By default, completed analysis exits 0.',
+    )
+
     args = parser.parse_args()
 
     # 验证文件存在
@@ -1677,7 +1683,7 @@ def main():
         video_file=args.video,
     )
 
-    sys.exit(1 if has_risk else 0)
+    sys.exit(1 if (args.fail_on_risk and has_risk) else 0)
 
 
 if __name__ == "__main__":
