@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="560" viewBox="0 0 980 560">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="70" y="42" font-family="Segoe UI, Arial" font-size="22" font-weight="700">Experiment 7: Projected 24h Collection Volume</text>
+  <text x="70" y="68" font-family="Segoe UI, Arial" font-size="13" fill="#4b5563">Normalized light/medium/heavy workload model; stacked by logs, key events, and video</text>
+  <line x1="95" y1="430" x2="895" y2="430" stroke="#222"/>
+  <line x1="95" y1="95" x2="95" y2="430" stroke="#222"/>
+  <g font-family="Segoe UI, Arial" font-size="12" fill="#374151">
+    <line x1="89" y1="430" x2="895" y2="430" stroke="#e5e7eb"/><text x="82" y="434" text-anchor="end">0 GB</text>
+    <line x1="89" y1="360.2" x2="895" y2="360.2" stroke="#e5e7eb"/><text x="82" y="364.2" text-anchor="end">1 GB</text>
+    <line x1="89" y1="290.4" x2="895" y2="290.4" stroke="#e5e7eb"/><text x="82" y="294.4" text-anchor="end">2 GB</text>
+    <line x1="89" y1="220.5" x2="895" y2="220.5" stroke="#e5e7eb"/><text x="82" y="224.5" text-anchor="end">3 GB</text>
+    <line x1="89" y1="150.7" x2="895" y2="150.7" stroke="#e5e7eb"/><text x="82" y="154.7" text-anchor="end">4 GB</text>
+    <line x1="89" y1="80.9" x2="895" y2="80.9" stroke="#e5e7eb"/><text x="82" y="84.9" text-anchor="end">5 GB</text>
+  </g>
+  <g font-family="Segoe UI, Arial">
+    <rect x="190" y="346.2" width="118" height="83.8" fill="#2f6f9f"/>
+    <rect x="190" y="345.3" width="118" height="0.9" fill="#66a182"/>
+    <rect x="190" y="302.0" width="118" height="43.3" fill="#d99058"/>
+    <text x="249" y="289" text-anchor="middle" font-size="13" font-weight="700">1.83 GB/day</text>
+    <text x="249" y="460" text-anchor="middle" font-size="15">Light use</text>
+    <text x="249" y="482" text-anchor="middle" font-size="12" fill="#4b5563">1.35M logs, 12.3k keyevents</text>
+    <rect x="430" y="309.9" width="118" height="120.1" fill="#2f6f9f"/>
+    <rect x="430" y="307.5" width="118" height="2.4" fill="#66a182"/>
+    <rect x="430" y="241.9" width="118" height="65.6" fill="#d99058"/>
+    <text x="489" y="229" text-anchor="middle" font-size="13" font-weight="700">2.69 GB/day</text>
+    <text x="489" y="460" text-anchor="middle" font-size="15">Medium use</text>
+    <text x="489" y="482" text-anchor="middle" font-size="12" fill="#4b5563">2.20M logs, 35.0k keyevents</text>
+    <rect x="670" y="191.3" width="118" height="238.7" fill="#2f6f9f"/>
+    <rect x="670" y="184.1" width="118" height="7.2" fill="#66a182"/>
+    <rect x="670" y="95.1" width="118" height="89.0" fill="#d99058"/>
+    <text x="729" y="82" text-anchor="middle" font-size="13" font-weight="700">4.80 GB/day</text>
+    <text x="729" y="460" text-anchor="middle" font-size="15">Heavy use</text>
+    <text x="729" y="482" text-anchor="middle" font-size="12" fill="#4b5563">4.37M logs, 95.7k keyevents</text>
+  </g>
+  <g font-family="Segoe UI, Arial" font-size="13">
+    <rect x="735" y="118" width="15" height="15" fill="#2f6f9f"/><text x="758" y="130">logs.json</text>
+    <rect x="735" y="144" width="15" height="15" fill="#66a182"/><text x="758" y="156">keyevents.json</text>
+    <rect x="735" y="170" width="15" height="15" fill="#d99058"/><text x="758" y="182">video</text>
+  </g>
+</svg>

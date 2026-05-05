@@ -15,6 +15,7 @@ import json
 import os
 import re
 import statistics
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -50,6 +51,51 @@ def find_video(case_dir: Path) -> Path | None:
         if path.is_file() and path.suffix.casefold() in VIDEO_EXTENSIONS
     ]
     return videos[0] if videos else None
+
+
+def get_video_duration_sec(video_path: Path | None) -> float:
+    if not video_path:
+        return 0.0
+
+    try:
+        import cv2  # type: ignore
+
+        cap = cv2.VideoCapture(str(video_path))
+        if cap.isOpened():
+            frames = float(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            fps = float(cap.get(cv2.CAP_PROP_FPS) or 0)
+            cap.release()
+            if frames > 0 and fps > 0:
+                return frames / fps
+    except Exception:
+        pass
+
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(video_path),
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=10,
+        )
+        if proc.returncode == 0:
+            value = float(proc.stdout.strip() or 0)
+            if value > 0:
+                return value
+    except Exception:
+        pass
+
+    return 0.0
 
 
 def discover_cases(dataset_root: Path, cases_file: Path | None = None) -> list[Path]:
@@ -232,6 +278,12 @@ async def run_level(cases: list[Path], concurrency: int, args: argparse.Namespac
         case_log = logs_dir / f"{index + 1:04d}_{name}.log"
         log_file = case_dir / "logs" / "logs.json"
         video_file = find_video(case_dir)
+        video_sec = get_video_duration_sec(video_file)
+        video_size_mb = (
+            round(video_file.stat().st_size / 1024 / 1024, 3)
+            if video_file and video_file.exists()
+            else 0.0
+        )
 
         env = os.environ.copy()
         openai_api_key = args.openai_api_key or env.get("OPENAI_API_KEY") or "EMPTY"
@@ -313,6 +365,9 @@ async def run_level(cases: list[Path], concurrency: int, args: argparse.Namespac
             "wall_sec": round(wall_sec, 3),
             "slot": slot_id,
             "ocr_gpu": env.get("CUDA_VISIBLE_DEVICES", ""),
+            "video_sec": round(video_sec, 3),
+            "video_size_mb": video_size_mb,
+            "sampled_frames_est": round(video_sec * args.sample_fps, 3) if video_sec else 0.0,
             "log": str(case_log),
         }
         row.update(metrics)
@@ -351,11 +406,17 @@ async def run_level(cases: list[Path], concurrency: int, args: argparse.Namespac
     walls = [float(row["wall_sec"]) for row in rows if row.get("wall_sec")]
     completed_rows = [row for row in rows if row["status"] == "completed"]
     risk_rows = [row for row in completed_rows if str(row.get("risk_found", "")).casefold() == "true"]
+    total_video_sec = sum(float(row.get("video_sec") or 0) for row in rows)
+    total_sampled_frames = sum(float(row.get("sampled_frames_est") or 0) for row in rows)
     summary: dict[str, Any] = {
         "concurrency": concurrency,
         "cases": len(rows),
         "elapsed_sec": elapsed,
         "samples_per_min": len(rows) / elapsed * 60 if elapsed else 0,
+        "video_sec_total": total_video_sec,
+        "video_sec_per_sec": total_video_sec / elapsed if elapsed else 0,
+        "sampled_frames_total": total_sampled_frames,
+        "sampled_frames_per_sec": total_sampled_frames / elapsed if elapsed else 0,
         "completed": len(completed_rows),
         "risk_found": len(risk_rows),
         "failed": sum(1 for row in rows if row["status"] != "completed"),
@@ -432,11 +493,12 @@ async def async_main() -> None:
     )
 
     print()
-    print("concurrency\tcases\tcompleted\tfailed\ttimeouts\tcuda_oom\tsamples/min\tmean_wall\tp95_wall\trisk_found\tmodule_errors\tapi_key_errors\trun_dir")
+    print("concurrency\tcases\tcompleted\tfailed\ttimeouts\tcuda_oom\tsamples/min\tvideo_sec/sec\tsampled_frames/sec\tmean_wall\tp95_wall\trisk_found\tmodule_errors\tapi_key_errors\trun_dir")
     for item in summaries:
         print(
             f"{item['concurrency']}\t{item['cases']}\t{item['completed']}\t{item['failed']}\t"
             f"{item['timeouts']}\t{item['cuda_oom']}\t{item['samples_per_min']:.3f}\t"
+            f"{item['video_sec_per_sec']:.3f}\t{item['sampled_frames_per_sec']:.3f}\t"
             f"{item['mean_wall_sec']:.3f}\t{item['p95_wall_sec']:.3f}\t{item['risk_found']}\t"
             f"{item['module_errors']}\t{item['api_key_errors']}\t{item['run_dir']}"
         )

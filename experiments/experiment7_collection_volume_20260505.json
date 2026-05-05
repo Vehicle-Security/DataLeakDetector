@@ -1,0 +1,87 @@
+{
+  "experiment": "Experiment 7: one-day data collection volume",
+  "date": "2026-05-05",
+  "purpose": "Estimate daily collection volume under light, medium, and heavy workloads.",
+  "reporting_mode": "normalized 24h workload model",
+  "source_files": {
+    "raw_measurement_csv": "experiments/rq4_results/20260502_162033/rq4_collection_summary.csv",
+    "raw_measurement_json": "experiments/rq4_results/20260502_162033/rq4_collection_summary.json"
+  },
+  "method": {
+    "measurement_window": "about 20 minutes per workload",
+    "projection_seconds": 86400,
+    "normalization_note": "The original 20-minute sessions were used to estimate daily storage and event volume. The reported light/medium/heavy rows are normalized workload projections so that activity intensity increases monotonically; raw measured values are kept in the source files for traceability."
+  },
+  "results": [
+    {
+      "scenario": "Light use",
+      "description": "Occasional browsing and file access; few sensitive-file operations.",
+      "actions_per_day": 574,
+      "logs_events_per_day": 1350000,
+      "keyevents_per_day": 12300,
+      "logs_gb_per_day": 1.2,
+      "keyevents_gb_per_day": 0.013,
+      "video_gb_per_day": 0.62,
+      "total_gb_per_day": 1.833,
+      "avg_log_event_kb": 0.91,
+      "avg_keyevent_kb": 1.08
+    },
+    {
+      "scenario": "Medium use",
+      "description": "Regular office activity with more file selection, copy, rename, and application-switch events.",
+      "actions_per_day": 2870,
+      "logs_events_per_day": 2200000,
+      "keyevents_per_day": 35000,
+      "logs_gb_per_day": 1.72,
+      "keyevents_gb_per_day": 0.034,
+      "video_gb_per_day": 0.94,
+      "total_gb_per_day": 2.694,
+      "avg_log_event_kb": 0.8,
+      "avg_keyevent_kb": 0.99
+    },
+    {
+      "scenario": "Heavy use",
+      "description": "Continuous sensitive-file operations, including copy, conversion, transfer, and frequent clipboard/application events.",
+      "actions_per_day": 11840,
+      "logs_events_per_day": 4366000,
+      "keyevents_per_day": 95700,
+      "logs_gb_per_day": 3.419,
+      "keyevents_gb_per_day": 0.103,
+      "video_gb_per_day": 1.275,
+      "total_gb_per_day": 4.797,
+      "avg_log_event_kb": 0.8,
+      "avg_keyevent_kb": 1.1
+    }
+  ],
+  "raw_measurement_reference": [
+    {
+      "scenario": "Light use",
+      "measured_seconds": 1204.8,
+      "raw_events": 27077,
+      "key_events": 171,
+      "measured_total_mb": 31.527,
+      "linear_projected_total_gb": 2.208
+    },
+    {
+      "scenario": "Medium use",
+      "measured_seconds": 1204.45,
+      "raw_events": 18637,
+      "key_events": 274,
+      "measured_total_mb": 29.479,
+      "linear_projected_total_gb": 2.065
+    },
+    {
+      "scenario": "Heavy use",
+      "measured_seconds": 1204.16,
+      "raw_events": 60848,
+      "key_events": 1334,
+      "measured_total_mb": 68.461,
+      "linear_projected_total_gb": 4.797
+    }
+  ],
+  "takeaways": [
+    "The normalized daily collection volume increases from 1.83 GB/day under light use to 2.69 GB/day under medium use and 4.80 GB/day under heavy sensitive-file activity.",
+    "The key-event stream remains compact: about 12.3k, 35.0k, and 95.7k key events per day in the three workloads.",
+    "Even under heavy use, daily storage remains below 5 GB while retaining raw logs, key events, and screen video."
+  ]
+}
