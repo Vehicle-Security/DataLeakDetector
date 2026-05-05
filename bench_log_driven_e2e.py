@@ -94,6 +94,8 @@ def extract_report_path(text: str) -> str:
 def parse_case_log(text: str, report_path: str) -> dict[str, Any]:
     metrics: dict[str, Any] = {
         "pipeline_completed": "Full E2E Pipeline" in text,
+        "module_errors": text.count("处理事件失败"),
+        "api_key_errors": text.count("api_key client option"),
         "worklist_events": "",
         "module3_alert_events": "",
         "module3_upload_events": "",
@@ -141,7 +143,7 @@ def classify_failure(rc: int, timed_out: bool, text: str) -> str:
         return "timeout"
     if "cuda out of memory" in lowered or "cudaerror memoryallocation" in lowered:
         return "cuda_oom"
-    if "traceback" in lowered:
+    if "traceback (most recent call last)" in lowered:
         return "traceback"
     if "bad request" in lowered:
         return "bad_request"
@@ -232,7 +234,22 @@ async def run_level(cases: list[Path], concurrency: int, args: argparse.Namespac
         video_file = find_video(case_dir)
 
         env = os.environ.copy()
+        openai_api_key = args.openai_api_key or env.get("OPENAI_API_KEY") or "EMPTY"
+        openai_base_url = args.openai_base_url or env.get("OPENAI_BASE_URL") or "http://127.0.0.1:8000/v1"
+        model_name = (
+            args.model_name
+            or env.get("VL_MODEL_NAME")
+            or env.get("MODEL_NAME")
+            or "qwen2.5-vl-72b"
+        )
         env.update({
+            "OPENAI_API_KEY": openai_api_key,
+            "OPENAI_BASE_URL": openai_base_url,
+            "VL_MODEL_NAME": model_name,
+            "MODEL_NAME": model_name,
+            "LLM_API_KEY": env.get("LLM_API_KEY") or openai_api_key,
+            "LLM_BASE_URL": env.get("LLM_BASE_URL") or openai_base_url,
+            "LLM_MODEL_NAME": env.get("LLM_MODEL_NAME") or model_name,
             "DLD_THREAT_USE_LLM": args.threat_use_llm,
             "DLD_THREAT_MAX_LOGS": str(args.threat_max_logs),
             "DLD_THREAT_LOG_WINDOW_SECONDS": str(args.threat_window_seconds),
@@ -285,7 +302,7 @@ async def run_level(cases: list[Path], concurrency: int, args: argparse.Namespac
         failure = classify_failure(rc, timed_out, text)
 
         status = "completed" if rc == 0 and metrics.get("pipeline_completed") else "failed"
-        if failure:
+        if failure and status != "completed":
             status = failure
 
         row: dict[str, Any] = {
@@ -350,6 +367,8 @@ async def run_level(cases: list[Path], concurrency: int, args: argparse.Namespac
         "total_worklist_events": sum(int(row.get("worklist_events") or 0) for row in rows),
         "total_alert_events": sum(int(row.get("module3_alert_events") or 0) for row in rows),
         "total_leak_paths": sum(int(row.get("module4_leak_paths") or 0) for row in rows),
+        "module_errors": sum(int(row.get("module_errors") or 0) for row in rows),
+        "api_key_errors": sum(int(row.get("api_key_errors") or 0) for row in rows),
         "run_dir": str(run_dir),
     }
     summary.update(summarize_gpu_samples(gpu_samples))
@@ -376,6 +395,9 @@ async def async_main() -> None:
     parser.add_argument("--max-side", type=int, default=560)
     parser.add_argument("--allow-vlm-fallback", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--threat-use-llm", default="false")
+    parser.add_argument("--openai-api-key", default="")
+    parser.add_argument("--openai-base-url", default="")
+    parser.add_argument("--model-name", default="")
     parser.add_argument("--threat-max-logs", type=int, default=80)
     parser.add_argument("--threat-window-seconds", type=int, default=90)
     parser.add_argument("--omp-threads", type=int, default=2)
@@ -410,12 +432,13 @@ async def async_main() -> None:
     )
 
     print()
-    print("concurrency\tcases\tcompleted\tfailed\ttimeouts\tcuda_oom\tsamples/min\tmean_wall\tp95_wall\trisk_found\trun_dir")
+    print("concurrency\tcases\tcompleted\tfailed\ttimeouts\tcuda_oom\tsamples/min\tmean_wall\tp95_wall\trisk_found\tmodule_errors\tapi_key_errors\trun_dir")
     for item in summaries:
         print(
             f"{item['concurrency']}\t{item['cases']}\t{item['completed']}\t{item['failed']}\t"
             f"{item['timeouts']}\t{item['cuda_oom']}\t{item['samples_per_min']:.3f}\t"
-            f"{item['mean_wall_sec']:.3f}\t{item['p95_wall_sec']:.3f}\t{item['risk_found']}\t{item['run_dir']}"
+            f"{item['mean_wall_sec']:.3f}\t{item['p95_wall_sec']:.3f}\t{item['risk_found']}\t"
+            f"{item['module_errors']}\t{item['api_key_errors']}\t{item['run_dir']}"
         )
 
 
