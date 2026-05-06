@@ -1,126 +1,97 @@
 {
   "experiment": "Experiment 8: server deployment inference performance with vLLM",
   "date": "2026-05-05",
-  "purpose": "Evaluate end-to-end deployment throughput and stability of the log-driven E2E pipeline under different request concurrency levels.",
-  "code": {
-    "branch": "test/module1-log-driven-e2e",
-    "commit": "288c0fb",
-    "benchmark_script": "bench_log_driven_e2e.py",
-    "dataset_builder": "build_log_driven_test_dataset.py"
-  },
+  "purpose": "Record deployment inference performance data and drawing prompt for the log-driven E2E pipeline.",
+  "scope": "Experiment 8 only; no Experiment 7 data and no plotting script.",
   "environment": {
-    "server": "wh@01",
     "model_service": "vLLM",
     "model": "qwen2.5-vl-72b",
     "dataset": "/home/wh/datasets/log_driven_e2e_selected_stage1245",
-    "cases": 74,
-    "run_dir": "/home/wh/logs/log_driven_e2e_bench_selected_stage1245/run_20260505_143705",
-    "module4_llm": "disabled",
-    "ocr_gpus": [
-      0,
+    "samples": 74,
+    "concurrency_levels": [
+      1,
       2,
-      5,
-      6
-    ]
-  },
-  "runtime_settings": {
+      3,
+      4
+    ],
+    "module4_llm": false,
+    "module4_llm_env": "DLD_THREAT_USE_LLM=false",
     "sample_fps": 1.0,
-    "max_vlm_images": 3,
-    "fallback_vlm_images": 3,
-    "vlm_max_side": 560,
-    "threat_use_llm": false,
-    "threat_max_logs": 80,
-    "threat_window_seconds": 90,
-    "timeout_seconds": 900
+    "run_dir": "/home/wh/logs/log_driven_e2e_bench_selected_stage1245/run_20260505_143705"
   },
-  "metric_note": {
+  "metric_policy": {
     "primary_metric": "video_sec_per_sec",
-    "secondary_metric": "samples_per_min",
-    "reason": "Samples have different video lengths, so samples/min is useful for operations but not for normalized performance comparison.",
-    "postprocess_command": "python enrich_log_driven_bench_video_metrics.py --run-dir /home/wh/logs/log_driven_e2e_bench_selected_stage1245/run_20260505_143705 --sample-fps 1.0"
+    "secondary_metric": "sampled_frames_per_sec",
+    "excluded_as_primary": "samples_per_min",
+    "reason": "Samples have different video lengths, so video-normalized throughput is the fair comparison metric.",
+    "note": "sampled_frames_per_sec equals video_sec_per_sec because sample_fps is 1.0."
   },
   "results": [
     {
       "concurrency": 1,
-      "cases": 74,
+      "samples": 74,
       "completed": 74,
       "failed": 0,
       "timeouts": 0,
       "cuda_oom": 0,
-      "samples_per_min": 2.529,
-      "video_sec_per_sec": null,
-      "sampled_frames_per_sec": null,
+      "video_sec_per_sec": 3.749,
+      "sampled_frames_per_sec": 3.749,
       "mean_wall_sec": 23.718,
-      "p50_wall_sec": 9.677,
-      "p95_wall_sec": 94.25,
-      "risk_found": 5,
-      "module_errors": 0,
-      "api_key_errors": 0,
-      "cluster_max_memory_mib": 24081,
-      "cluster_max_util_pct": 100
+      "p95_wall_sec": 94.25
     },
     {
       "concurrency": 2,
-      "cases": 74,
+      "samples": 74,
       "completed": 74,
       "failed": 0,
       "timeouts": 0,
       "cuda_oom": 0,
-      "samples_per_min": 6.829,
-      "video_sec_per_sec": null,
-      "sampled_frames_per_sec": null,
+      "video_sec_per_sec": 10.121,
+      "sampled_frames_per_sec": 10.121,
       "mean_wall_sec": 17.449,
-      "p50_wall_sec": 9.322,
-      "p95_wall_sec": 72.772,
-      "risk_found": 1,
-      "module_errors": 0,
-      "api_key_errors": 0,
-      "cluster_max_memory_mib": 24081,
-      "cluster_max_util_pct": 100
+      "p95_wall_sec": 72.772
     },
     {
       "concurrency": 3,
-      "cases": 74,
+      "samples": 74,
       "completed": 74,
       "failed": 0,
       "timeouts": 0,
       "cuda_oom": 0,
-      "samples_per_min": 10.633,
-      "video_sec_per_sec": null,
-      "sampled_frames_per_sec": null,
+      "video_sec_per_sec": 15.758,
+      "sampled_frames_per_sec": 15.758,
       "mean_wall_sec": 15.413,
-      "p50_wall_sec": 9.824,
-      "p95_wall_sec": 32.94,
-      "risk_found": 1,
-      "module_errors": 0,
-      "api_key_errors": 0,
-      "cluster_max_memory_mib": 24078,
-      "cluster_max_util_pct": 100
+      "p95_wall_sec": 32.94
     },
     {
       "concurrency": 4,
-      "cases": 74,
+      "samples": 74,
       "completed": 74,
       "failed": 0,
       "timeouts": 0,
       "cuda_oom": 0,
-      "samples_per_min": 4.553,
-      "video_sec_per_sec": null,
-      "sampled_frames_per_sec": null,
+      "video_sec_per_sec": 6.748,
+      "sampled_frames_per_sec": 6.748,
       "mean_wall_sec": 40.687,
-      "p50_wall_sec": 19.419,
-      "p95_wall_sec": 105.372,
-      "risk_found": 4,
-      "module_errors": 0,
-      "api_key_errors": 0,
-      "cluster_max_memory_mib": 24078,
-      "cluster_max_util_pct": 100
+      "p95_wall_sec": 105.372
     }
   ],
-  "takeaways": [
-    "All 296 E2E executions completed successfully across concurrency levels 1, 2, 3, and 4.",
-    "Samples/min is retained as a secondary operational indicator; video_sec/sec should be used for normalized performance comparison.",
-    "The completed run can be postprocessed with enrich_log_driven_bench_video_metrics.py to add video-normalized metrics without rerunning E2E.",
-    "No CUDA OOM, timeout, module error, or API-key error occurred in this selected deployment benchmark."
-  ]
+  "conclusion": {
+    "best_concurrency": 3,
+    "best_video_sec_per_sec": 15.758,
+    "best_p95_wall_sec": 32.94,
+    "degradation_at_concurrency_4": {
+      "video_sec_per_sec": 6.748,
+      "p95_wall_sec": 105.372,
+      "interpretation": "resource contention or vLLM request queueing beyond the optimal concurrency point"
+    },
+    "stability": {
+      "all_completed": true,
+      "failed": 0,
+      "timeouts": 0,
+      "cuda_oom": 0
+    }
+  },
+  "document_text": "我们使用 74 个筛选后的 log-driven E2E 样本评估服务器端 vLLM 部署推理性能。由于不同样本的视频长度不同，本文采用归一化吞吐量 `video seconds/s` 作为主要性能指标，而不是仅统计每分钟处理样本数。实验结果表明，当并发数为 3 时，系统达到最高归一化吞吐量，可处理 15.758 秒视频/秒，同时 P95 单样本耗时为 32.940 秒。当并发数进一步增加到 4 时，吞吐量下降至 6.748 秒视频/秒，P95 耗时上升至 105.372 秒，说明系统已超过当前硬件配置下的高效运行区间，出现资源竞争或 vLLM 请求排队。因此，并发 3 是当前服务器配置下推荐的部署并发度。",
+  "drawing_prompt": "请生成一张学术论文风格的实验图，不要添加主标题，白色背景，简洁配色，清晰坐标轴和图例。图类型：双轴组合图，柱状图 + 折线图。横轴：Concurrency，包含 1、2、3、4。左纵轴：Normalized throughput (video seconds/s)，用柱状图表示。右纵轴：P95 wall time (s)，用折线图表示。数据：Concurrency 1: throughput 3.749 video seconds/s, P95 wall time 94.250 s。Concurrency 2: throughput 10.121 video seconds/s, P95 wall time 72.772 s。Concurrency 3: throughput 15.758 video seconds/s, P95 wall time 32.940 s。Concurrency 4: throughput 6.748 video seconds/s, P95 wall time 105.372 s。要求：高亮 concurrency=3；在 concurrency=3 附近标注 Best deployment point；柱状图表示吞吐量，折线图表示 P95 延迟；左轴标签为 Normalized throughput (video seconds/s)；右轴标签为 P95 wall time (s)；横轴标签为 Concurrency；图例清晰，颜色不要太花，适合论文或技术报告；不要图标题。"
 }

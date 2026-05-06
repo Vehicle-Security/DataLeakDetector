@@ -1,63 +1,73 @@
-# Experiment 8: Server Deployment Inference Performance With vLLM
+# Experiment 8: vLLM Server Deployment Inference Performance
 
-## Goal
+## Experiment Setup
 
-This experiment evaluates the runtime performance and deployment stability of the log-driven E2E pipeline when served with vLLM. The focus is throughput and resource behavior, not detection accuracy.
-
-## Setup
-
-- Branch: `test/module1-log-driven-e2e`
-- Benchmark script: `bench_log_driven_e2e.py`
-- Curated test dataset: `/home/wh/datasets/log_driven_e2e_selected_stage1245`
-- Dataset size: 74 samples selected from stage1, stage2, stage4, and stage5
+- Experiment name: Experiment 8, server deployment inference performance evaluation
+- Model service: vLLM
+- Model: `qwen2.5-vl-72b`
+- Dataset: `/home/wh/datasets/log_driven_e2e_selected_stage1245`
+- Number of samples: 74
+- Concurrency levels: 1, 2, 3, 4
+- Module4 LLM reasoning: disabled, `DLD_THREAT_USE_LLM=false`
+- Frame sampling: `sample_fps=1.0`
 - Run directory: `/home/wh/logs/log_driven_e2e_bench_selected_stage1245/run_20260505_143705`
-- vLLM model: `qwen2.5-vl-72b`
-- Module4 LLM reasoning: disabled (`DLD_THREAT_USE_LLM=false`)
-- OCR GPUs: `0,2,5,6`
-- Frame/VLM settings: `sample_fps=1.0`, `max_images=3`, `fallback_images=3`, `max_side=560`
 
-The selected dataset was used to avoid pathological background-sync samples and to measure practical deployment cost on representative log-driven E2E cases.
+This experiment evaluates deployment inference cost only. It does not report detection accuracy.
 
-## Primary Metric
+## Performance Results
 
-Because different samples have different video lengths and different numbers of sensitive events, `samples/min` is only a deployment-level throughput indicator. The primary normalized metric for reporting should be:
+| Concurrency | Samples | Completed | Failed | Timeout | CUDA OOM | video_sec/sec | sampled_frames/sec | mean wall(s) | P95 wall(s) |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 74 | 74 | 0 | 0 | 0 | 3.749 | 3.749 | 23.718 | 94.250 |
+| 2 | 74 | 74 | 0 | 0 | 0 | 10.121 | 10.121 | 17.449 | 72.772 |
+| 3 | 74 | 74 | 0 | 0 | 0 | 15.758 | 15.758 | 15.413 | 32.940 |
+| 4 | 74 | 74 | 0 | 0 | 0 | 6.748 | 6.748 | 40.687 | 105.372 |
 
-- `video_sec/sec`: processed video seconds per wall-clock second.
-- `sampled_frames/sec`: estimated sampled frames processed per wall-clock second, computed as `video_sec_total * sample_fps / elapsed_sec`.
+Because `sample_fps=1.0`, `sampled_frames/sec` is numerically equal to `video_sec/sec`.
 
-The benchmark script now records these metrics directly. For the completed run, the same metrics can be added without rerunning E2E:
+## Conclusion
 
-```bash
-python enrich_log_driven_bench_video_metrics.py \
-  --run-dir /home/wh/logs/log_driven_e2e_bench_selected_stage1245/run_20260505_143705 \
-  --sample-fps 1.0
+- Concurrency 3 achieves the best normalized throughput: `15.758 video seconds/s`.
+- Concurrency 3 also has the lowest P95 single-sample wall time: `32.940 s`.
+- Increasing concurrency from 3 to 4 reduces throughput to `6.748 video seconds/s` and increases P95 wall time to `105.372 s`.
+- All concurrency levels finished with zero failure, zero timeout, and zero CUDA OOM.
+- Recommended deployment concurrency for this server configuration: `concurrency=3`.
+
+## Suggested Document Text
+
+我们使用 74 个筛选后的 log-driven E2E 样本评估服务器端 vLLM 部署推理性能。由于不同样本的视频长度不同，本文采用归一化吞吐量 `video seconds/s` 作为主要性能指标，而不是仅统计每分钟处理样本数。实验结果表明，当并发数为 3 时，系统达到最高归一化吞吐量，可处理 15.758 秒视频/秒，同时 P95 单样本耗时为 32.940 秒。当并发数进一步增加到 4 时，吞吐量下降至 6.748 秒视频/秒，P95 耗时上升至 105.372 秒，说明系统已超过当前硬件配置下的高效运行区间，出现资源竞争或 vLLM 请求排队。因此，并发 3 是当前服务器配置下推荐的部署并发度。
+
+## Drawing Prompt
+
+```text
+请生成一张学术论文风格的实验图，不要添加主标题，白色背景，简洁配色，清晰坐标轴和图例。
+
+图类型：双轴组合图，柱状图 + 折线图。
+
+横轴：Concurrency，包含 1、2、3、4。
+
+左纵轴：Normalized throughput (video seconds/s)，用柱状图表示。
+右纵轴：P95 wall time (s)，用折线图表示。
+
+数据：
+Concurrency 1: throughput 3.749 video seconds/s, P95 wall time 94.250 s。
+Concurrency 2: throughput 10.121 video seconds/s, P95 wall time 72.772 s。
+Concurrency 3: throughput 15.758 video seconds/s, P95 wall time 32.940 s。
+Concurrency 4: throughput 6.748 video seconds/s, P95 wall time 105.372 s。
+
+要求：
+1. 高亮 concurrency=3。
+2. 在 concurrency=3 附近标注 “Best deployment point”。
+3. 柱状图表示吞吐量，折线图表示 P95 延迟。
+4. 左轴标签为 “Normalized throughput (video seconds/s)”。
+5. 右轴标签为 “P95 wall time (s)”。
+6. 横轴标签为 “Concurrency”。
+7. 图例清晰，颜色不要太花，适合论文或技术报告。
+8. 不要图标题。
 ```
-
-After enrichment, use `video_sec/sec` and `sampled_frames/sec` as the main figure/table, and keep `samples/min` only as a secondary operational indicator.
-
-## Current Sample-Level Results
-
-| Concurrency | Cases | Completed | Failed | Timeouts | CUDA OOM | Samples/min | Mean wall sec | P50 wall sec | P95 wall sec | Module errors |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 74 | 74 | 0 | 0 | 0 | 2.529 | 23.718 | 9.677 | 94.250 | 0 |
-| 2 | 74 | 74 | 0 | 0 | 0 | 6.829 | 17.449 | 9.322 | 72.772 | 0 |
-| 3 | 74 | 74 | 0 | 0 | 0 | 10.633 | 15.413 | 9.824 | 32.940 | 0 |
-| 4 | 74 | 74 | 0 | 0 | 0 | 4.553 | 40.687 | 19.419 | 105.372 | 0 |
-
-![Experiment 8 vLLM deployment throughput](experiment8_vllm_deployment_benchmark_20260505.svg)
-
-## Interpretation
-
-The pipeline completed all 296 E2E executions across the four concurrency settings. No timeout, CUDA OOM, module error, or API-key error was observed, which indicates that the log-driven pipeline was stable under the selected deployment workload.
-
-The sample-level throughput increased from concurrency 1 to concurrency 3, reaching 10.633 samples/min. However, because sample lengths differ, this should not be used as the final normalized performance metric. The final analysis should compare concurrency levels using `video_sec/sec` or `sampled_frames/sec`. If those normalized metrics show the same trend, concurrency 3 can be reported as the best deployment point; otherwise, the normalized metric should take precedence.
-
-## Suggested Paper Text
-
-We evaluated the deployment performance of the log-driven E2E pipeline with vLLM by running 74 curated samples under concurrency levels 1, 2, 3, and 4. All 296 executions completed successfully without timeout, CUDA OOM, module error, or API-key error. Since the videos have different lengths, we report normalized throughput using processed video seconds per wall-clock second and sampled frames per second. The sample-level throughput is retained as an operational reference, but the final deployment recommendation is based on the video-normalized metric.
 
 ## Notes
 
-- `risk_found` is not used as an accuracy metric in this experiment because vLLM visual outputs can vary with concurrent load.
-- The full stage1 c=2 run is recorded separately and can be used as a larger stress test result.
-- The selected dataset is intended for deployment-cost evaluation rather than final accuracy evaluation.
+- `samples/min` is not used as the main metric because sample video lengths differ.
+- `video_sec/sec` is the primary normalized throughput metric.
+- This record only covers Experiment 8 and does not include Experiment 7.
