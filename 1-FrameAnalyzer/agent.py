@@ -113,16 +113,96 @@ class VideoFileOperationAgent:
         return re.sub(r"\s+", "", str(text or "")).lower()
 
     @staticmethod
+    def _keyword_concept_groups() -> List[Tuple[str, ...]]:
+        return [
+            ("\u85aa\u8d44", "\u5de5\u8d44", "\u85aa\u916c", "\u6708\u85aa", "salary", "payroll"),
+            ("\u5ba2\u6237", "\u5ba2\u6237\u540d\u5355", "customer", "client"),
+            ("\u9884\u7b97", "\u6210\u672c", "\u8d22\u52a1", "\u8463\u4e8b\u4f1a", "budget", "finance", "cost"),
+            ("\u8d26\u53f7", "\u8d26\u6237", "\u94f6\u884c", "\u6536\u6b3e", "account", "bank"),
+            ("\u5408\u540c", "\u534f\u8bae", "contract", "agreement"),
+            ("\u6218\u7565", "\u89c4\u5212", "\u8def\u7ebf\u56fe", "strategy", "roadmap"),
+            ("\u5e76\u8d2d", "\u8c08\u5224", "\u4f1a\u8bae\u7eaa\u8981", "merger", "m&a", "minutes"),
+        ]
+
+    @classmethod
+    def _shared_sensitive_concept(cls, keyword_text: str, event_text: str) -> bool:
+        compact_keyword = cls._compact_text(keyword_text)
+        compact_event = cls._compact_text(event_text)
+        for group in cls._keyword_concept_groups():
+            keyword_hit = any(cls._compact_text(token) in compact_keyword for token in group)
+            event_hit = any(cls._compact_text(token) in compact_event for token in group)
+            if keyword_hit and event_hit:
+                return True
+        return False
+
+    @staticmethod
+    def _risk_tokens() -> List[str]:
+        return [
+            "paste",
+            "copy",
+            "clipboard",
+            "send",
+            "upload",
+            "attach",
+            "share",
+            "screenshot",
+            "screenrecord",
+            "record",
+            "qr",
+            "download",
+            "export",
+            "\u7c98\u8d34",
+            "\u590d\u5236",
+            "\u526a\u8d34\u677f",
+            "\u53d1\u9001",
+            "\u4e0a\u4f20",
+            "\u9644\u4ef6",
+            "\u5206\u4eab",
+            "\u5916\u53d1",
+            "\u622a\u56fe",
+            "\u5f55\u5c4f",
+            "\u5c4f\u5e55\u5171\u4eab",
+            "\u5171\u4eab\u5c4f\u5e55",
+            "\u4e8c\u7ef4\u7801",
+            "\u751f\u6210",
+            "\u4e0b\u8f7d",
+            "\u5bfc\u51fa",
+            "\u8f6c\u53d1",
+            "\u7f16\u7801",
+        ]
+
+    @classmethod
+    def _event_has_risk_signal(cls, event: Dict[str, Any]) -> bool:
+        compact = cls._compact_text(cls._event_text(event))
+        return any(cls._compact_text(token) in compact for token in cls._risk_tokens())
+
+    @staticmethod
     def _event_text(event: Dict[str, Any]) -> str:
         fields = [
             "app_name",
+            "app",
+            "application",
             "behavior_category",
             "operation_type",
+            "operation",
+            "action",
+            "event_type",
             "original_filename",
+            "original_file",
+            "source_filename",
+            "source_file",
+            "file_name",
+            "filename",
             "modified_filename",
+            "target_filename",
+            "target_file",
             "description",
+            "summary",
+            "evidence",
             "visual_evidence",
             "detected_content",
+            "content",
+            "ocr_text",
         ]
         return " ".join(str(event.get(field, "")) for field in fields)
 
@@ -159,22 +239,21 @@ class VideoFileOperationAgent:
             target_text = "".join(compact_keywords)
             if fuzz.partial_ratio(target_text, compact_event) >= 55:
                 return True
-            risk_tokens = [
-                "paste",
-                "copy",
-                "clipboard",
-                "send",
-                "upload",
-                "\u7c98\u8d34",
-                "\u590d\u5236",
-                "\u526a\u8d34\u677f",
-                "\u53d1\u9001",
-                "\u4e0a\u4f20",
-                "\u5916\u53d1",
-            ]
-            return any(token in compact_event for token in risk_tokens)
+            return self._event_has_risk_signal(event)
 
-        return any(keyword in compact_event for keyword in compact_keywords)
+        if any(keyword in compact_event for keyword in compact_keywords):
+            return True
+
+        keyword_text = " ".join(str(keyword) for keyword in keywords)
+        if self._event_has_risk_signal(event) and self._shared_sensitive_concept(keyword_text, self._event_text(event)):
+            return True
+
+        filenameish_event = re.sub(r"[._\\/\-()\[\]\s]+", "", compact_event)
+        for keyword in compact_keywords:
+            filenameish_keyword = re.sub(r"[._\\/\-()\[\]\s]+", "", keyword)
+            if filenameish_keyword and fuzz.partial_ratio(filenameish_keyword, filenameish_event) >= 82:
+                return True
+        return False
 
     @staticmethod
     def _event_dedup_key(event: Dict[str, Any]) -> Tuple[str, str, str, str, str]:
@@ -194,9 +273,26 @@ class VideoFileOperationAgent:
         normalized.setdefault("app_name", "\u672a\u77e5")
         normalized.setdefault("app_type", "\u672a\u77e5")
         normalized.setdefault("behavior_category", "\u672a\u77e5")
-        normalized.setdefault("operation_type", "\u672a\u77e5")
-        normalized.setdefault("original_filename", "\u672a\u77e5")
-        normalized.setdefault("modified_filename", "\u672a\u77e5")
+        normalized.setdefault(
+            "operation_type",
+            event.get("operation") or event.get("action") or event.get("event_type") or "\u672a\u77e5",
+        )
+        normalized.setdefault(
+            "original_filename",
+            event.get("original_file")
+            or event.get("source_filename")
+            or event.get("source_file")
+            or event.get("file_name")
+            or event.get("filename")
+            or "\u672a\u77e5",
+        )
+        normalized.setdefault(
+            "modified_filename",
+            event.get("target_filename")
+            or event.get("target_file")
+            or event.get("output_file")
+            or "\u672a\u77e5",
+        )
         normalized.setdefault("description", "")
         return normalized
 
@@ -205,30 +301,13 @@ class VideoFileOperationAgent:
         label_text = self._compact_text(
             f"{event.get('behavior_category', '')} {event.get('operation_type', '')}"
         )
-        risk_tokens = [
-            "paste",
-            "copy",
-            "clipboard",
-            "send",
-            "upload",
-            "attach",
+        risk_tokens = self._risk_tokens() + [
             "rename",
             "compress",
             "convert",
-            "screenshot",
-            "record",
-            "\u7c98\u8d34",
-            "\u590d\u5236",
-            "\u526a\u8d34\u677f",
-            "\u53d1\u9001",
-            "\u4e0a\u4f20",
-            "\u9644\u4ef6",
             "\u91cd\u547d\u540d",
             "\u538b\u7f29",
             "\u8f6c\u6362",
-            "\u622a\u56fe",
-            "\u5f55\u5c4f",
-            "\u5916\u53d1",
             "\u9690\u85cf",
         ]
         normal_tokens = [

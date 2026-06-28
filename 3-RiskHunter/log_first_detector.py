@@ -9,6 +9,7 @@ an upload event. VLM analysis can still be used as a fallback by callers.
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -47,7 +48,65 @@ DERIVE_TYPES = {
     "converted",
     "file_selected",
 }
-UPLOAD_TYPES = {"file_upload", "upload_detected"}
+NETWORK_UPLOAD_TYPES = {
+    "http_post",
+    "http_put",
+    "network_upload",
+    "web_upload",
+    "cloud_upload",
+    "api_upload",
+}
+UPLOAD_TYPES = {"file_upload", "upload_detected"} | NETWORK_UPLOAD_TYPES
+
+CLOUD_SYNC_MARKERS = (
+    "dropbox",
+    "onedrive",
+    "google drive",
+    "googledrive",
+    "icloud drive",
+    "box sync",
+    "baidunetdisk",
+    "nutstore",
+    "jianguoyun",
+    "aliyundrive",
+    "weiyun",
+    "\u767e\u5ea6\u7f51\u76d8",
+    "\u575a\u679c\u4e91",
+    "\u963f\u91cc\u4e91\u76d8",
+    "\u5fae\u4e91",
+    "\u540c\u6b65",
+    "\u4e91\u76d8",
+)
+REMOVABLE_MARKERS = (
+    "removable",
+    "usb",
+    "thumb drive",
+    "flash drive",
+    "\u53ef\u79fb\u52a8",
+    "\u79fb\u52a8\u78c1\u76d8",
+    "u\u76d8",
+)
+NETWORK_UPLOAD_MARKERS = (
+    "http://",
+    "https://",
+    " post ",
+    " put ",
+    "transfer.sh",
+    "webdav",
+)
+EXPORT_CONTEXT_TOKENS = (
+    "export",
+    "save as",
+    "saved as",
+    "print to",
+    "convert",
+    "pdf",
+    "\u5bfc\u51fa",
+    "\u53e6\u5b58",
+    "\u8f6c\u6362",
+    "\u6253\u5370",
+)
+EXPORT_EXTENSIONS = {".pdf", ".csv", ".xlsx", ".xls", ".docx", ".doc", ".png", ".jpg", ".jpeg"}
 
 
 def normalize_path(path: str) -> str:
@@ -84,18 +143,66 @@ def file_key(path: str) -> str:
     return normalize_path(path).lower()
 
 
+def extension(path: str) -> str:
+    return os.path.splitext(basename(path))[1].lower()
+
+
+def flatten_log_text(log: Dict[str, Any]) -> str:
+    parts = [
+        log.get("event_type", ""),
+        log.get("file_path", ""),
+        log.get("file_name", ""),
+        log.get("app_name", ""),
+        log.get("process_info", {}).get("process_name", ""),
+        log.get("window_info", {}).get("window_title", ""),
+    ]
+    upload_detection = log.get("upload_detection")
+    if isinstance(upload_detection, dict):
+        parts.extend(str(item) for item in upload_detection.values())
+    return " ".join(str(part or "") for part in parts).lower()
+
+
 def is_sensitive_name(name: str) -> bool:
     return any(keyword in str(name or "") for keyword in SENSITIVE_KEYWORDS)
 
 
+def external_destination_reason(log: Dict[str, Any]) -> str:
+    path = normalize_path(log.get("file_path", ""))
+    text = flatten_log_text(log)
+    if any(marker in text for marker in CLOUD_SYNC_MARKERS):
+        return "cloud_sync"
+    if any(marker in text for marker in REMOVABLE_MARKERS):
+        return "removable_media"
+    if re.match(r"^[e-z]:/", path.lower()):
+        if process_name_from_log(log) in {"explorer.exe", "finder", "unknown"}:
+            return "removable_media"
+    return ""
+
+
+def is_external_transfer_log(log: Dict[str, Any]) -> bool:
+    event_type = str(log.get("event_type", "")).lower()
+    write_like_types = DERIVE_TYPES | UPLOAD_TYPES | {"file_write", "file_create", "sync_upload"}
+    return event_type in write_like_types and bool(external_destination_reason(log))
+
+
+def is_network_upload_log(log: Dict[str, Any]) -> bool:
+    event_type = str(log.get("event_type", "")).lower()
+    if event_type in NETWORK_UPLOAD_TYPES:
+        return True
+    text = f" {flatten_log_text(log)} "
+    return any(marker in text for marker in NETWORK_UPLOAD_MARKERS)
+
+
 def is_upload_log(log: Dict[str, Any]) -> bool:
-    event_type = str(log.get("event_type", ""))
+    event_type = str(log.get("event_type", "")).lower()
     if event_type in UPLOAD_TYPES:
         return True
     if log.get("upload_detection", {}).get("is_upload"):
         return True
     window = str(log.get("window_info", {}).get("window_title", "")).lower()
-    return any(token in window for token in ["upload", "\u4e0a\u4f20", "\u53d1\u9001", "\u9644\u4ef6"])
+    if any(token in window for token in ["upload", "\u4e0a\u4f20", "\u53d1\u9001", "\u9644\u4ef6"]):
+        return True
+    return bool(is_network_upload_log(log) or is_external_transfer_log(log))
 
 
 def process_name_from_log(log: Dict[str, Any]) -> str:
@@ -304,11 +411,23 @@ class LogFirstDetector:
             close_in_time = current_ts and parent_ts and 0 <= current_ts - parent_ts <= 120_000
             if event_type in DERIVE_TYPES and same_process and close_in_time:
                 score += 3
+            export_window = current_ts and parent_ts and 0 <= current_ts - parent_ts <= 600_000
+            if event_type in DERIVE_TYPES and same_process and export_window and self._is_export_like_log(log):
+                score += 3
             if score > best_score:
                 best_score = score
                 best_parent = candidate
 
         return best_parent if best_score >= 3 else None
+
+    @staticmethod
+    def _is_export_like_log(log: Dict[str, Any]) -> bool:
+        text = flatten_log_text(log)
+        path = normalize_path(log.get("file_path", ""))
+        return (
+            any(token in text for token in EXPORT_CONTEXT_TOKENS)
+            or extension(path) in EXPORT_EXTENSIONS
+        )
 
     def _build_upload_event(
         self,
@@ -349,10 +468,11 @@ class LogFirstDetector:
 
         app_name = app_name_from_log(log)
         app_category = self.config.get_app_category(app_name)
-        should_alert = app_category == "blacklist"
-        alert_level = "critical" if should_alert else "info"
+        operation_type = self._upload_operation_type(log)
+        high_confidence_external = operation_type != "file_upload"
+        should_alert = app_category == "blacklist" or (high_confidence_external and app_category != "whitelist")
+        alert_level = "critical" if app_category == "blacklist" else ("warning" if should_alert else "info")
         window_title = log.get("window_info", {}).get("window_title", "")
-        operation_type = "file_upload"
         behavior_category = "data_exfiltration"
 
         return UploadEvent(
@@ -381,10 +501,20 @@ class LogFirstDetector:
                 "source": "log_first",
                 "confidence": 0.95,
                 "log_event_type": log.get("event_type", ""),
+                "external_channel": operation_type,
                 "window_title": window_title,
                 "original_file": source.get("original_file") or path,
             },
         )
+
+    @staticmethod
+    def _upload_operation_type(log: Dict[str, Any]) -> str:
+        if is_external_transfer_log(log):
+            external_reason = external_destination_reason(log)
+            return external_reason
+        if is_network_upload_log(log):
+            return "network_upload"
+        return "file_upload"
 
     def _append_operation(
         self,

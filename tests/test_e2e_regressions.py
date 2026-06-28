@@ -10,6 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REALISTIC_CASES_PATH = REPO_ROOT / "fixtures" / "realistic_log_cases.json"
 QWEN_VLM_CASES_PATH = REPO_ROOT / "fixtures" / "qwen_vlm_response_cases.json"
+CURRENTLY_UNRECOGNIZED_CASES_PATH = REPO_ROOT / "fixtures" / "currently_unrecognized_violation_cases.json"
 
 
 def load_module_from_path(module_name: str, file_path: Path):
@@ -123,6 +124,31 @@ class E2ERegressionTests(unittest.TestCase):
                     self.assertEqual(final_events[0]["operation_type"], case["expected_operation"])
                 self.assertEqual(meta["vlm_kept_events"], case["expected_kept"])
                 self.assertEqual(meta["vlm_dropped_events"], len(raw_events) - case["expected_kept"])
+
+    def test_previously_missed_vlm_violation_cases_are_kept(self):
+        module_dir = REPO_ROOT / "1-FrameAnalyzer"
+        sys.path.insert(0, str(module_dir))
+        try:
+            agent_module = load_module_from_path(
+                "frame_agent_previously_missed_vlm_test",
+                module_dir / "agent.py",
+            )
+            agent = agent_module.VideoFileOperationAgent.__new__(agent_module.VideoFileOperationAgent)
+        finally:
+            sys.path.pop(0)
+
+        with open(CURRENTLY_UNRECOGNIZED_CASES_PATH, "r", encoding="utf-8") as handle:
+            cases = json.load(handle)["vlm_postprocess_misses"]
+
+        for case in cases:
+            with self.subTest(case=case["id"]):
+                parsed = agent._parse_vlm_response_content(case["response"])
+                raw_events = agent._coerce_event_list(parsed)
+                final_events, meta = agent._filter_vlm_events(raw_events, case["keywords"])
+
+                self.assertEqual(len(final_events), case["desired_expected_kept"])
+                self.assertEqual(meta["vlm_kept_events"], case["desired_expected_kept"])
+                self.assertEqual(final_events[0]["operation_type"], case["desired_operation"])
 
     def test_qwen_guardrail_prompt_contains_false_positive_constraints(self):
         module_dir = REPO_ROOT / "1-FrameAnalyzer"
@@ -421,6 +447,38 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertIn("no_sensitive_log_context", reasons)
         self.assertIn("no_ai_or_ambiguous_exfil_context", reasons)
         self.assertIn("ambiguous_exfil_context_near_sensitive_log", reasons)
+
+    def test_previously_missed_log_violation_cases_become_deterministic_events(self):
+        module_dir = REPO_ROOT / "3-RiskHunter"
+        sys.path.insert(0, str(module_dir))
+        try:
+            log_first_module = load_module_from_path(
+                "log_first_previously_missed_cases_test",
+                module_dir / "log_first_detector.py",
+            )
+        finally:
+            sys.path.pop(0)
+
+        with open(CURRENTLY_UNRECOGNIZED_CASES_PATH, "r", encoding="utf-8") as handle:
+            cases = json.load(handle)["log_first_and_fallback_misses"]
+
+        for case in cases:
+            with self.subTest(case=case["id"]):
+                detector = log_first_module.LogFirstDetector(
+                    sensitive_files=case["sensitive_files"],
+                    blacklist_apps=["Gmail", "msedge.exe", "curl.exe", "Dropbox.exe", "explorer.exe"],
+                    whitelist_apps=["Excel", "Word"],
+                )
+                result = detector.analyze(case["logs"])
+
+                self.assertGreaterEqual(len(result["upload_events"]), 1)
+                self.assertGreaterEqual(len(result["alert_events"]), 1)
+                first_event = result["upload_events"][0]
+                self.assertTrue(first_event.original_file)
+                self.assertIn(
+                    first_event.operation_type,
+                    {"cloud_sync", "removable_media", "network_upload", "file_upload"},
+                )
 
     def test_connected_fact_injection_builds_leak_path_for_derived_upload(self):
         run_e2e = load_module_from_path("run_e2e_regression_test", REPO_ROOT / "run_e2e.py")
