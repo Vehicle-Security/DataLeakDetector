@@ -25,10 +25,11 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
 # Windows 控制台 UTF-8 输出
-if sys.platform == 'win32':
+if sys.platform == 'win32' and not getattr(sys, "_dld_utf8_stdio_wrapped", False):
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    sys._dld_utf8_stdio_wrapped = True
 
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -129,6 +130,158 @@ def create_index_file(rec_start: str, output_dir: str) -> str:
     return index_path
 
 
+SENSITIVE_HINT_TOKENS = (
+    "\u85aa\u8d44",
+    "\u5de5\u8d44",
+    "\u673a\u5bc6",
+    "\u7edd\u5bc6",
+    "\u5408\u540c",
+    "\u8d22\u52a1",
+    "\u5ba2\u6237",
+    "\u5bc6\u7801",
+    "\u6838\u5fc3",
+    "\u79d8\u5bc6",
+    "\u5185\u90e8",
+    "\u62a5\u8868",
+    "\u9884\u7b97",
+    "\u6218\u7565",
+    "\u89c4\u5212",
+    "\u4f1a\u8bae\u7eaa\u8981",
+    "\u5458\u5de5",
+)
+
+AI_CONTEXT_TOKENS = (
+    "chatgpt",
+    "chat.openai.com",
+    "claude",
+    "gemini",
+    "deepseek",
+    "kimi",
+    "doubao",
+    "tongyi",
+    "yiyan",
+    "yuanbao",
+    "chatbox",
+    "cherry studio",
+    "cursor",
+    "copilot",
+    "llm",
+    " ai ",
+    "\u4eba\u5de5\u667a\u80fd",
+    "\u5927\u6a21\u578b",
+    "\u5bf9\u8bdd",
+    "\u63d0\u793a\u8bcd",
+)
+
+AMBIGUOUS_EXFIL_TOKENS = (
+    "clipboard",
+    "paste",
+    "copy",
+    "send",
+    "share",
+    "upload",
+    "attach",
+    "attachment",
+    "\u7c98\u8d34",
+    "\u590d\u5236",
+    "\u53d1\u9001",
+    "\u5206\u4eab",
+    "\u4e0a\u4f20",
+    "\u9644\u4ef6",
+)
+
+
+def _flatten_log_text(value: Any) -> str:
+    if isinstance(value, dict):
+        return " ".join(_flatten_log_text(item) for item in value.values())
+    if isinstance(value, list):
+        return " ".join(_flatten_log_text(item) for item in value)
+    return str(value or "")
+
+
+def _contains_any(text: str, tokens) -> bool:
+    normalized = f" {text.lower()} "
+    return any(token in normalized for token in tokens)
+
+
+def _is_sensitive_hint_log(log: Dict[str, Any]) -> bool:
+    upload_detection = log.get("upload_detection")
+    if isinstance(upload_detection, dict) and upload_detection.get("sensitivity"):
+        return True
+    text = _flatten_log_text(log)
+    return _contains_any(text, SENSITIVE_HINT_TOKENS)
+
+
+def _should_use_vlm_fallback(
+    logs: List[Dict[str, Any]],
+    log_first_result: Dict[str, Any],
+) -> tuple[bool, Dict[str, Any]]:
+    """
+    Decide whether spending VLM tokens is justified after log-first analysis.
+
+    Deterministic log evidence always wins. VLM is reserved for cases where a
+    sensitive file is present but logs only show ambiguous AI/chat/clipboard
+    context that needs visual semantics.
+    """
+    meta = log_first_result.get("log_first", {}) if isinstance(log_first_result, dict) else {}
+    sensitive_count = int(meta.get("sensitive_events", 0) or 0)
+    decision = {
+        "enabled": True,
+        "used": False,
+        "decision": "skip",
+        "reasons": [],
+        "candidate_events": [],
+    }
+
+    if sensitive_count <= 0:
+        decision["reasons"].append("no_sensitive_log_context")
+        return False, decision
+
+    sensitive_times = [
+        _parse_timestamp_ms(log.get("timestamp", ""))
+        for log in logs
+        if _is_sensitive_hint_log(log)
+    ]
+    sensitive_times = [item for item in sensitive_times if item > 0]
+    window_seconds = int(os.getenv("DLD_VLM_FALLBACK_WINDOW_SEC", "300"))
+    window_ms = max(window_seconds, 1) * 1000
+
+    for log in logs:
+        text = _flatten_log_text(log)
+        has_ai_context = _contains_any(text, AI_CONTEXT_TOKENS)
+        has_ambiguous_exfil = _contains_any(text, AMBIGUOUS_EXFIL_TOKENS)
+        if not has_ai_context and not has_ambiguous_exfil:
+            continue
+
+        timestamp_ms = _parse_timestamp_ms(log.get("timestamp", ""))
+        near_sensitive = (
+            not sensitive_times
+            or timestamp_ms <= 0
+            or any(abs(timestamp_ms - sensitive_ms) <= window_ms for sensitive_ms in sensitive_times)
+        )
+        if not near_sensitive:
+            continue
+
+        reason = "ai_context_near_sensitive_log" if has_ai_context else "ambiguous_exfil_context_near_sensitive_log"
+        decision["candidate_events"].append(
+            {
+                "timestamp": log.get("timestamp", ""),
+                "event_type": log.get("event_type", ""),
+                "app_name": log.get("app_name") or log.get("process_info", {}).get("process_name", ""),
+                "reason": reason,
+            }
+        )
+
+    if decision["candidate_events"]:
+        decision["used"] = True
+        decision["decision"] = "run"
+        decision["reasons"] = sorted({item["reason"] for item in decision["candidate_events"]})
+        return True, decision
+
+    decision["reasons"].append("no_ai_or_ambiguous_exfil_context")
+    return False, decision
+
+
 # ==================== Datalog 数据结构 ====================
 
 @dataclass
@@ -190,6 +343,7 @@ def run_module3_pipeline(log_file: str, video_path: str,
     print("   (内部自动调用 模块2 FileTracker → 模块1 FrameAnalyzer)")
     print("=" * 80)
 
+    vlm_fallback_meta = None
     if create_upload_detector_graph is None:
         print("   ⚠️ 模块3未加载，跳过")
         return {
@@ -199,6 +353,7 @@ def run_module3_pipeline(log_file: str, video_path: str,
             "operation_records": [],
             "statistics": {},
             "file_mappings": {},
+            "vlm_fallback": vlm_fallback_meta,
         }
 
     # 使用模块3配置中的硬编码列表
@@ -252,7 +407,22 @@ def run_module3_pipeline(log_file: str, video_path: str,
         enable_vlm_fallback = os.getenv("DLD_ENABLE_VLM_FALLBACK", "1").strip().lower() not in {"0", "false", "no", "off"}
         if not enable_vlm_fallback:
             print("      [INFO] no confident upload chain and VLM fallback is disabled")
+            log_first_result["vlm_fallback"] = {
+                "enabled": False,
+                "used": False,
+                "decision": "skip",
+                "reasons": ["disabled_by_env"],
+                "candidate_events": [],
+            }
             return log_first_result
+
+        should_run_vlm, vlm_fallback_meta = _should_use_vlm_fallback(logs_data, log_first_result)
+        log_first_result["vlm_fallback"] = vlm_fallback_meta
+        if not should_run_vlm:
+            print(f"      [INFO] VLM fallback skipped: {', '.join(vlm_fallback_meta.get('reasons', []))}")
+            return log_first_result
+
+        print(f"      [INFO] VLM fallback needed: {', '.join(vlm_fallback_meta.get('reasons', []))}")
 
     initial_state = create_initial_state(
         record_id="e2e",
@@ -289,6 +459,7 @@ def run_module3_pipeline(log_file: str, video_path: str,
             "operation_records": [],
             "statistics": {},
             "file_mappings": {},
+            "vlm_fallback": vlm_fallback_meta,
         }
 
     # 提取结果
@@ -341,6 +512,7 @@ def run_module3_pipeline(log_file: str, video_path: str,
         "statistics": statistics,
         "file_mappings": file_mappings,
         "final_state": final_state,
+        "vlm_fallback": vlm_fallback_meta,
     }
 
 

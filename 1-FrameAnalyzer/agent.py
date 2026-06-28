@@ -11,7 +11,7 @@ import json
 import re
 import logging
 from datetime import timedelta
-from typing import List, Dict
+from typing import Any, List, Dict, Tuple
 from dotenv import load_dotenv, find_dotenv
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
@@ -27,6 +27,82 @@ class VideoFileOperationAgent:
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self._init_models()
         self.llm_model = model_name
+
+    @staticmethod
+    def _get_int_env(name: str, default: int, minimum: int = 1) -> int:
+        try:
+            return max(minimum, int(os.getenv(name, str(default))))
+        except ValueError:
+            return default
+
+    @staticmethod
+    def _ocr_snippet(text: str, limit: int = 80) -> str:
+        text = re.sub(r"\s+", " ", str(text or "")).strip()
+        return text[:limit]
+
+    @staticmethod
+    def _dedupe_frames(frames: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        seen = set()
+        deduped = []
+        for frame in sorted(frames, key=lambda item: item.get("idx", 0)):
+            idx = frame.get("idx")
+            if idx in seen:
+                continue
+            seen.add(idx)
+            deduped.append(frame)
+        return deduped
+
+    @staticmethod
+    def _pick_evenly(frames: List[Dict[str, Any]], count: int) -> List[Dict[str, Any]]:
+        if count <= 0 or not frames:
+            return []
+        if len(frames) <= count:
+            return list(frames)
+        if count == 1:
+            return [max(frames, key=lambda item: item.get("ocr_score", 0))]
+
+        chosen = {}
+        for pos in range(count):
+            idx = round(pos * (len(frames) - 1) / (count - 1))
+            frame = frames[idx]
+            chosen[frame.get("idx")] = frame
+        return [chosen[key] for key in sorted(chosen)]
+
+    def _select_vlm_frames(self, hit_frames: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        max_frames = self._get_int_env("DLD_VLM_MAX_FRAMES", 6)
+        deduped = self._dedupe_frames(hit_frames)
+        key_frames = [item for item in deduped if item.get("type") == "key_event"]
+        context_frames = [item for item in deduped if item.get("type") != "key_event"]
+
+        selected_context = context_frames[-3:]
+        key_budget = max_frames - len(selected_context)
+        if key_budget < 1 and key_frames:
+            selected_context = selected_context[-max(0, max_frames - 1):]
+            key_budget = max_frames - len(selected_context)
+
+        selected = self._pick_evenly(key_frames, key_budget) + selected_context
+        if len(selected) > max_frames:
+            selected = selected[:max_frames]
+        selected = self._dedupe_frames(selected)
+
+        meta = {
+            "candidate_hit_frames": len(hit_frames),
+            "deduped_hit_frames": len(deduped),
+            "vlm_sent_frames": len(selected),
+            "max_vlm_frames": max_frames,
+            "selection_strategy": "ocr_hits_evenly_sampled_plus_tail_context",
+        }
+        return selected, meta
+
+    def _resize_for_vlm(self, frame):
+        max_edge = self._get_int_env("DLD_VLM_IMAGE_MAX_EDGE", 1280)
+        height, width = frame.shape[:2]
+        largest = max(height, width)
+        if largest <= max_edge:
+            return frame
+        scale = max_edge / largest
+        new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+        return cv2.resize(frame, new_size, interpolation=cv2.INTER_AREA)
 
     def _init_models(self):
         resnet_base = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
@@ -81,9 +157,11 @@ class VideoFileOperationAgent:
         last_hit_idx = -1
         for item in state.candidate_frames:
             results = self.reader.readtext(item['frame'], detail=0)
-            text_blob = "".join(results).replace(" ", "").lower()
+            raw_ocr_text = " ".join(results)
+            text_blob = raw_ocr_text.replace(" ", "").lower()
             
             is_match = False
+            score = 0
             if is_long_text_mode:
                 score = fuzz.partial_ratio(target_text, text_blob)
                 if score >= 65:
@@ -92,6 +170,7 @@ class VideoFileOperationAgent:
             else:
                 if any(kw.lower() in text_blob for kw in state.target_keywords):
                     is_match = True
+                    score = 100
 
             if is_match:
                 wall_time = (state.time_range['rec_start'] + timedelta(seconds=item['idx'] / state.fps)).strftime("%Y-%m-%d %H:%M:%S")
@@ -99,7 +178,9 @@ class VideoFileOperationAgent:
                     'idx': item['idx'], 
                     'frame': item['frame'], 
                     'time': wall_time,
-                    'type': 'key_event'
+                    'type': 'key_event',
+                    'ocr_text': raw_ocr_text,
+                    'ocr_score': score,
                 })
                 last_hit_idx = item['idx']
 
@@ -133,7 +214,13 @@ class VideoFileOperationAgent:
                 },
                 "total_events": 0,
                 "events": [],
-                "status": "no_hits_found"
+                "status": "no_hits_found",
+                "vlm_optimization": {
+                    "candidate_frames": len(state.candidate_frames),
+                    "ocr_hit_frames": 0,
+                    "vlm_sent_frames": 0,
+                    "reason": "no_ocr_hits",
+                }
             }
             return state
 
@@ -144,6 +231,19 @@ class VideoFileOperationAgent:
             os.makedirs(save_dir)
         # ---------------------------
         state.hit_frames.sort(key=lambda x: x['idx'])
+        vlm_frames, optimization_meta = self._select_vlm_frames(state.hit_frames)
+        optimization_meta.update({
+            "candidate_frames": len(state.candidate_frames),
+            "ocr_hit_frames": len([item for item in state.hit_frames if item.get("type") == "key_event"]),
+            "image_max_edge": self._get_int_env("DLD_VLM_IMAGE_MAX_EDGE", 1280),
+            "jpeg_quality": self._get_int_env("DLD_VLM_JPEG_QUALITY", 65, minimum=30),
+        })
+        logger.info(
+            "Step 4 token optimization: "
+            f"OCR hits={optimization_meta['ocr_hit_frames']}, "
+            f"VLM frames={optimization_meta['vlm_sent_frames']}/"
+            f"{optimization_meta['candidate_hit_frames']}"
+        )
         llm = ChatOpenAI(
             model=self.llm_model,
             base_url=os.getenv("OPENAI_BASE_URL"),#"https://www.DMXapi.com/v1",
@@ -151,24 +251,29 @@ class VideoFileOperationAgent:
         )
 
         table_rows = [
-            f"{i+1:^8} | {f['idx']:^10} | {f['time']:^20} | {f['type']:^10}" 
-            for i, f in enumerate(state.hit_frames)
+            (
+                f"{i+1:^8} | {f['idx']:^10} | {f['time']:^20} | "
+                f"{f['type']:^10} | {self._ocr_snippet(f.get('ocr_text', ''))}"
+            )
+            for i, f in enumerate(vlm_frames)
         ]
-        table_str = "输入顺序 | 原始帧索引 | 现实时间戳 (%Y-%m-%d %H:%M:%S) | 类型\n" + "-"*75 + "\n" + "\n".join(table_rows)
+        table_str = "输入顺序 | 原始帧索引 | 现实时间戳(%Y-%m-%d %H:%M:%S) | 类型 | OCR摘要\n" + "-"*95 + "\n" + "\n".join(table_rows)
 
         final_prompt = PROMPTS.RETRIEVE_FRAMES_PROMPT.format(
-            frame_count=len(state.hit_frames),
+            frame_count=len(vlm_frames),
             frame_info_table=table_str
         )
 
         contents = [{"type": "text", "text": final_prompt}]
-        for f in state.hit_frames:
+        jpeg_quality = optimization_meta["jpeg_quality"]
+        for f in vlm_frames:
             safe_time = f['time'].replace(":", "-").replace(" ", "_")
             file_name = f"frame_{f['idx']}_{safe_time}_{f['type']}.jpg"
             save_path = os.path.join(save_dir, file_name)
-            cv2.imwrite(save_path, f['frame'])
+            vlm_frame = self._resize_for_vlm(f['frame'])
+            cv2.imwrite(save_path, vlm_frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
             logger.debug(f"已保存 VLM 输入帧至: {save_path}")
-            _, buffer = cv2.imencode('.jpg', f['frame'], [cv2.IMWRITE_JPEG_QUALITY, 75])
+            _, buffer = cv2.imencode('.jpg', vlm_frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
             img_b64 = base64.b64encode(buffer).decode('utf-8')
             contents.append({
                 "type": "image_url",
@@ -186,7 +291,7 @@ class VideoFileOperationAgent:
 
             if is_long_text_mode:
                 
-                logger.info("📝 长文本模式：已获取 VLM 识别的所有行为序列，跳过文件名过滤")
+                logger.info("Long text mode: using all VLM behavior events without filename filtering")
                 final_events = raw_events
             else:
                 logger.info(f"🔍 普通模式：正在匹配文件名关键词: {state.target_keywords}")
@@ -207,10 +312,15 @@ class VideoFileOperationAgent:
                 },
                 "total_events": len(final_events),
                 "events": final_events,
-                "status": "success"
+                "status": "success",
+                "vlm_optimization": optimization_meta,
             }
         except Exception as e:
-            state.final_report = {"error": str(e), "status": "failed"}
+            state.final_report = {
+                "error": str(e),
+                "status": "failed",
+                "vlm_optimization": optimization_meta,
+            }
 
         return state
 

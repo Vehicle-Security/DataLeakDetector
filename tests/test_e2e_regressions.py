@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import os
 import sys
 import types
 import unittest
@@ -6,6 +8,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+REALISTIC_CASES_PATH = REPO_ROOT / "fixtures" / "realistic_log_cases.json"
 
 
 def load_module_from_path(module_name: str, file_path: Path):
@@ -32,6 +35,50 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertTrue(hasattr(prompt_loader.PROMPTS, "RETRIEVE_FRAMES_PROMPT"))
         self.assertTrue(hasattr(prompt_loader.PROMPTS, "SCENE_DEEP_DIVE_PROMPT"))
 
+    def test_frame_analyzer_limits_vlm_frames_and_keeps_context(self):
+        module_dir = REPO_ROOT / "1-FrameAnalyzer"
+        sys.path.insert(0, str(module_dir))
+        old_limit = os.environ.get("DLD_VLM_MAX_FRAMES")
+        os.environ["DLD_VLM_MAX_FRAMES"] = "5"
+        try:
+            agent_module = load_module_from_path(
+                "frame_agent_optimization_test",
+                module_dir / "agent.py",
+            )
+            agent = agent_module.VideoFileOperationAgent.__new__(agent_module.VideoFileOperationAgent)
+            frames = [
+                {
+                    "idx": idx,
+                    "type": "key_event",
+                    "time": f"2026-06-28 10:00:{idx:02d}",
+                    "ocr_score": idx,
+                    "ocr_text": f"salary table frame {idx}",
+                }
+                for idx in range(1, 11)
+            ]
+            frames.append(dict(frames[4]))
+            frames.extend(
+                [
+                    {"idx": 13, "type": "context", "time": "2026-06-28 10:00:13"},
+                    {"idx": 18, "type": "context", "time": "2026-06-28 10:00:18"},
+                    {"idx": 25, "type": "context", "time": "2026-06-28 10:00:25"},
+                ]
+            )
+
+            selected, meta = agent._select_vlm_frames(frames)
+        finally:
+            sys.path.pop(0)
+            if old_limit is None:
+                os.environ.pop("DLD_VLM_MAX_FRAMES", None)
+            else:
+                os.environ["DLD_VLM_MAX_FRAMES"] = old_limit
+
+        self.assertEqual(len(selected), 5)
+        self.assertEqual(meta["candidate_hit_frames"], 14)
+        self.assertEqual(meta["deduped_hit_frames"], 13)
+        self.assertEqual(meta["vlm_sent_frames"], 5)
+        self.assertEqual([item["idx"] for item in selected[-3:]], [13, 18, 25])
+
     def test_sync_processed_statistics_uses_processed_count(self):
         stats_module = load_module_from_path(
             "upload_detector_stats_test",
@@ -42,6 +89,251 @@ class E2ERegressionTests(unittest.TestCase):
         stats_module.sync_processed_statistics(state)
 
         self.assertEqual(state["statistics"]["total_events_processed"], 13)
+
+    def test_vlm_fallback_gate_runs_for_ai_only_sample_but_skips_benign_sample(self):
+        run_e2e = load_module_from_path("run_e2e_vlm_gate_test", REPO_ROOT / "run_e2e.py")
+        module_dir = REPO_ROOT / "3-RiskHunter"
+        sys.path.insert(0, str(module_dir))
+        try:
+            log_first_module = load_module_from_path(
+                "log_first_detector_vlm_gate_test",
+                module_dir / "log_first_detector.py",
+            )
+        finally:
+            sys.path.pop(0)
+
+        sensitive_file = "C:/Users/test/Desktop/\u5458\u5de5\u85aa\u8d44\u660e\u7ec6\u8868Q4.xlsx"
+        detector = log_first_module.LogFirstDetector(
+            sensitive_files=[sensitive_file],
+            blacklist_apps=["ChatGPT"],
+            whitelist_apps=["Excel"],
+        )
+        ai_only_logs = [
+            {
+                "timestamp": "2026-06-28T10:00:00.000",
+                "event_type": "file_open",
+                "file_path": sensitive_file,
+                "file_name": "\u5458\u5de5\u85aa\u8d44\u660e\u7ec6\u8868Q4.xlsx",
+                "process_info": {"process_name": "excel.exe"},
+                "window_info": {"window_title": "\u5458\u5de5\u85aa\u8d44\u660e\u7ec6\u8868Q4.xlsx - Excel"},
+            },
+            {
+                "timestamp": "2026-06-28T10:00:18.000",
+                "event_type": "clipboard_paste",
+                "file_path": "",
+                "file_name": "",
+                "process_info": {"process_name": "msedge.exe"},
+                "window_info": {
+                    "window_title": "ChatGPT - New chat - summarize employee salary table"
+                },
+            },
+        ]
+        ai_log_first = detector.analyze(ai_only_logs)
+
+        should_run_ai, ai_meta = run_e2e._should_use_vlm_fallback(ai_only_logs, ai_log_first)
+
+        self.assertEqual(ai_log_first["upload_events"], [])
+        self.assertTrue(should_run_ai)
+        self.assertEqual(ai_meta["decision"], "run")
+        self.assertIn("ai_context_near_sensitive_log", ai_meta["reasons"])
+
+        benign_logs = [
+            ai_only_logs[0],
+            {
+                "timestamp": "2026-06-28T10:00:18.000",
+                "event_type": "modified",
+                "file_path": sensitive_file,
+                "file_name": "\u5458\u5de5\u85aa\u8d44\u660e\u7ec6\u8868Q4.xlsx",
+                "process_info": {"process_name": "excel.exe"},
+                "window_info": {"window_title": "\u5458\u5de5\u85aa\u8d44\u660e\u7ec6\u8868Q4.xlsx - Excel"},
+            },
+        ]
+        benign_log_first = detector.analyze(benign_logs)
+
+        should_run_benign, benign_meta = run_e2e._should_use_vlm_fallback(benign_logs, benign_log_first)
+
+        self.assertEqual(benign_log_first["upload_events"], [])
+        self.assertFalse(should_run_benign)
+        self.assertEqual(benign_meta["decision"], "skip")
+        self.assertIn("no_ai_or_ambiguous_exfil_context", benign_meta["reasons"])
+
+    def test_vlm_fallback_gate_handles_noisy_and_complex_contexts(self):
+        run_e2e = load_module_from_path("run_e2e_complex_gate_test", REPO_ROOT / "run_e2e.py")
+        module_dir = REPO_ROOT / "3-RiskHunter"
+        sys.path.insert(0, str(module_dir))
+        old_window = os.environ.get("DLD_VLM_FALLBACK_WINDOW_SEC")
+        os.environ["DLD_VLM_FALLBACK_WINDOW_SEC"] = "300"
+        self.addCleanup(
+            lambda: (
+                os.environ.pop("DLD_VLM_FALLBACK_WINDOW_SEC", None)
+                if old_window is None
+                else os.environ.__setitem__("DLD_VLM_FALLBACK_WINDOW_SEC", old_window)
+            )
+        )
+        try:
+            log_first_module = load_module_from_path(
+                "log_first_detector_complex_gate_test",
+                module_dir / "log_first_detector.py",
+            )
+        finally:
+            sys.path.pop(0)
+
+        sensitive_file = "C:/Users/test/Desktop/\u5185\u90e8\u6218\u7565\u89c4\u5212.docx"
+        detector = log_first_module.LogFirstDetector(
+            sensitive_files=[sensitive_file],
+            blacklist_apps=["ChatGPT", "Feishu"],
+            whitelist_apps=["Word"],
+        )
+        sensitive_open = {
+            "timestamp": "2026-06-28T09:00:00.000",
+            "event_type": "file_open",
+            "file_path": sensitive_file,
+            "file_name": "\u5185\u90e8\u6218\u7565\u89c4\u5212.docx",
+            "process_info": {"process_name": "winword.exe"},
+            "window_info": {"window_title": "\u5185\u90e8\u6218\u7565\u89c4\u5212.docx - Word"},
+        }
+
+        far_ai_noise = [
+            sensitive_open,
+            {
+                "timestamp": "2026-06-28T09:20:01.000",
+                "event_type": "window_focus",
+                "file_path": "",
+                "file_name": "",
+                "process_info": {"process_name": "msedge.exe"},
+                "window_info": {"window_title": "ChatGPT - unrelated travel planning"},
+            },
+        ]
+        far_log_first = detector.analyze(far_ai_noise)
+        should_run_far, far_meta = run_e2e._should_use_vlm_fallback(far_ai_noise, far_log_first)
+
+        self.assertFalse(should_run_far)
+        self.assertEqual(far_meta["decision"], "skip")
+        self.assertIn("no_ai_or_ambiguous_exfil_context", far_meta["reasons"])
+
+        no_sensitive_ai = [
+            {
+                "timestamp": "2026-06-28T09:01:00.000",
+                "event_type": "window_focus",
+                "file_path": "",
+                "file_name": "",
+                "process_info": {"process_name": "msedge.exe"},
+                "window_info": {"window_title": "ChatGPT - summarize public news"},
+            }
+        ]
+        no_sensitive_log_first = detector.analyze(no_sensitive_ai)
+        should_run_no_sensitive, no_sensitive_meta = run_e2e._should_use_vlm_fallback(
+            no_sensitive_ai,
+            no_sensitive_log_first,
+        )
+
+        self.assertFalse(should_run_no_sensitive)
+        self.assertEqual(no_sensitive_meta["decision"], "skip")
+        self.assertIn("no_sensitive_log_context", no_sensitive_meta["reasons"])
+
+        clipboard_near_sensitive = [
+            sensitive_open,
+            {
+                "timestamp": "2026-06-28T09:00:30.000",
+                "event_type": "clipboard_paste",
+                "file_path": "",
+                "file_name": "",
+                "process_info": {"process_name": "lark.exe"},
+                "window_info": {"window_title": "Feishu external partner - paste into message composer"},
+            },
+        ]
+        clipboard_log_first = detector.analyze(clipboard_near_sensitive)
+        should_run_clipboard, clipboard_meta = run_e2e._should_use_vlm_fallback(
+            clipboard_near_sensitive,
+            clipboard_log_first,
+        )
+
+        self.assertTrue(should_run_clipboard)
+        self.assertEqual(clipboard_meta["decision"], "run")
+        self.assertIn("ambiguous_exfil_context_near_sensitive_log", clipboard_meta["reasons"])
+
+        ordinary_chat_near_sensitive = [
+            sensitive_open,
+            {
+                "timestamp": "2026-06-28T09:00:30.000",
+                "event_type": "window_focus",
+                "file_path": "",
+                "file_name": "",
+                "process_info": {"process_name": "lark.exe"},
+                "window_info": {"window_title": "Feishu team chat - daily standup"},
+            },
+        ]
+        ordinary_chat_log_first = detector.analyze(ordinary_chat_near_sensitive)
+        should_run_chat, chat_meta = run_e2e._should_use_vlm_fallback(
+            ordinary_chat_near_sensitive,
+            ordinary_chat_log_first,
+        )
+
+        self.assertFalse(should_run_chat)
+        self.assertEqual(chat_meta["decision"], "skip")
+        self.assertIn("no_ai_or_ambiguous_exfil_context", chat_meta["reasons"])
+
+    def test_realistic_log_fixtures_match_expected_detection_policy(self):
+        run_e2e = load_module_from_path("run_e2e_realistic_fixture_test", REPO_ROOT / "run_e2e.py")
+        module_dir = REPO_ROOT / "3-RiskHunter"
+        sys.path.insert(0, str(module_dir))
+        old_window = os.environ.get("DLD_VLM_FALLBACK_WINDOW_SEC")
+        os.environ["DLD_VLM_FALLBACK_WINDOW_SEC"] = "300"
+        self.addCleanup(
+            lambda: (
+                os.environ.pop("DLD_VLM_FALLBACK_WINDOW_SEC", None)
+                if old_window is None
+                else os.environ.__setitem__("DLD_VLM_FALLBACK_WINDOW_SEC", old_window)
+            )
+        )
+        try:
+            log_first_module = load_module_from_path(
+                "log_first_detector_realistic_fixture_test",
+                module_dir / "log_first_detector.py",
+            )
+        finally:
+            sys.path.pop(0)
+
+        with open(REALISTIC_CASES_PATH, "r", encoding="utf-8") as handle:
+            cases = json.load(handle)
+
+        for case in cases:
+            with self.subTest(case=case["id"]):
+                detector = log_first_module.LogFirstDetector(
+                    sensitive_files=case["sensitive_files"],
+                    blacklist_apps=[
+                        "ChatGPT",
+                        "Feishu",
+                        "Lark",
+                        "163邮箱",
+                        "mail.163.com",
+                        "msedge.exe",
+                    ],
+                    whitelist_apps=[
+                        "Excel",
+                        "Word",
+                        "WeCom",
+                        "企业微信",
+                        "WeCom.exe",
+                    ],
+                )
+                result = detector.analyze(case["logs"])
+                expected = case["expected"]
+
+                self.assertEqual(len(result["upload_events"]), expected["upload_events"])
+                self.assertEqual(len(result["alert_events"]), expected["alert_events"])
+
+                if expected["upload_events"]:
+                    first_event = result["upload_events"][0]
+                    self.assertEqual(first_event.app_category, expected["app_category"])
+                    self.assertTrue(first_event.original_file)
+                    self.assertEqual(expected["vlm_decision"], "skip_deterministic")
+                    continue
+
+                should_run_vlm, meta = run_e2e._should_use_vlm_fallback(case["logs"], result)
+                self.assertEqual(meta["decision"], expected["vlm_decision"])
+                self.assertEqual(should_run_vlm, expected["vlm_decision"] == "run")
+                self.assertIn(expected["vlm_reason"], meta["reasons"])
 
     def test_connected_fact_injection_builds_leak_path_for_derived_upload(self):
         run_e2e = load_module_from_path("run_e2e_regression_test", REPO_ROOT / "run_e2e.py")

@@ -1,0 +1,221 @@
+[
+  {
+    "id": "salary_zip_to_feishu_external_group",
+    "description": "Employee salary workbook is compressed and uploaded to an external Feishu group.",
+    "sensitive_files": ["C:/Users/alice/Desktop/员工薪资明细表Q4.xlsx"],
+    "logs": [
+      {
+        "timestamp": "2026-06-28T09:12:04.000",
+        "event_type": "file_open",
+        "file_path": "C:/Users/alice/Desktop/员工薪资明细表Q4.xlsx",
+        "file_name": "员工薪资明细表Q4.xlsx",
+        "process_info": {"process_name": "excel.exe"},
+        "window_info": {"window_title": "员工薪资明细表Q4.xlsx - Excel"}
+      },
+      {
+        "timestamp": "2026-06-28T09:12:51.000",
+        "event_type": "compressed",
+        "file_path": "C:/Users/alice/Desktop/员工薪资明细表Q4_供应商.zip",
+        "file_name": "员工薪资明细表Q4_供应商.zip",
+        "process_info": {"process_name": "7z.exe"},
+        "window_info": {"window_title": "7-Zip 添加到压缩包"}
+      },
+      {
+        "timestamp": "2026-06-28T09:13:08.000",
+        "event_type": "file_upload",
+        "file_path": "C:/Users/alice/Desktop/员工薪资明细表Q4_供应商.zip",
+        "file_name": "员工薪资明细表Q4_供应商.zip",
+        "process_info": {"process_name": "Feishu.exe"},
+        "window_info": {"window_title": "Feishu - 外部合作群 - 上传附件"}
+      }
+    ],
+    "expected": {
+      "upload_events": 1,
+      "alert_events": 1,
+      "app_category": "blacklist",
+      "vlm_decision": "skip_deterministic"
+    }
+  },
+  {
+    "id": "customer_contract_renamed_then_163_mail",
+    "description": "Customer contract is renamed to a scanner-looking PDF and attached in webmail.",
+    "sensitive_files": ["C:/Users/alice/Documents/客户合同-华东.docx"],
+    "logs": [
+      {
+        "timestamp": "2026-06-28T10:04:10.000",
+        "event_type": "file_open",
+        "file_path": "C:/Users/alice/Documents/客户合同-华东.docx",
+        "file_name": "客户合同-华东.docx",
+        "process_info": {"process_name": "winword.exe"},
+        "window_info": {"window_title": "客户合同-华东.docx - Word"}
+      },
+      {
+        "timestamp": "2026-06-28T10:04:42.000",
+        "event_type": "renamed",
+        "file_path": "C:/Users/alice/Documents/合同扫描件_0628.pdf",
+        "file_name": "合同扫描件_0628.pdf",
+        "process_info": {"process_name": "winword.exe"},
+        "window_info": {"window_title": "另存为 PDF"}
+      },
+      {
+        "timestamp": "2026-06-28T10:05:21.000",
+        "event_type": "file_upload",
+        "file_path": "C:/Users/alice/Documents/合同扫描件_0628.pdf",
+        "file_name": "合同扫描件_0628.pdf",
+        "process_info": {"process_name": "msedge.exe"},
+        "window_info": {"window_title": "163邮箱 - 写信 - 添加附件"}
+      }
+    ],
+    "expected": {
+      "upload_events": 1,
+      "alert_events": 1,
+      "app_category": "blacklist",
+      "vlm_decision": "skip_deterministic"
+    }
+  },
+  {
+    "id": "internal_strategy_pasted_to_chatgpt_no_file_path",
+    "description": "The log only sees a sensitive document and a nearby ChatGPT paste, so VLM is needed.",
+    "sensitive_files": ["C:/Users/alice/Documents/内部战略规划.docx"],
+    "logs": [
+      {
+        "timestamp": "2026-06-28T11:20:00.000",
+        "event_type": "file_open",
+        "file_path": "C:/Users/alice/Documents/内部战略规划.docx",
+        "file_name": "内部战略规划.docx",
+        "process_info": {"process_name": "winword.exe"},
+        "window_info": {"window_title": "内部战略规划.docx - Word"}
+      },
+      {
+        "timestamp": "2026-06-28T11:20:39.000",
+        "event_type": "clipboard_paste",
+        "file_path": "",
+        "file_name": "",
+        "process_info": {"process_name": "msedge.exe"},
+        "window_info": {"window_title": "ChatGPT - paste internal strategy excerpt into prompt box"}
+      }
+    ],
+    "expected": {
+      "upload_events": 0,
+      "alert_events": 0,
+      "vlm_decision": "run",
+      "vlm_reason": "ai_context_near_sensitive_log"
+    }
+  },
+  {
+    "id": "ordinary_lark_chat_after_sensitive_doc",
+    "description": "A normal team chat appears after a sensitive document, but no paste/send/upload signal is present.",
+    "sensitive_files": ["C:/Users/alice/Documents/内部战略规划.docx"],
+    "logs": [
+      {
+        "timestamp": "2026-06-28T12:00:00.000",
+        "event_type": "file_open",
+        "file_path": "C:/Users/alice/Documents/内部战略规划.docx",
+        "file_name": "内部战略规划.docx",
+        "process_info": {"process_name": "winword.exe"},
+        "window_info": {"window_title": "内部战略规划.docx - Word"}
+      },
+      {
+        "timestamp": "2026-06-28T12:00:31.000",
+        "event_type": "window_focus",
+        "file_path": "",
+        "file_name": "",
+        "process_info": {"process_name": "Lark.exe"},
+        "window_info": {"window_title": "Lark - 产品例会 - daily standup"}
+      }
+    ],
+    "expected": {
+      "upload_events": 0,
+      "alert_events": 0,
+      "vlm_decision": "skip",
+      "vlm_reason": "no_ai_or_ambiguous_exfil_context"
+    }
+  },
+  {
+    "id": "delayed_chatgpt_research_noise",
+    "description": "ChatGPT appears much later than the sensitive file access and should be treated as unrelated noise.",
+    "sensitive_files": ["C:/Users/alice/Documents/内部战略规划.docx"],
+    "logs": [
+      {
+        "timestamp": "2026-06-28T13:00:00.000",
+        "event_type": "file_open",
+        "file_path": "C:/Users/alice/Documents/内部战略规划.docx",
+        "file_name": "内部战略规划.docx",
+        "process_info": {"process_name": "winword.exe"},
+        "window_info": {"window_title": "内部战略规划.docx - Word"}
+      },
+      {
+        "timestamp": "2026-06-28T13:18:30.000",
+        "event_type": "window_focus",
+        "file_path": "",
+        "file_name": "",
+        "process_info": {"process_name": "msedge.exe"},
+        "window_info": {"window_title": "ChatGPT - travel itinerary planning"}
+      }
+    ],
+    "expected": {
+      "upload_events": 0,
+      "alert_events": 0,
+      "vlm_decision": "skip",
+      "vlm_reason": "no_ai_or_ambiguous_exfil_context"
+    }
+  },
+  {
+    "id": "public_notes_pasted_to_ai",
+    "description": "Public release notes are pasted to an AI page; no sensitive context exists.",
+    "sensitive_files": ["C:/Users/alice/Documents/内部战略规划.docx"],
+    "logs": [
+      {
+        "timestamp": "2026-06-28T14:15:00.000",
+        "event_type": "file_open",
+        "file_path": "C:/Users/alice/Documents/public_release_notes.docx",
+        "file_name": "public_release_notes.docx",
+        "process_info": {"process_name": "winword.exe"},
+        "window_info": {"window_title": "public_release_notes.docx - Word"}
+      },
+      {
+        "timestamp": "2026-06-28T14:15:20.000",
+        "event_type": "clipboard_paste",
+        "file_path": "",
+        "file_name": "",
+        "process_info": {"process_name": "msedge.exe"},
+        "window_info": {"window_title": "ChatGPT - rewrite public release notes"}
+      }
+    ],
+    "expected": {
+      "upload_events": 0,
+      "alert_events": 0,
+      "vlm_decision": "skip",
+      "vlm_reason": "no_sensitive_log_context"
+    }
+  },
+  {
+    "id": "customer_list_uploaded_to_wecom_whitelist",
+    "description": "A customer list is uploaded through a whitelisted enterprise collaboration tool.",
+    "sensitive_files": ["C:/Users/alice/Desktop/客户名单.xlsx"],
+    "logs": [
+      {
+        "timestamp": "2026-06-28T15:01:00.000",
+        "event_type": "file_open",
+        "file_path": "C:/Users/alice/Desktop/客户名单.xlsx",
+        "file_name": "客户名单.xlsx",
+        "process_info": {"process_name": "excel.exe"},
+        "window_info": {"window_title": "客户名单.xlsx - Excel"}
+      },
+      {
+        "timestamp": "2026-06-28T15:01:28.000",
+        "event_type": "file_upload",
+        "file_path": "C:/Users/alice/Desktop/客户名单.xlsx",
+        "file_name": "客户名单.xlsx",
+        "process_info": {"process_name": "WeCom.exe"},
+        "window_info": {"window_title": "企业微信 - 内部销售群 - 上传附件"}
+      }
+    ],
+    "expected": {
+      "upload_events": 1,
+      "alert_events": 0,
+      "app_category": "whitelist",
+      "vlm_decision": "skip_deterministic"
+    }
+  }
+]
