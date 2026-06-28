@@ -9,6 +9,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REALISTIC_CASES_PATH = REPO_ROOT / "fixtures" / "realistic_log_cases.json"
+QWEN_VLM_CASES_PATH = REPO_ROOT / "fixtures" / "qwen_vlm_response_cases.json"
 
 
 def load_module_from_path(module_name: str, file_path: Path):
@@ -78,6 +79,48 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertEqual(meta["deduped_hit_frames"], 13)
         self.assertEqual(meta["vlm_sent_frames"], 5)
         self.assertEqual([item["idx"] for item in selected[-3:]], [13, 18, 25])
+
+    def test_qwen_vlm_response_postprocessing_filters_duplicates_and_noise(self):
+        module_dir = REPO_ROOT / "1-FrameAnalyzer"
+        sys.path.insert(0, str(module_dir))
+        try:
+            agent_module = load_module_from_path(
+                "frame_agent_qwen_postprocess_test",
+                module_dir / "agent.py",
+            )
+            agent = agent_module.VideoFileOperationAgent.__new__(agent_module.VideoFileOperationAgent)
+        finally:
+            sys.path.pop(0)
+
+        with open(QWEN_VLM_CASES_PATH, "r", encoding="utf-8") as handle:
+            cases = json.load(handle)
+
+        for case in cases:
+            with self.subTest(case=case["id"]):
+                parsed = agent._parse_vlm_response_content(case["response"])
+                raw_events = agent._coerce_event_list(parsed)
+                final_events, meta = agent._filter_vlm_events(raw_events, case["keywords"])
+
+                self.assertEqual(len(final_events), case["expected_kept"])
+                self.assertEqual(final_events[0]["operation_type"], case["expected_operation"])
+                self.assertEqual(meta["vlm_kept_events"], case["expected_kept"])
+                self.assertGreater(meta["vlm_dropped_events"], 0)
+
+    def test_qwen_guardrail_prompt_contains_false_positive_constraints(self):
+        module_dir = REPO_ROOT / "1-FrameAnalyzer"
+        sys.path.insert(0, str(module_dir))
+        try:
+            agent_module = load_module_from_path(
+                "frame_agent_qwen_guardrail_test",
+                module_dir / "agent.py",
+            )
+            guardrails = agent_module.VideoFileOperationAgent._qwen_guardrail_prompt()
+        finally:
+            sys.path.pop(0)
+
+        self.assertIn('{"events": []}', guardrails)
+        self.assertIn("Do not create duplicate events", guardrails)
+        self.assertIn("A chat window alone is not enough", guardrails)
 
     def test_sync_processed_statistics_uses_processed_count(self):
         stats_module = load_module_from_path(

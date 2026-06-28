@@ -1,0 +1,23 @@
+[
+  {
+    "id": "qwen_json_fence_duplicates_and_unrelated_chatgpt_open",
+    "keywords": ["员工薪资明细表Q4.xlsx"],
+    "response": "下面是分析结果：\n```json\n{\"events\":[{\"time_range\":\"2026-06-28 10:00:18 - 2026-06-28 10:00:20\",\"app_name\":\"ChatGPT\",\"behavior_category\":\"直接外发\",\"operation_type\":\"粘贴外发\",\"original_filename\":\"员工薪资明细表Q4.xlsx\",\"modified_filename\":\"未知\",\"description\":\"用户将员工薪资明细表Q4.xlsx中的薪资内容粘贴到ChatGPT输入框\"},{\"time_range\":\"2026-06-28 10:00:18 - 2026-06-28 10:00:20\",\"app_name\":\"ChatGPT\",\"behavior_category\":\"直接外发\",\"operation_type\":\"粘贴外发\",\"original_filename\":\"员工薪资明细表Q4.xlsx\",\"modified_filename\":\"未知\",\"description\":\"重复描述\"},{\"time_range\":\"2026-06-28 10:00:05 - 2026-06-28 10:00:05\",\"app_name\":\"ChatGPT\",\"behavior_category\":\"正常操作\",\"operation_type\":\"打开网页\",\"original_filename\":\"未知\",\"modified_filename\":\"未知\",\"description\":\"只是打开了ChatGPT页面\"}]}\n```",
+    "expected_kept": 1,
+    "expected_operation": "粘贴外发"
+  },
+  {
+    "id": "qwen_filename_only_in_description",
+    "keywords": ["客户合同-华东.docx"],
+    "response": "{\"events\":[{\"time_range\":\"2026-06-28 10:05:00 - 2026-06-28 10:05:08\",\"app_name\":\"163邮箱\",\"behavior_category\":\"直接外发\",\"operation_type\":\"邮件附件外发\",\"original_filename\":\"未知\",\"modified_filename\":\"合同扫描件_0628.pdf\",\"description\":\"画面显示客户合同-华东.docx另存出的合同扫描件_0628.pdf被添加为邮件附件\"},{\"time_range\":\"2026-06-28 10:04:00 - 2026-06-28 10:04:10\",\"app_name\":\"Word\",\"behavior_category\":\"正常操作\",\"operation_type\":\"阅读\",\"original_filename\":\"季度总结.docx\",\"modified_filename\":\"未知\",\"description\":\"阅读无关文档\"}]}",
+    "expected_kept": 1,
+    "expected_operation": "邮件附件外发"
+  },
+  {
+    "id": "qwen_long_text_keeps_risky_action_drops_normal_reading",
+    "keywords": ["Aether 2.0 预发布定价策略：企业版底价不得低于 128000 元"],
+    "response": "{\"events\":[{\"time_range\":\"2026-06-28 11:20:00 - 2026-06-28 11:20:03\",\"app_name\":\"Word\",\"behavior_category\":\"正常操作\",\"operation_type\":\"阅读\",\"original_filename\":\"内部战略规划.docx\",\"modified_filename\":\"未知\",\"description\":\"用户浏览文档页面\"},{\"time_range\":\"2026-06-28 11:20:39 - 2026-06-28 11:20:43\",\"app_name\":\"ChatGPT\",\"behavior_category\":\"直接外发\",\"operation_type\":\"粘贴外发\",\"original_filename\":\"Aether 2.0 预发布定价策略：企业版底价不得低于 128000 元\",\"modified_filename\":\"未知\",\"description\":\"用户将该长文本粘贴到AI对话框\"}]}",
+    "expected_kept": 1,
+    "expected_operation": "粘贴外发"
+  }
+]

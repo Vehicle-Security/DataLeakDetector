@@ -1,4 +1,4 @@
-import os
+﻿import os
 import cv2
 import torch
 import torch.nn as nn
@@ -104,6 +104,126 @@ class VideoFileOperationAgent:
         new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
         return cv2.resize(frame, new_size, interpolation=cv2.INTER_AREA)
 
+    @staticmethod
+    def _is_long_text_mode(keywords: List[str]) -> bool:
+        return any(len(str(kw)) > 10 for kw in keywords)
+
+    @staticmethod
+    def _compact_text(text: str) -> str:
+        return re.sub(r"\s+", "", str(text or "")).lower()
+
+    @staticmethod
+    def _event_text(event: Dict[str, Any]) -> str:
+        fields = [
+            "app_name",
+            "behavior_category",
+            "operation_type",
+            "original_filename",
+            "modified_filename",
+            "description",
+            "visual_evidence",
+            "detected_content",
+        ]
+        return " ".join(str(event.get(field, "")) for field in fields)
+
+    def _parse_vlm_response_content(self, content: str) -> Any:
+        cleaned = re.sub(r"```(?:json)?|```", "", str(content or ""), flags=re.IGNORECASE).strip()
+        decoder = json.JSONDecoder()
+        for pos, char in enumerate(cleaned):
+            if char not in "[{":
+                continue
+            try:
+                data, _ = decoder.raw_decode(cleaned[pos:])
+                return data
+            except json.JSONDecodeError:
+                continue
+        raise ValueError("VLM response did not contain valid JSON")
+
+    @staticmethod
+    def _coerce_event_list(batch_data: Any) -> List[Dict[str, Any]]:
+        if isinstance(batch_data, dict):
+            raw_events = batch_data.get("events", [])
+        else:
+            raw_events = batch_data
+        if not isinstance(raw_events, list):
+            return []
+        return [event for event in raw_events if isinstance(event, dict)]
+
+    def _event_matches_keywords(self, event: Dict[str, Any], keywords: List[str], is_long_text_mode: bool) -> bool:
+        compact_event = self._compact_text(self._event_text(event))
+        compact_keywords = [self._compact_text(keyword) for keyword in keywords if str(keyword).strip()]
+        if not compact_keywords:
+            return True
+
+        if is_long_text_mode:
+            target_text = "".join(compact_keywords)
+            if fuzz.partial_ratio(target_text, compact_event) >= 55:
+                return True
+            risk_tokens = [
+                "paste",
+                "copy",
+                "clipboard",
+                "send",
+                "upload",
+                "\u7c98\u8d34",
+                "\u590d\u5236",
+                "\u526a\u8d34\u677f",
+                "\u53d1\u9001",
+                "\u4e0a\u4f20",
+                "\u5916\u53d1",
+            ]
+            return any(token in compact_event for token in risk_tokens)
+
+        return any(keyword in compact_event for keyword in compact_keywords)
+
+    @staticmethod
+    def _event_dedup_key(event: Dict[str, Any]) -> Tuple[str, str, str, str, str]:
+        return (
+            str(event.get("time_range", "")).strip(),
+            str(event.get("app_name", "")).strip().lower(),
+            str(event.get("operation_type", "")).strip().lower(),
+            str(event.get("original_filename", "")).strip().lower(),
+            str(event.get("modified_filename", "")).strip().lower(),
+        )
+
+    def _filter_vlm_events(self, raw_events: List[Dict[str, Any]], target_keywords: List[str]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        is_long_text_mode = self._is_long_text_mode(target_keywords)
+        filtered = []
+        seen = set()
+        dropped = 0
+
+        for event in raw_events:
+            if not self._event_matches_keywords(event, target_keywords, is_long_text_mode):
+                dropped += 1
+                continue
+            key = self._event_dedup_key(event)
+            if key in seen:
+                dropped += 1
+                continue
+            seen.add(key)
+            filtered.append(event)
+
+        meta = {
+            "vlm_raw_events": len(raw_events),
+            "vlm_kept_events": len(filtered),
+            "vlm_dropped_events": dropped,
+            "vlm_filter_mode": "long_text" if is_long_text_mode else "keyword",
+        }
+        return filtered, meta
+
+    @staticmethod
+    def _qwen_guardrail_prompt() -> str:
+        return """
+
+### Robustness guardrails
+- Return one JSON object only: {"events": [...]}. Do not add markdown or explanations.
+- If the screen only shows an app/webpage being opened, and no target file/text is pasted, uploaded, attached, sent, copied, renamed, compressed, converted, screenshotted, or recorded, return {"events": []}.
+- Do not create duplicate events for the same action. Merge consecutive frames into one event.
+- Prefer visible evidence from the title bar, upload dialog, file picker, message composer, attachment chip, clipboard menu, or OCR table.
+- If a filename is uncertain, write "未知"; do not invent filenames.
+- For "直接外发", require visible target data/object leaving the local trusted context. A chat window alone is not enough.
+"""
+
     def _init_models(self):
         resnet_base = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
         self.feature_model = nn.Sequential(*list(resnet_base.children())[:-1]).to(self.device).eval()
@@ -115,7 +235,7 @@ class VideoFileOperationAgent:
         self.reader = easyocr.Reader(['ch_sim', 'en'], gpu=(self.device == 'cuda'))
 
     def vision_preprocessing_node(self, state: AgentState) -> AgentState:
-        logger.info("Step 1: 正在通过视觉特征提取进行关键帧初步筛选...")
+        logger.info("Step 1: 姝ｅ湪閫氳繃瑙嗚鐗瑰緛鎻愬彇杩涜鍏抽敭甯у垵姝ョ瓫閫?..")
         cap = cv2.VideoCapture(state.video_path)
         state.fps = cap.get(cv2.CAP_PROP_FPS)
         state.total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -143,16 +263,15 @@ class VideoFileOperationAgent:
         return state
 
     def keyword_filter_node(self, state: AgentState) -> AgentState:
-        # 判断是否需要执行“长文本模糊匹配”模式
-        # 逻辑：如果 keywords 列表中有任何一个元素长度 > 10，则视为粘贴的长文本
+        # 鍒ゆ柇鏄惁闇€瑕佹墽琛屸€滈暱鏂囨湰妯＄硦鍖归厤鈥濇ā寮?        # 閫昏緫锛氬鏋?keywords 鍒楄〃涓湁浠讳綍涓€涓厓绱犻暱搴?> 10锛屽垯瑙嗕负绮樿创鐨勯暱鏂囨湰
         is_long_text_mode = any(len(kw) > 10 for kw in state.target_keywords)
         
         if is_long_text_mode:
-            # 将所有关键词拼接成一个目标长文本进行比对
+            # 灏嗘墍鏈夊叧閿瘝鎷兼帴鎴愪竴涓洰鏍囬暱鏂囨湰杩涜姣斿
             target_text = "".join(state.target_keywords).replace(" ", "").lower()
-            logger.info(f"Step 2: 检测到长文本，正在执行模糊相似度匹配 (目标: {target_text[:20]}...)")
+            logger.info(f"Step 2: 妫€娴嬪埌闀挎枃鏈紝姝ｅ湪鎵ц妯＄硦鐩镐技搴﹀尮閰?(鐩爣: {target_text[:20]}...)")
         else:
-            logger.info(f"Step 2: 正在执行 OCR 文本识别并匹配关键词: {state.target_keywords}...")
+            logger.info(f"Step 2: 姝ｅ湪鎵ц OCR 鏂囨湰璇嗗埆骞跺尮閰嶅叧閿瘝: {state.target_keywords}...")
 
         last_hit_idx = -1
         for item in state.candidate_frames:
@@ -166,7 +285,7 @@ class VideoFileOperationAgent:
                 score = fuzz.partial_ratio(target_text, text_blob)
                 if score >= 65:
                     is_match = True
-                    logger.debug(f"帧 {item['idx']} 模糊匹配成功，得分: {score}")
+                    logger.debug(f"甯?{item['idx']} 妯＄硦鍖归厤鎴愬姛锛屽緱鍒? {score}")
             else:
                 if any(kw.lower() in text_blob for kw in state.target_keywords):
                     is_match = True
@@ -190,7 +309,7 @@ class VideoFileOperationAgent:
     def context_extension_node(self, state: AgentState) -> AgentState:
         last_idx = state.final_report.get('_last_hit_idx', -1)
         if last_idx == -1: return state
-        logger.info("Step 3: 正在针对命中帧提取后续上下文时间节点的补充画面...")
+        logger.info("Step 3: 姝ｅ湪閽堝鍛戒腑甯ф彁鍙栧悗缁笂涓嬫枃鏃堕棿鑺傜偣鐨勮ˉ鍏呯敾闈?..")
         cap = cv2.VideoCapture(state.video_path)
         for sec in [3, 8, 15]: 
             ext_idx = last_idx + int(sec * state.fps)
@@ -224,8 +343,8 @@ class VideoFileOperationAgent:
             }
             return state
 
-        logger.info(f"Step 4: 正在发送关键帧至 VLM 模型进行深层行为意图分析...")
-        # --- 新增：创建保存图片的目录 ---
+        logger.info(f"Step 4: 姝ｅ湪鍙戦€佸叧閿抚鑷?VLM 妯″瀷杩涜娣卞眰琛屼负鎰忓浘鍒嗘瀽...")
+        # --- 鏂板锛氬垱寤轰繚瀛樺浘鐗囩殑鐩綍 ---
         save_dir = "vlm_debug_frames"
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -257,12 +376,12 @@ class VideoFileOperationAgent:
             )
             for i, f in enumerate(vlm_frames)
         ]
-        table_str = "输入顺序 | 原始帧索引 | 现实时间戳(%Y-%m-%d %H:%M:%S) | 类型 | OCR摘要\n" + "-"*95 + "\n" + "\n".join(table_rows)
+        table_str = "杈撳叆椤哄簭 | 鍘熷甯х储寮?| 鐜板疄鏃堕棿鎴?%Y-%m-%d %H:%M:%S) | 绫诲瀷 | OCR鎽樿\n" + "-"*95 + "\n" + "\n".join(table_rows)
 
         final_prompt = PROMPTS.RETRIEVE_FRAMES_PROMPT.format(
             frame_count=len(vlm_frames),
             frame_info_table=table_str
-        )
+        ) + self._qwen_guardrail_prompt()
 
         contents = [{"type": "text", "text": final_prompt}]
         jpeg_quality = optimization_meta["jpeg_quality"]
@@ -272,7 +391,7 @@ class VideoFileOperationAgent:
             save_path = os.path.join(save_dir, file_name)
             vlm_frame = self._resize_for_vlm(f['frame'])
             cv2.imwrite(save_path, vlm_frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
-            logger.debug(f"已保存 VLM 输入帧至: {save_path}")
+            logger.debug(f"宸蹭繚瀛?VLM 杈撳叆甯ц嚦: {save_path}")
             _, buffer = cv2.imencode('.jpg', vlm_frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
             img_b64 = base64.b64encode(buffer).decode('utf-8')
             contents.append({
@@ -282,33 +401,15 @@ class VideoFileOperationAgent:
 
         try:
             resp = llm.invoke([HumanMessage(content=contents)])
-            clean_text = re.sub(r'```json\n?|```', '', resp.content).strip()
-            batch_data = json.loads(clean_text)
-            raw_events = batch_data["events"] if isinstance(batch_data, dict) and "events" in batch_data else batch_data
-            
+            batch_data = self._parse_vlm_response_content(resp.content)
+            raw_events = self._coerce_event_list(batch_data)
+            final_events, filter_meta = self._filter_vlm_events(raw_events, state.target_keywords)
+            optimization_meta.update(filter_meta)
 
-            is_long_text_mode = any(len(kw) > 10 for kw in state.target_keywords)
-
-            if is_long_text_mode:
-                
-                logger.info("Long text mode: using all VLM behavior events without filename filtering")
-                final_events = raw_events
-            else:
-                logger.info(f"🔍 普通模式：正在匹配文件名关键词: {state.target_keywords}")
-                final_events = []
-                for event in raw_events:
-                    original_name = event.get("original_filename", "").lower()
-                    final_events.append(event)
-                    if any(kw.lower() in original_name for kw in state.target_keywords):
-                        final_events.append(event)
-                    else:
-                        logger.info(f"🗑️ 剔除无关文件名: {original_name}")
-
-            # 2. 生成最终报告
             state.final_report = {
                 "search_range": {
-                    "start": state.time_range['search_start'].strftime("%Y-%m-%d %H:%M:%S"), 
-                    "end": state.time_range['search_end'].strftime("%Y-%m-%d %H:%M:%S")
+                    "start": state.time_range['search_start'].strftime("%Y-%m-%d %H:%M:%S"),
+                    "end": state.time_range['search_end'].strftime("%Y-%m-%d %H:%M:%S"),
                 },
                 "total_events": len(final_events),
                 "events": final_events,
