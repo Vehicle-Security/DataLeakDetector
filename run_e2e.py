@@ -182,12 +182,18 @@ AMBIGUOUS_EXFIL_TOKENS = (
     "upload",
     "attach",
     "attachment",
+    "screenshot",
+    "screen capture",
+    "record",
+    "recording",
     "\u7c98\u8d34",
     "\u590d\u5236",
     "\u53d1\u9001",
     "\u5206\u4eab",
     "\u4e0a\u4f20",
     "\u9644\u4ef6",
+    "\u622a\u56fe",
+    "\u5f55\u5c4f",
 )
 
 

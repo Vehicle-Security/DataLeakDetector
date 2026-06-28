@@ -33,5 +33,26 @@
     "response": "{\"events\":[{\"time_range\":\"2026-06-28 16:03:00 - 2026-06-28 16:03:05\",\"app_name\":\"Excel\",\"behavior_category\":\"正常操作\",\"operation_type\":\"阅读\",\"original_filename\":\"BoardBudget_Confidential.xlsx\",\"modified_filename\":\"未知\",\"description\":\"用户只是打开并阅读 BoardBudget_Confidential.xlsx，没有复制、上传或发送\"}]}",
     "expected_kept": 0,
     "expected_operation": ""
+  },
+  {
+    "id": "qwen_screenshot_exfil_with_irrelevant_file_picker_noise",
+    "keywords": ["技术路线图.docx"],
+    "response": "{\"events\":[{\"time_range\":\"2026-06-28 17:30:10 - 2026-06-28 17:30:20\",\"app_name\":\"QQ\",\"behavior_category\":\"潜在隐藏行为\",\"operation_type\":\"录屏\",\"original_filename\":\"技术路线图.docx\",\"modified_filename\":\"未知\",\"description\":\"画面角落出现录屏控件，背景为技术路线图.docx\"},{\"time_range\":\"2026-06-28 17:31:00 - 2026-06-28 17:31:05\",\"app_name\":\"资源管理器\",\"behavior_category\":\"正常操作\",\"operation_type\":\"打开文件夹\",\"original_filename\":\"下载\",\"modified_filename\":\"未知\",\"description\":\"打开下载目录\"}]}",
+    "expected_kept": 1,
+    "expected_operation": "录屏"
+  },
+  {
+    "id": "qwen_refuses_with_text_before_valid_json",
+    "keywords": ["并购谈判纪要.docx"],
+    "response": "我无法完全确定，但可见证据如下：{\"events\":[{\"time_range\":\"2026-06-28 17:05:18 - 2026-06-28 17:05:21\",\"app_name\":\"Word\",\"behavior_category\":\"潜在隐藏行为\",\"operation_type\":\"复制\",\"original_filename\":\"并购谈判纪要.docx\",\"modified_filename\":\"复制的段落内容未知\",\"description\":\"用户在并购谈判纪要.docx中选中文本并复制到剪贴板\"}]}",
+    "expected_kept": 1,
+    "expected_operation": "复制"
+  },
+  {
+    "id": "qwen_only_normal_events_returns_empty_after_filter",
+    "keywords": ["客户名单.xlsx"],
+    "response": "{\"events\":[{\"time_range\":\"2026-06-28 15:01:00 - 2026-06-28 15:01:10\",\"app_name\":\"Excel\",\"behavior_category\":\"正常操作\",\"operation_type\":\"滚动浏览\",\"original_filename\":\"客户名单.xlsx\",\"modified_filename\":\"未知\",\"description\":\"用户在 Excel 中滚动查看客户名单.xlsx\"}]}",
+    "expected_kept": 0,
+    "expected_operation": ""
   }
 ]

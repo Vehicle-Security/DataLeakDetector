@@ -1,0 +1,187 @@
+{
+  "metadata": {
+    "purpose": "Known violation-like scenarios that the current detector is expected to miss. Use these as red-team fixtures before turning them into regression tests.",
+    "created_at": "2026-06-28",
+    "current_project_behavior": "These cases are intentionally not covered by the current rules/post-processing."
+  },
+  "vlm_postprocess_misses": [
+    {
+      "id": "vlm_alias_fields_file_name_and_operation_are_ignored",
+      "why_currently_missed": "FrameAnalyzer._event_text only reads original_filename/modified_filename/operation_type/description-like fields. Qwen-style aliases file_name and operation are ignored, so keyword filtering drops the event.",
+      "keywords": ["客户名单.xlsx"],
+      "response": "{\"events\":[{\"time_range\":\"2026-06-28 09:31:10 - 2026-06-28 09:31:15\",\"app_name\":\"Gmail\",\"behavior_category\":\"直接外发\",\"operation\":\"添加邮件附件\",\"file_name\":\"客户名单.xlsx\",\"description\":\"文件被拖入邮件附件区并准备发送给外部收件人\"}]}",
+      "current_expected_kept": 0,
+      "desired_expected_kept": 1,
+      "desired_operation": "添加邮件附件"
+    },
+    {
+      "id": "vlm_sensitive_filename_semantic_variant_without_exact_keyword",
+      "why_currently_missed": "Short-keyword mode requires exact compact substring matching. 薪资表.xlsx is paraphrased as 薪酬表, so the risky paste event is dropped.",
+      "keywords": ["薪资表.xlsx"],
+      "response": "{\"events\":[{\"time_range\":\"2026-06-28 10:12:04 - 2026-06-28 10:12:09\",\"app_name\":\"ChatGPT\",\"behavior_category\":\"直接外发\",\"operation_type\":\"粘贴外发\",\"original_filename\":\"员工薪酬明细表第四季度\",\"modified_filename\":\"未知\",\"description\":\"用户将该表格中的员工姓名、部门和月薪数据粘贴到 AI 对话框\"}]}",
+      "current_expected_kept": 0,
+      "desired_expected_kept": 1,
+      "desired_operation": "粘贴外发"
+    },
+    {
+      "id": "vlm_screen_share_contains_sensitive_sheet_but_filename_not_visible",
+      "why_currently_missed": "The visual event describes screen sharing of sensitive budget content, but the exact configured filename keyword 预算.xlsx is not visible in the VLM fields, so keyword filtering removes it.",
+      "keywords": ["预算.xlsx"],
+      "response": "{\"events\":[{\"time_range\":\"2026-06-28 14:05:21 - 2026-06-28 14:06:08\",\"app_name\":\"Zoom\",\"behavior_category\":\"直接外发\",\"operation_type\":\"屏幕共享\",\"original_filename\":\"未知\",\"modified_filename\":\"未知\",\"description\":\"正在向外部会议共享包含董事会预算数字和成本明细的 Excel 画面\"}]}",
+      "current_expected_kept": 0,
+      "desired_expected_kept": 1,
+      "desired_operation": "屏幕共享"
+    },
+    {
+      "id": "vlm_qr_code_exfiltration_has_target_data_but_no_risk_token",
+      "why_currently_missed": "The target file name is paraphrased and the operation is QR-code generation, which is not in the current risk-token list; exact keyword filtering drops it.",
+      "keywords": ["账号.xlsx"],
+      "response": "{\"events\":[{\"time_range\":\"2026-06-28 15:44:00 - 2026-06-28 15:44:13\",\"app_name\":\"Chrome\",\"behavior_category\":\"直接外发\",\"operation_type\":\"生成二维码\",\"original_filename\":\"供应商收款账户表\",\"modified_filename\":\"qr.png\",\"description\":\"网页把供应商银行账号和收款人信息编码成二维码图片，页面显示可下载和转发\"}]}",
+      "current_expected_kept": 0,
+      "desired_expected_kept": 1,
+      "desired_operation": "生成二维码"
+    }
+  ],
+  "log_first_and_fallback_misses": [
+    {
+      "id": "cloud_sync_folder_copy_is_not_treated_as_exfiltration",
+      "why_currently_missed": "LogFirstDetector records the sensitive copy/derived file, but no upload event is created. The fallback gate does not treat cloud-sync locations or sync processes as ambiguous exfiltration context.",
+      "sensitive_files": ["C:/Users/alice/Documents/客户名单.xlsx"],
+      "logs": [
+        {
+          "timestamp": "2026-06-28T09:00:00.000",
+          "event_type": "file_open",
+          "file_path": "C:/Users/alice/Documents/客户名单.xlsx",
+          "file_name": "客户名单.xlsx",
+          "process_info": {"process_name": "excel.exe"},
+          "window_info": {"window_title": "客户名单.xlsx - Excel"}
+        },
+        {
+          "timestamp": "2026-06-28T09:01:10.000",
+          "event_type": "copied",
+          "file_path": "C:/Users/alice/Dropbox/TeamSync/客户名单.xlsx",
+          "file_name": "客户名单.xlsx",
+          "process_info": {"process_name": "Dropbox.exe"},
+          "window_info": {"window_title": "Dropbox syncing"}
+        }
+      ],
+      "current_expected": {
+        "upload_events": 0,
+        "alert_events": 0,
+        "vlm_decision": "skip",
+        "vlm_reason": "no_ai_or_ambiguous_exfil_context"
+      },
+      "desired_expected": {
+        "upload_events_or_vlm_decision": "alert_or_run",
+        "reason": "Copying a sensitive file into a third-party sync folder can leak it without an explicit file_upload log."
+      }
+    },
+    {
+      "id": "usb_copy_is_only_a_derived_file_not_a_leak",
+      "why_currently_missed": "Removable-drive paths are not modeled as an exfiltration channel; copied is treated as a transform-like event only.",
+      "sensitive_files": ["C:/Users/alice/Documents/并购谈判纪要.docx"],
+      "logs": [
+        {
+          "timestamp": "2026-06-28T10:00:00.000",
+          "event_type": "file_open",
+          "file_path": "C:/Users/alice/Documents/并购谈判纪要.docx",
+          "file_name": "并购谈判纪要.docx",
+          "process_info": {"process_name": "winword.exe"},
+          "window_info": {"window_title": "并购谈判纪要.docx - Word"}
+        },
+        {
+          "timestamp": "2026-06-28T10:01:35.000",
+          "event_type": "copied",
+          "file_path": "E:/BoardPacket/并购谈判纪要.docx",
+          "file_name": "并购谈判纪要.docx",
+          "process_info": {"process_name": "explorer.exe"},
+          "window_info": {"window_title": "Removable Drive (E:)"}
+        }
+      ],
+      "current_expected": {
+        "upload_events": 0,
+        "alert_events": 0,
+        "vlm_decision": "skip",
+        "vlm_reason": "no_ai_or_ambiguous_exfil_context"
+      },
+      "desired_expected": {
+        "upload_events_or_vlm_decision": "alert_or_run",
+        "reason": "Copying sensitive data to removable media is a direct leak path even without a network upload."
+      }
+    },
+    {
+      "id": "http_post_with_sensitive_file_path_not_classified_as_upload",
+      "why_currently_missed": "is_upload_log does not include http_post/network POST event types or transfer.sh-style destinations, so the sensitive file is opened but never becomes an upload/leak event.",
+      "sensitive_files": ["C:/Users/alice/Documents/研发路线图.docx"],
+      "logs": [
+        {
+          "timestamp": "2026-06-28T11:20:00.000",
+          "event_type": "file_open",
+          "file_path": "C:/Users/alice/Documents/研发路线图.docx",
+          "file_name": "研发路线图.docx",
+          "process_info": {"process_name": "winword.exe"},
+          "window_info": {"window_title": "研发路线图.docx - Word"}
+        },
+        {
+          "timestamp": "2026-06-28T11:20:45.000",
+          "event_type": "http_post",
+          "file_path": "C:/Users/alice/Documents/研发路线图.docx",
+          "file_name": "研发路线图.docx",
+          "process_info": {"process_name": "curl.exe"},
+          "window_info": {"window_title": "POST https://transfer.sh/roadmap"}
+        }
+      ],
+      "current_expected": {
+        "upload_events": 0,
+        "alert_events": 0,
+        "vlm_decision": "skip",
+        "vlm_reason": "no_ai_or_ambiguous_exfil_context"
+      },
+      "desired_expected": {
+        "upload_events_or_vlm_decision": "alert",
+        "reason": "A POST request carrying a configured sensitive file is deterministic exfiltration evidence."
+      }
+    },
+    {
+      "id": "delayed_generic_export_then_upload_loses_parent_mapping",
+      "why_currently_missed": "The generic export occurs outside the 120-second derivation window and does not share the sensitive stem, so the later upload cannot be linked back to the source document.",
+      "sensitive_files": ["C:/Users/alice/Documents/董事会预算.xlsx"],
+      "logs": [
+        {
+          "timestamp": "2026-06-28T13:00:00.000",
+          "event_type": "file_open",
+          "file_path": "C:/Users/alice/Documents/董事会预算.xlsx",
+          "file_name": "董事会预算.xlsx",
+          "process_info": {"process_name": "excel.exe"},
+          "window_info": {"window_title": "董事会预算.xlsx - Excel"}
+        },
+        {
+          "timestamp": "2026-06-28T13:08:30.000",
+          "event_type": "created",
+          "file_path": "C:/Users/alice/Desktop/notes.pdf",
+          "file_name": "notes.pdf",
+          "process_info": {"process_name": "excel.exe"},
+          "window_info": {"window_title": "Export as PDF"}
+        },
+        {
+          "timestamp": "2026-06-28T13:09:10.000",
+          "event_type": "file_upload",
+          "file_path": "C:/Users/alice/Desktop/notes.pdf",
+          "file_name": "notes.pdf",
+          "process_info": {"process_name": "msedge.exe"},
+          "window_info": {"window_title": "Gmail - attach file"}
+        }
+      ],
+      "current_expected": {
+        "upload_events": 0,
+        "alert_events": 0,
+        "vlm_decision": "skip",
+        "vlm_reason": "no_ai_or_ambiguous_exfil_context"
+      },
+      "desired_expected": {
+        "upload_events_or_vlm_decision": "alert_or_run",
+        "reason": "Generic exports may hide the source filename, especially when the user waits several minutes before uploading."
+      }
+    }
+  ]
+}

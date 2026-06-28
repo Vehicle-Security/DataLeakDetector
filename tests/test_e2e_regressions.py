@@ -36,6 +36,23 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertTrue(hasattr(prompt_loader.PROMPTS, "RETRIEVE_FRAMES_PROMPT"))
         self.assertTrue(hasattr(prompt_loader.PROMPTS, "SCENE_DEEP_DIVE_PROMPT"))
 
+    def test_critical_accuracy_fixtures_do_not_contain_mojibake(self):
+        bad_tokens = ["鍛", "姝", "绮", "閭", "娴", "鐢", "鏈", "涓", "杈", "宸", "甯", "瀹", "寰", "浼", "钖", "妫", "闀", "�"]
+        paths = [
+            REPO_ROOT / "1-FrameAnalyzer" / "agent.py",
+            REALISTIC_CASES_PATH,
+            QWEN_VLM_CASES_PATH,
+        ]
+
+        offenders = []
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            found = [token for token in bad_tokens if token in text]
+            if found:
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {found}")
+
+        self.assertEqual(offenders, [])
+
     def test_frame_analyzer_limits_vlm_frames_and_keeps_context(self):
         module_dir = REPO_ROOT / "1-FrameAnalyzer"
         sys.path.insert(0, str(module_dir))
@@ -105,7 +122,7 @@ class E2ERegressionTests(unittest.TestCase):
                 if case["expected_kept"]:
                     self.assertEqual(final_events[0]["operation_type"], case["expected_operation"])
                 self.assertEqual(meta["vlm_kept_events"], case["expected_kept"])
-                self.assertGreater(meta["vlm_dropped_events"], 0)
+                self.assertEqual(meta["vlm_dropped_events"], len(raw_events) - case["expected_kept"])
 
     def test_qwen_guardrail_prompt_contains_false_positive_constraints(self):
         module_dir = REPO_ROOT / "1-FrameAnalyzer"
@@ -378,6 +395,32 @@ class E2ERegressionTests(unittest.TestCase):
                 self.assertEqual(meta["decision"], expected["vlm_decision"])
                 self.assertEqual(should_run_vlm, expected["vlm_decision"] == "run")
                 self.assertIn(expected["vlm_reason"], meta["reasons"])
+
+    def test_realistic_fixture_matrix_covers_major_policy_paths(self):
+        with open(REALISTIC_CASES_PATH, "r", encoding="utf-8") as handle:
+            cases = json.load(handle)
+
+        decisions = {case["expected"]["vlm_decision"] for case in cases}
+        categories = {
+            case["expected"].get("app_category")
+            for case in cases
+            if case["expected"].get("app_category")
+        }
+        reasons = {
+            case["expected"].get("vlm_reason")
+            for case in cases
+            if case["expected"].get("vlm_reason")
+        }
+
+        self.assertGreaterEqual(len(cases), 12)
+        self.assertIn("skip_deterministic", decisions)
+        self.assertIn("run", decisions)
+        self.assertIn("skip", decisions)
+        self.assertIn("blacklist", categories)
+        self.assertIn("whitelist", categories)
+        self.assertIn("no_sensitive_log_context", reasons)
+        self.assertIn("no_ai_or_ambiguous_exfil_context", reasons)
+        self.assertIn("ambiguous_exfil_context_near_sensitive_log", reasons)
 
     def test_connected_fact_injection_builds_leak_path_for_derived_upload(self):
         run_e2e = load_module_from_path("run_e2e_regression_test", REPO_ROOT / "run_e2e.py")

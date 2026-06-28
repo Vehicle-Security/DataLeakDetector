@@ -303,7 +303,7 @@ class VideoFileOperationAgent:
         self.reader = easyocr.Reader(['ch_sim', 'en'], gpu=(self.device == 'cuda'))
 
     def vision_preprocessing_node(self, state: AgentState) -> AgentState:
-        logger.info("Step 1: 姝ｅ湪閫氳繃瑙嗚鐗瑰緛鎻愬彇杩涜鍏抽敭甯у垵姝ョ瓫閫?..")
+        logger.info("Step 1: 正在通过视觉特征提取进行关键帧初步筛选...")
         cap = cv2.VideoCapture(state.video_path)
         state.fps = cap.get(cv2.CAP_PROP_FPS)
         state.total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -331,15 +331,16 @@ class VideoFileOperationAgent:
         return state
 
     def keyword_filter_node(self, state: AgentState) -> AgentState:
-        # 鍒ゆ柇鏄惁闇€瑕佹墽琛屸€滈暱鏂囨湰妯＄硦鍖归厤鈥濇ā寮?        # 閫昏緫锛氬鏋?keywords 鍒楄〃涓湁浠讳綍涓€涓厓绱犻暱搴?> 10锛屽垯瑙嗕负绮樿创鐨勯暱鏂囨湰
+        # 判断是否需要执行“长文本模糊匹配”模式。
+        # 如果 keywords 中有任意元素长度 > 10，则视为粘贴的长文本。
         is_long_text_mode = any(len(kw) > 10 for kw in state.target_keywords)
         
         if is_long_text_mode:
-            # 灏嗘墍鏈夊叧閿瘝鎷兼帴鎴愪竴涓洰鏍囬暱鏂囨湰杩涜姣斿
+            # 将所有关键词拼接成一个目标长文本进行比对。
             target_text = "".join(state.target_keywords).replace(" ", "").lower()
-            logger.info(f"Step 2: 妫€娴嬪埌闀挎枃鏈紝姝ｅ湪鎵ц妯＄硦鐩镐技搴﹀尮閰?(鐩爣: {target_text[:20]}...)")
+            logger.info(f"Step 2: 检测到长文本，正在执行模糊相似度匹配 (目标: {target_text[:20]}...)")
         else:
-            logger.info(f"Step 2: 姝ｅ湪鎵ц OCR 鏂囨湰璇嗗埆骞跺尮閰嶅叧閿瘝: {state.target_keywords}...")
+            logger.info(f"Step 2: 正在执行 OCR 文本识别并匹配关键词: {state.target_keywords}...")
 
         last_hit_idx = -1
         for item in state.candidate_frames:
@@ -353,7 +354,7 @@ class VideoFileOperationAgent:
                 score = fuzz.partial_ratio(target_text, text_blob)
                 if score >= 65:
                     is_match = True
-                    logger.debug(f"甯?{item['idx']} 妯＄硦鍖归厤鎴愬姛锛屽緱鍒? {score}")
+                    logger.debug(f"帧 {item['idx']} 模糊匹配成功，得分: {score}")
             else:
                 if any(kw.lower() in text_blob for kw in state.target_keywords):
                     is_match = True
@@ -377,7 +378,7 @@ class VideoFileOperationAgent:
     def context_extension_node(self, state: AgentState) -> AgentState:
         last_idx = state.final_report.get('_last_hit_idx', -1)
         if last_idx == -1: return state
-        logger.info("Step 3: 姝ｅ湪閽堝鍛戒腑甯ф彁鍙栧悗缁笂涓嬫枃鏃堕棿鑺傜偣鐨勮ˉ鍏呯敾闈?..")
+        logger.info("Step 3: 正在针对命中帧提取后续上下文时间节点的补充画面...")
         cap = cv2.VideoCapture(state.video_path)
         for sec in [3, 8, 15]: 
             ext_idx = last_idx + int(sec * state.fps)
@@ -411,8 +412,8 @@ class VideoFileOperationAgent:
             }
             return state
 
-        logger.info(f"Step 4: 姝ｅ湪鍙戦€佸叧閿抚鑷?VLM 妯″瀷杩涜娣卞眰琛屼负鎰忓浘鍒嗘瀽...")
-        # --- 鏂板锛氬垱寤轰繚瀛樺浘鐗囩殑鐩綍 ---
+        logger.info("Step 4: 正在发送关键帧至 VLM 模型进行深层行为意图分析...")
+        # 创建保存图片的目录。
         save_dir = "vlm_debug_frames"
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -444,7 +445,7 @@ class VideoFileOperationAgent:
             )
             for i, f in enumerate(vlm_frames)
         ]
-        table_str = "杈撳叆椤哄簭 | 鍘熷甯х储寮?| 鐜板疄鏃堕棿鎴?%Y-%m-%d %H:%M:%S) | 绫诲瀷 | OCR鎽樿\n" + "-"*95 + "\n" + "\n".join(table_rows)
+        table_str = "输入顺序 | 原始帧索引 | 现实时间戳(%Y-%m-%d %H:%M:%S) | 类型 | OCR摘要\n" + "-"*95 + "\n" + "\n".join(table_rows)
 
         final_prompt = PROMPTS.RETRIEVE_FRAMES_PROMPT.format(
             frame_count=len(vlm_frames),
@@ -459,7 +460,7 @@ class VideoFileOperationAgent:
             save_path = os.path.join(save_dir, file_name)
             vlm_frame = self._resize_for_vlm(f['frame'])
             cv2.imwrite(save_path, vlm_frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
-            logger.debug(f"宸蹭繚瀛?VLM 杈撳叆甯ц嚦: {save_path}")
+            logger.debug(f"已保存 VLM 输入帧至: {save_path}")
             _, buffer = cv2.imencode('.jpg', vlm_frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
             img_b64 = base64.b64encode(buffer).decode('utf-8')
             contents.append({
