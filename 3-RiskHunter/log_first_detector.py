@@ -271,11 +271,15 @@ class LogFirstDetector:
                 score += 2
             if basename(parent_path).split(".")[0] in basename(path):
                 score += 1
+            same_process = process_name_from_log(log) == candidate.get("process_name")
+            close_in_time = current_ts and parent_ts and 0 <= current_ts - parent_ts <= 120_000
+            if event_type in DERIVE_TYPES and same_process and close_in_time:
+                score += 3
             if score > best_score:
                 best_score = score
                 best_parent = candidate
 
-        return best_parent if best_score > 0 else None
+        return best_parent if best_score >= 3 else None
 
     def _build_upload_event(
         self,

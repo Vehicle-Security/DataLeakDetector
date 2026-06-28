@@ -773,6 +773,15 @@ def _inject_connected_facts_from_module3(engine, module3_result: Dict[str, Any],
                     f"补充: {owner_process} → {uploader_process} ({os.path.basename(leak_file)})",
                 ):
                     print(f"      + CrossProcessTransfer({owner_process} → {uploader_process}) [{events_key}]")
+            elif not owner_process:
+                if add_open_fact(
+                    uploader_process,
+                    leak_file,
+                    timestamp_ms,
+                    timestamp_str,
+                    f"补充: 将上传的敏感文件作为污染源 {os.path.basename(leak_file)}",
+                ):
+                    print(f"      + OpenFile({uploader_process}, {os.path.basename(leak_file)}) [upload source]")
 
     for log in logs_by_time:
         if log.get("event_type", "") != "file_upload":
