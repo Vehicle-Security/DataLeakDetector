@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REALISTIC_CASES_PATH = REPO_ROOT / "fixtures" / "realistic_log_cases.json"
 QWEN_VLM_CASES_PATH = REPO_ROOT / "fixtures" / "qwen_vlm_response_cases.json"
 CURRENTLY_UNRECOGNIZED_CASES_PATH = REPO_ROOT / "fixtures" / "currently_unrecognized_violation_cases.json"
+BENCHMARK_SCRIPT_PATH = REPO_ROOT / "tools" / "benchmark_detection.py"
 
 
 def load_module_from_path(module_name: str, file_path: Path):
@@ -176,6 +177,20 @@ class E2ERegressionTests(unittest.TestCase):
         stats_module.sync_processed_statistics(state)
 
         self.assertEqual(state["statistics"]["total_events_processed"], 13)
+
+    def test_offline_benchmark_reports_no_fixture_failures(self):
+        benchmark_module = load_module_from_path(
+            "benchmark_detection_regression_test",
+            BENCHMARK_SCRIPT_PATH,
+        )
+
+        report = benchmark_module.run_benchmark()
+        failures = [case for case in report["cases"] if not case.get("pass")]
+
+        self.assertEqual(failures, [])
+        self.assertEqual(report["summary"]["vlm_postprocess"]["fn"], 0)
+        self.assertEqual(report["summary"]["log_triage"]["fn"], 0)
+        self.assertGreaterEqual(report["vlm_pressure"]["estimated_vlm_calls"], 1)
 
     def test_vlm_fallback_gate_runs_for_ai_only_sample_but_skips_benign_sample(self):
         run_e2e = load_module_from_path("run_e2e_vlm_gate_test", REPO_ROOT / "run_e2e.py")
