@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import json
+import hashlib
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from langchain_core.tools import tool
@@ -258,6 +259,36 @@ def analyze_frame_behavior(
         print(f"   - 目标关键词: {target_keywords}")
         
         # 调用模块1
+        cache_enabled = os.getenv("DLD_FRAME_CACHE", "1").strip().lower() not in {"0", "false", "no", "off"}
+        cache_path = ""
+        if cache_enabled:
+            cache_dir = os.path.join(os.getcwd(), "output", "cache", "frame_analysis")
+            os.makedirs(cache_dir, exist_ok=True)
+            try:
+                video_mtime = os.path.getmtime(video_path)
+            except OSError:
+                video_mtime = 0
+            cache_payload = {
+                "video_path": os.path.abspath(video_path),
+                "video_mtime": video_mtime,
+                "search_start": search_start_time,
+                "search_end": search_end_time,
+                "target_keywords": target_keywords,
+                "search_duration": search_duration,
+            }
+            cache_key = hashlib.sha256(
+                json.dumps(cache_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+            cache_path = os.path.join(cache_dir, f"{cache_key}.json")
+            if os.path.exists(cache_path):
+                try:
+                    with open(cache_path, "r", encoding="utf-8") as f:
+                        cached_result = json.load(f)
+                    print(f"   [cache] reused frame analysis: {cache_path}")
+                    return cached_result
+                except Exception as cache_error:
+                    print(f"   [cache] ignored unreadable cache: {cache_error}")
+
         result = analyze_video_behavior(
             rec_start_time_str=rec_start_time,
             search_start_time_str=search_start_time,
@@ -269,6 +300,13 @@ def analyze_frame_behavior(
         if result:
             result = dict(result)
             result["recording_start_time"] = rec_start_time
+            if cache_enabled and cache_path:
+                try:
+                    with open(cache_path, "w", encoding="utf-8") as f:
+                        json.dump(result, f, ensure_ascii=False, indent=2)
+                    print(f"   [cache] saved frame analysis: {cache_path}")
+                except Exception as cache_error:
+                    print(f"   [cache] save failed: {cache_error}")
             print(f"   ✅ 模块1分析完成，发现 {result.get('total_events', 0)} 个事件")
             print(f"   - 结果预览: {json.dumps(result.get('events', [])[:3], ensure_ascii=False)}")
             return result

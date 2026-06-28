@@ -57,6 +57,7 @@ def import_modules():
     """延迟导入模块，避免启动时的依赖问题"""
     global create_upload_detector_graph, create_initial_state
     global UploadDetectionConfig
+    global LogFirstDetector
     global DatalogEngine, PromptTemplates
 
     # 模块3 (RiskHunter) - LangGraph 上传检测 Agent
@@ -65,6 +66,7 @@ def import_modules():
         from upload_detector_graph import create_upload_detector_graph
         from upload_detector_state import create_initial_state
         from upload_detection_config import UploadDetectionConfig
+        from log_first_detector import LogFirstDetector
         print("✅ 模块3 (RiskHunter + FileTracker + FrameAnalyzer) 加载成功")
     except ImportError as e:
         logger.warning(f"模块3导入失败: {e}")
@@ -73,6 +75,7 @@ def import_modules():
         create_upload_detector_graph = None
         create_initial_state = None
         UploadDetectionConfig = None
+        LogFirstDetector = None
 
     # 模块4 (ThreatDetector) - Datalog 推理
     try:
@@ -227,6 +230,30 @@ def run_module3_pipeline(log_file: str, video_path: str,
     print(f"      - 白名单应用: {len(whitelist_apps)} 个")
 
     # 创建初始状态
+    use_log_first = os.getenv("DLD_LOG_FIRST", "1").strip().lower() not in {"0", "false", "no", "off"}
+    if use_log_first and LogFirstDetector is not None:
+        print(f"\n   [log-first] deterministic log analysis enabled")
+        log_first_result = LogFirstDetector(
+            sensitive_files=sensitive_files,
+            blacklist_apps=blacklist_apps,
+            whitelist_apps=whitelist_apps,
+        ).analyze(logs_data)
+
+        upload_count = len(log_first_result.get("upload_events", []))
+        log_first_meta = log_first_result.get("log_first", {})
+        print(f"      - sensitive log events: {log_first_meta.get('sensitive_events', 0)}")
+        print(f"      - file mappings: {log_first_meta.get('direct_mappings', 0)}")
+        print(f"      - confident upload events: {upload_count}")
+
+        if upload_count > 0:
+            print("      [OK] log evidence is sufficient; skipping VLM analysis")
+            return log_first_result
+
+        enable_vlm_fallback = os.getenv("DLD_ENABLE_VLM_FALLBACK", "1").strip().lower() not in {"0", "false", "no", "off"}
+        if not enable_vlm_fallback:
+            print("      [INFO] no confident upload chain and VLM fallback is disabled")
+            return log_first_result
+
     initial_state = create_initial_state(
         record_id="e2e",
         base_path=os.path.dirname(log_file),
@@ -265,11 +292,15 @@ def run_module3_pipeline(log_file: str, video_path: str,
         }
 
     # 提取结果
-    alert_events = final_state.get("alert_events", [])
-    info_events = final_state.get("info_events", [])
-    upload_events = final_state.get("upload_events", [])
+    upload_events = _dedupe_upload_events(final_state.get("upload_events", []))
+    alert_events = [event for event in upload_events if getattr(event, "should_alert", False)]
+    info_events = [event for event in upload_events if not getattr(event, "should_alert", False)]
     operation_records = final_state.get("operation_records", [])
-    statistics = final_state.get("statistics", {})
+    statistics = dict(final_state.get("statistics", {}))
+    statistics["upload_events_detected"] = len(upload_events)
+    statistics["blacklist_alerts"] = len(alert_events)
+    statistics["whitelist_uploads"] = sum(1 for event in upload_events if getattr(event, "app_category", "") == "whitelist")
+    statistics["unknown_uploads"] = sum(1 for event in upload_events if getattr(event, "app_category", "") == "unknown")
 
     # 提取文件映射关系
     file_mappings = {}
@@ -380,6 +411,33 @@ def _is_sensitive_filename(file_name: str) -> bool:
         "员工",
     ]
     return any(keyword in (file_name or "") for keyword in sensitive_keywords)
+
+
+def _dedupe_upload_events(events: List[Any]) -> List[Any]:
+    deduped = []
+    seen = set()
+    for event in events or []:
+        timestamp = event.timestamp if hasattr(event, "timestamp") else event.get("timestamp", "")
+        if hasattr(event, "file_path"):
+            file_path = getattr(event, "upload_content", "") or getattr(event, "file_path", "")
+            app_name = getattr(event, "app_name", "")
+            operation_type = getattr(event, "operation_type", "")
+        else:
+            file_path = event.get("upload_content") or event.get("file_path", "")
+            app_name = event.get("app_name", "")
+            operation_type = event.get("operation_type", "")
+        bucket = _parse_timestamp_ms(timestamp) // 10000 if timestamp else 0
+        key = (
+            _file_identity_key(file_path),
+            _normalize_process_name(app_name),
+            str(operation_type or "").lower(),
+            bucket,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(event)
+    return deduped
 
 
 def _inject_connected_facts_from_module3(engine, module3_result: Dict[str, Any],
@@ -1122,11 +1180,32 @@ def run_threat_detector(logs: List[Dict],
     print("⚖️ 模块4: ThreatDetector - Datalog 推理")
     print("=" * 80)
 
-    if DatalogEngine is None or PromptTemplates is None:
+    if DatalogEngine is None:
         print("   ⚠️ 模块4未加载，跳过")
         return {"leak_paths": [], "datalog_facts": []}
 
     # 从模块3结果构建视频帧分析数据（用于 module4 LLM 分析）
+    print(f"\n   [deterministic] building Datalog facts from logs/module3 results...")
+    deterministic_engine = DatalogEngine()
+    deterministic_facts = _inject_connected_facts_from_module3(deterministic_engine, module3_result, logs)
+    deterministic_leak_paths = deterministic_engine.query_leak()
+    deterministic_engine.cleanup()
+
+    enable_llm_facts = os.getenv("DLD_ENABLE_LLM_FACTS", "0").strip().lower() in {"1", "true", "yes", "on"}
+    if deterministic_leak_paths or not enable_llm_facts:
+        if deterministic_leak_paths:
+            print("   [OK] deterministic Datalog found leak paths; skipping LLM fact generation")
+        else:
+            print("   [INFO] deterministic Datalog found no leak paths; LLM fact fallback is disabled")
+        return {
+            "leak_paths": deterministic_leak_paths,
+            "datalog_facts": deterministic_facts
+        }
+
+    if PromptTemplates is None:
+        print("   [WARN] LLM fact fallback requested but PromptTemplates is unavailable")
+        return {"leak_paths": [], "datalog_facts": deterministic_facts}
+
     video_frames = _build_video_frames_from_module3(module3_result)
     print(f"   📊 构建视频帧数据: {len(video_frames)} 个帧事件")
 
