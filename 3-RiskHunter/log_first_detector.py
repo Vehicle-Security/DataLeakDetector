@@ -138,6 +138,24 @@ class LogFirstDetector:
             if not path:
                 continue
 
+            detected_original = self._upload_detection_original_file(log)
+            if detected_original:
+                mappings[file_key(path)] = detected_original
+                source_by_key[file_key(detected_original)] = {
+                    "file_path": detected_original,
+                    "original_file": detected_original,
+                    "process_name": process_name_from_log(log),
+                    "timestamp": log.get("timestamp", ""),
+                    "log": log,
+                }
+                source_by_key[file_key(path)] = {
+                    "file_path": path,
+                    "original_file": detected_original,
+                    "process_name": process_name_from_log(log),
+                    "timestamp": log.get("timestamp", ""),
+                    "log": log,
+                }
+
             if self._is_sensitive_path(path, log):
                 root_path = mappings.get(file_key(path), path)
                 source_by_key[file_key(path)] = {
@@ -235,6 +253,17 @@ class LogFirstDetector:
             or is_sensitive_name(name)
         )
 
+    def _upload_detection_original_file(self, log: Dict[str, Any]) -> str:
+        upload_detection = log.get("upload_detection")
+        if not isinstance(upload_detection, dict):
+            return ""
+        original = normalize_path(upload_detection.get("original_file", ""))
+        if not original:
+            return ""
+        if self._is_sensitive_path(original, {"file_name": basename(original)}):
+            return original
+        return ""
+
     def _find_parent_for_log(
         self,
         log: Dict[str, Any],
@@ -304,6 +333,17 @@ class LogFirstDetector:
                 "timestamp": log.get("timestamp", ""),
                 "log": log,
             }
+        if not source:
+            detected_original = self._upload_detection_original_file(log)
+            if detected_original:
+                source = {
+                    "file_path": detected_original,
+                    "original_file": detected_original,
+                    "process_name": process_name_from_log(log),
+                    "timestamp": log.get("timestamp", ""),
+                    "log": log,
+                }
+                mappings[path_key] = detected_original
         if not source:
             return None
 

@@ -217,5 +217,42 @@
       "app_category": "whitelist",
       "vlm_decision": "skip_deterministic"
     }
+  },
+  {
+    "id": "browser_temp_upload_with_original_file_metadata",
+    "description": "Browser upload uses a random temp file path, but upload_detection.original_file links it to the sensitive source file.",
+    "sensitive_files": ["C:/Users/alice/Documents/BoardBudget_Confidential.xlsx"],
+    "logs": [
+      {
+        "timestamp": "2026-06-28T16:03:00.000",
+        "event_type": "file_open",
+        "file_path": "C:/Users/alice/Documents/BoardBudget_Confidential.xlsx",
+        "file_name": "BoardBudget_Confidential.xlsx",
+        "process_info": {"process_name": "excel.exe"},
+        "window_info": {"window_title": "BoardBudget_Confidential.xlsx - Excel"}
+      },
+      {
+        "timestamp": "2026-06-28T16:03:36.000",
+        "event_type": "file_upload",
+        "file_path": "C:/Users/alice/AppData/Local/Temp/chrome_upload_8f31.tmp",
+        "file_name": "chrome_upload_8f31.tmp",
+        "process_info": {"process_name": "msedge.exe"},
+        "window_info": {"window_title": "GitHub - new issue - attach files"},
+        "upload_detection": {
+          "is_upload": true,
+          "original_file": "C:/Users/alice/Documents/BoardBudget_Confidential.xlsx",
+          "temp_file": "C:/Users/alice/AppData/Local/Temp/chrome_upload_8f31.tmp",
+          "upload_type": "Browser Upload",
+          "detection_method": "browser_temp_correlation",
+          "sensitivity": "configured_sensitive_file"
+        }
+      }
+    ],
+    "expected": {
+      "upload_events": 1,
+      "alert_events": 1,
+      "app_category": "blacklist",
+      "vlm_decision": "skip_deterministic"
+    }
   }
 ]

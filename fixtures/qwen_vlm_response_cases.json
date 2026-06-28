@@ -19,5 +19,19 @@
     "response": "{\"events\":[{\"time_range\":\"2026-06-28 11:20:00 - 2026-06-28 11:20:03\",\"app_name\":\"Word\",\"behavior_category\":\"正常操作\",\"operation_type\":\"阅读\",\"original_filename\":\"内部战略规划.docx\",\"modified_filename\":\"未知\",\"description\":\"用户浏览文档页面\"},{\"time_range\":\"2026-06-28 11:20:39 - 2026-06-28 11:20:43\",\"app_name\":\"ChatGPT\",\"behavior_category\":\"直接外发\",\"operation_type\":\"粘贴外发\",\"original_filename\":\"Aether 2.0 预发布定价策略：企业版底价不得低于 128000 元\",\"modified_filename\":\"未知\",\"description\":\"用户将该长文本粘贴到AI对话框\"}]}",
     "expected_kept": 1,
     "expected_operation": "粘贴外发"
+  },
+  {
+    "id": "qwen_bare_array_missing_operation_type_is_normalized",
+    "keywords": ["BoardBudget_Confidential.xlsx"],
+    "response": "[{\"time_range\":\"2026-06-28 16:03:36 - 2026-06-28 16:03:40\",\"app_name\":\"GitHub\",\"behavior_category\":\"直接外发\",\"original_filename\":\"BoardBudget_Confidential.xlsx\",\"modified_filename\":\"未知\",\"description\":\"The file BoardBudget_Confidential.xlsx is attached to a GitHub issue upload area.\"},{\"time_range\":\"2026-06-28 16:03:00 - 2026-06-28 16:03:03\",\"app_name\":\"Excel\",\"behavior_category\":\"正常操作\",\"operation_type\":\"open\",\"original_filename\":\"BoardBudget_Confidential.xlsx\",\"modified_filename\":\"未知\",\"description\":\"The workbook is only opened.\"}]",
+    "expected_kept": 1,
+    "expected_operation": "未知"
+  },
+  {
+    "id": "qwen_target_file_normal_reading_is_dropped",
+    "keywords": ["BoardBudget_Confidential.xlsx"],
+    "response": "{\"events\":[{\"time_range\":\"2026-06-28 16:03:00 - 2026-06-28 16:03:05\",\"app_name\":\"Excel\",\"behavior_category\":\"正常操作\",\"operation_type\":\"阅读\",\"original_filename\":\"BoardBudget_Confidential.xlsx\",\"modified_filename\":\"未知\",\"description\":\"用户只是打开并阅读 BoardBudget_Confidential.xlsx，没有复制、上传或发送\"}]}",
+    "expected_kept": 0,
+    "expected_operation": ""
   }
 ]

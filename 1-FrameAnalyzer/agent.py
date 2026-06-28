@@ -186,6 +186,70 @@ class VideoFileOperationAgent:
             str(event.get("modified_filename", "")).strip().lower(),
         )
 
+    @staticmethod
+    def _normalize_vlm_event(event: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = dict(event)
+        normalized.setdefault("time_range", "")
+        normalized.setdefault("involved_timestamps", [])
+        normalized.setdefault("app_name", "\u672a\u77e5")
+        normalized.setdefault("app_type", "\u672a\u77e5")
+        normalized.setdefault("behavior_category", "\u672a\u77e5")
+        normalized.setdefault("operation_type", "\u672a\u77e5")
+        normalized.setdefault("original_filename", "\u672a\u77e5")
+        normalized.setdefault("modified_filename", "\u672a\u77e5")
+        normalized.setdefault("description", "")
+        return normalized
+
+    def _is_low_value_normal_event(self, event: Dict[str, Any]) -> bool:
+        compact = self._compact_text(self._event_text(event))
+        label_text = self._compact_text(
+            f"{event.get('behavior_category', '')} {event.get('operation_type', '')}"
+        )
+        risk_tokens = [
+            "paste",
+            "copy",
+            "clipboard",
+            "send",
+            "upload",
+            "attach",
+            "rename",
+            "compress",
+            "convert",
+            "screenshot",
+            "record",
+            "\u7c98\u8d34",
+            "\u590d\u5236",
+            "\u526a\u8d34\u677f",
+            "\u53d1\u9001",
+            "\u4e0a\u4f20",
+            "\u9644\u4ef6",
+            "\u91cd\u547d\u540d",
+            "\u538b\u7f29",
+            "\u8f6c\u6362",
+            "\u622a\u56fe",
+            "\u5f55\u5c4f",
+            "\u5916\u53d1",
+            "\u9690\u85cf",
+        ]
+        normal_tokens = [
+            "open",
+            "read",
+            "view",
+            "scroll",
+            "\u6253\u5f00",
+            "\u9605\u8bfb",
+            "\u6d4f\u89c8",
+            "\u6eda\u52a8",
+            "\u6b63\u5e38\u64cd\u4f5c",
+        ]
+        if any(token in label_text for token in normal_tokens) and not any(
+            token in label_text for token in risk_tokens
+        ):
+            return True
+        if any(token in compact for token in risk_tokens):
+            return False
+        return any(token in compact for token in normal_tokens)
+
     def _filter_vlm_events(self, raw_events: List[Dict[str, Any]], target_keywords: List[str]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         is_long_text_mode = self._is_long_text_mode(target_keywords)
         filtered = []
@@ -193,6 +257,10 @@ class VideoFileOperationAgent:
         dropped = 0
 
         for event in raw_events:
+            event = self._normalize_vlm_event(event)
+            if self._is_low_value_normal_event(event):
+                dropped += 1
+                continue
             if not self._event_matches_keywords(event, target_keywords, is_long_text_mode):
                 dropped += 1
                 continue

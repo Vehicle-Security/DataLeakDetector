@@ -102,7 +102,8 @@ class E2ERegressionTests(unittest.TestCase):
                 final_events, meta = agent._filter_vlm_events(raw_events, case["keywords"])
 
                 self.assertEqual(len(final_events), case["expected_kept"])
-                self.assertEqual(final_events[0]["operation_type"], case["expected_operation"])
+                if case["expected_kept"]:
+                    self.assertEqual(final_events[0]["operation_type"], case["expected_operation"])
                 self.assertEqual(meta["vlm_kept_events"], case["expected_kept"])
                 self.assertGreater(meta["vlm_dropped_events"], 0)
 
