@@ -229,6 +229,10 @@ class BenchmarkSummary:
         }
 
 
+def _progress(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
+
+
 def _load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
@@ -553,54 +557,199 @@ def _sample_frame_times(windows: List[Tuple[datetime, datetime]], max_frames: in
     return points[:max_frames]
 
 
-def _extract_frame_images(
+def _frame_time_candidates(
+    windows: List[Tuple[datetime, datetime]],
+    max_frames: int,
+    max_candidates: int,
+) -> List[datetime]:
+    if max_frames <= 0:
+        return []
+    if not windows:
+        return []
+
+    budget = max(max_frames, max_candidates)
+    durations = [max(0.0, (end - start).total_seconds()) for start, end in windows]
+    total_duration = sum(durations) or float(len(windows))
+    points: List[datetime] = []
+
+    for idx, (start, end) in enumerate(windows):
+        remaining_windows = len(windows) - idx
+        remaining_budget = budget - len(points)
+        if remaining_budget <= 0:
+            break
+
+        duration = durations[idx]
+        proportional = int(round(budget * ((duration or 1.0) / total_duration)))
+        count = max(3, proportional)
+        count = min(count, remaining_budget - max(0, remaining_windows - 1))
+        count = max(1, count)
+
+        if count == 1 or duration <= 0:
+            points.append(start + timedelta(seconds=duration / 2))
+            continue
+        for pos in range(count):
+            ratio = pos / (count - 1)
+            points.append(start + timedelta(seconds=duration * ratio))
+
+    deduped = []
+    seen = set()
+    for dt in sorted(points):
+        key = dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(dt)
+    return deduped[:budget]
+
+
+def _thumbnail_scene_score(frame: Any, previous_thumb: Any) -> tuple[float, Any]:
+    import cv2
+
+    thumb = cv2.resize(frame, (96, 54), interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(thumb, cv2.COLOR_BGR2GRAY)
+    if previous_thumb is None:
+        return 1.0, gray
+    score = float(cv2.absdiff(gray, previous_thumb).mean()) / 255.0
+    return score, gray
+
+
+def _select_representative_frames(candidates: List[Dict[str, Any]], max_frames: int) -> List[Dict[str, Any]]:
+    if max_frames <= 0 or not candidates:
+        return []
+    if len(candidates) <= max_frames:
+        for item in candidates:
+            item["selection_reason"] = item.get("selection_reason") or "candidate"
+        return candidates
+
+    selected: Dict[int, Dict[str, Any]] = {}
+
+    def add(item: Dict[str, Any], reason: str) -> None:
+        if len(selected) >= max_frames:
+            return
+        key = int(item["frame_index"])
+        if key in selected:
+            selected[key]["selection_reason"] = f"{selected[key]['selection_reason']}+{reason}"
+            return
+        copy = dict(item)
+        copy["selection_reason"] = reason
+        selected[key] = copy
+
+    add(candidates[0], "window_start")
+    if len(candidates) > 2:
+        add(candidates[len(candidates) // 2], "window_mid")
+    add(candidates[-1], "window_end")
+
+    ranked = sorted(
+        candidates,
+        key=lambda item: (float(item.get("scene_score", 0.0)), int(item.get("frame_index", 0))),
+        reverse=True,
+    )
+    min_gap = max(1, int(os.getenv("DLD_VLM_REVIEW_MIN_FRAME_GAP", "12")))
+    for item in ranked:
+        if len(selected) >= max_frames:
+            break
+        frame_index = int(item["frame_index"])
+        if any(abs(frame_index - existing) < min_gap for existing in selected):
+            continue
+        add(item, "scene_change")
+
+    for item in ranked:
+        if len(selected) >= max_frames:
+            break
+        add(item, "scene_change_fallback")
+
+    return sorted(selected.values(), key=lambda item: int(item["frame_index"]))
+
+
+def _encode_frame_image(
+    frame: Any,
+    item: Dict[str, Any],
+    index: int,
+    max_edge: int,
+    jpeg_quality: int,
+) -> Optional[Dict[str, Any]]:
+    import cv2
+
+    height, width = frame.shape[:2]
+    largest = max(height, width)
+    if largest > max_edge:
+        scale = max_edge / largest
+        frame = cv2.resize(
+            frame,
+            (max(1, int(width * scale)), max(1, int(height * scale))),
+            interpolation=cv2.INTER_AREA,
+        )
+    ok, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+    if not ok:
+        return None
+    return {
+        "index": index,
+        "timestamp": item["timestamp"],
+        "frame_index": item["frame_index"],
+        "scene_score": round(float(item.get("scene_score", 0.0)), 4),
+        "selection_reason": item.get("selection_reason", ""),
+        "b64": base64.b64encode(buffer).decode("ascii"),
+    }
+
+
+def _extract_representative_frame_images(
     video_path: Path,
     recording_start: datetime,
-    frame_times: List[datetime],
+    windows: List[Tuple[datetime, datetime]],
+    max_frames: int,
     max_edge: int = 960,
     jpeg_quality: int = 65,
 ) -> List[Dict[str, Any]]:
     import cv2
+
+    candidate_budget = max(
+        max_frames,
+        int(os.getenv("DLD_VLM_REVIEW_CANDIDATE_FRAMES", str(max(24, max_frames * 6)))),
+    )
+    frame_times = _frame_time_candidates(windows, max_frames, candidate_budget)
+    if not frame_times:
+        frame_times = _sample_frame_times(windows, max_frames)
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         return []
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    images = []
+    candidates = []
+    previous_thumb = None
+    seen_frames = set()
     try:
-        for idx, dt in enumerate(frame_times, 1):
+        for dt in frame_times:
             offset = max(0.0, (dt - recording_start).total_seconds())
             frame_index = int(round(offset * fps))
             if frame_count:
                 frame_index = min(max(0, frame_index), max(0, frame_count - 1))
+            if frame_index in seen_frames:
+                continue
+            seen_frames.add(frame_index)
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
             ok, frame = cap.read()
             if not ok or frame is None:
                 continue
 
-            height, width = frame.shape[:2]
-            largest = max(height, width)
-            if largest > max_edge:
-                scale = max_edge / largest
-                frame = cv2.resize(
-                    frame,
-                    (max(1, int(width * scale)), max(1, int(height * scale))),
-                    interpolation=cv2.INTER_AREA,
-                )
-            ok, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
-            if not ok:
-                continue
-            images.append(
+            scene_score, previous_thumb = _thumbnail_scene_score(frame, previous_thumb)
+            candidates.append(
                 {
-                    "index": idx,
                     "timestamp": dt.strftime("%Y-%m-%d %H:%M:%S"),
                     "frame_index": frame_index,
-                    "b64": base64.b64encode(buffer).decode("ascii"),
+                    "scene_score": scene_score,
+                    "frame": frame,
                 }
             )
     finally:
         cap.release()
+
+    selected = _select_representative_frames(candidates, max_frames)
+    images = []
+    for idx, item in enumerate(selected, 1):
+        encoded = _encode_frame_image(item.pop("frame"), item, idx, max_edge, jpeg_quality)
+        if encoded:
+            images.append(encoded)
     return images
 
 
@@ -618,11 +767,11 @@ def _live_vlm_review_case(
         return {"status": "skipped", "reason": "missing_video_or_recording_start", "is_violation": True}
 
     windows = _windows_from_fallback(fallback_meta, logs)
-    frame_times = _sample_frame_times(windows, max_frames)
-    images = _extract_frame_images(
+    images = _extract_representative_frame_images(
         video_path,
         rec_start,
-        frame_times,
+        windows,
+        max_frames,
         max_edge=int(os.getenv("DLD_VLM_REVIEW_IMAGE_MAX_EDGE", "960")),
         jpeg_quality=int(os.getenv("DLD_VLM_REVIEW_JPEG_QUALITY", "65")),
     )
@@ -664,7 +813,16 @@ def _live_vlm_review_case(
 """
     contents: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
     for image in images:
-        contents.append({"type": "text", "text": f"Frame {image['index']} @ {image['timestamp']}"})
+        contents.append(
+            {
+                "type": "text",
+                "text": (
+                    f"Frame {image['index']} @ {image['timestamp']} "
+                    f"(source_frame={image['frame_index']}, reason={image.get('selection_reason', '')}, "
+                    f"scene_score={image.get('scene_score', 0.0)})"
+                ),
+            }
+        )
         contents.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image['b64']}"}})
 
     llm = ChatOpenAI(model=model, base_url=base_url or None, api_key=api_key)
@@ -679,6 +837,16 @@ def _live_vlm_review_case(
         return {"status": "failed", "reason": "bad_json_response", "raw": text, "is_violation": True}
     verdict["status"] = "success"
     verdict["frames_sent"] = len(images)
+    verdict["frame_selection"] = [
+        {
+            "index": image["index"],
+            "timestamp": image["timestamp"],
+            "frame_index": image["frame_index"],
+            "scene_score": image.get("scene_score"),
+            "selection_reason": image.get("selection_reason"),
+        }
+        for image in images
+    ]
     verdict["model"] = model
     _postprocess_vlm_verdict(verdict)
     return verdict
@@ -826,20 +994,25 @@ def run_benchmark(
 
     result = BenchmarkSummary()
     seen_cases = set()
+    wanted = {item.replace("\\", "/").strip().lower() for item in case_filters or []}
+    case_dirs: List[tuple[Path, str]] = []
     for case_dir in sorted(_case_dirs(root, stages)):
         if case_dir in seen_cases:
             continue
         seen_cases.add(case_dir)
-
-        gt_path = _choose_groundtruth(case_dir)
         case_id = str(case_dir.relative_to(root))
-        if case_filters:
+        if wanted:
             normalized_case_id = case_id.replace("\\", "/").lower()
-            wanted = {item.replace("\\", "/").strip().lower() for item in case_filters}
             if normalized_case_id not in wanted and case_dir.name.lower() not in wanted:
                 continue
+        case_dirs.append((case_dir, case_id))
+
+    total_cases = len(case_dirs)
+    for case_index, (case_dir, case_id) in enumerate(case_dirs, 1):
+        gt_path = _choose_groundtruth(case_dir)
         if not gt_path:
             result.skipped.append({"case": case_id, "reason": "missing_groundtruth_or_logs"})
+            _progress(f"[CASE {case_index}/{total_cases}] SKIP case={case_id} reason=missing_groundtruth_or_logs")
             continue
         try:
             groundtruth = _read_json_lenient(gt_path)
@@ -848,6 +1021,7 @@ def run_benchmark(
                 raise ValueError("missing or empty log file")
         except Exception as exc:
             result.skipped.append({"case": case_id, "reason": f"parse_error: {exc}"})
+            _progress(f"[CASE {case_index}/{total_cases}] SKIP case={case_id} reason=parse_error:{exc}")
             continue
 
         sensitive_files = _sensitive_files_from_groundtruth(groundtruth)
@@ -875,6 +1049,14 @@ def run_benchmark(
             and not deterministic_positive
             and (max_vlm_cases <= 0 or result.live_vlm_reviews < max_vlm_cases)
         ):
+            next_live_idx = result.live_vlm_reviews + 1
+            live_limit = str(max_vlm_cases) if max_vlm_cases > 0 else "all"
+            _progress(
+                f"[VLM {next_live_idx}/{live_limit} START] "
+                f"case={case_id} progress={case_index}/{total_cases} "
+                f"expected={int(expected)} reasons={','.join(fallback_meta.get('reasons', []))} "
+                f"max_frames={max_vlm_frames}"
+            )
             result.live_vlm_reviews += 1
             vlm_verdict = _live_vlm_review_case(
                 case_dir=case_dir,
@@ -911,6 +1093,26 @@ def run_benchmark(
             result.deterministic_hits += 1
         if should_run_vlm:
             result.vlm_reviews += 1
+
+        vlm_status = "none"
+        frames_sent = 0
+        confidence = ""
+        completed_action = ""
+        if vlm_verdict:
+            vlm_status = str(vlm_verdict.get("status", "unknown"))
+            frames_sent = int(vlm_verdict.get("frames_sent", 0) or 0)
+            confidence = str(vlm_verdict.get("confidence", ""))
+            completed_action = str(vlm_verdict.get("completed_action", ""))
+        elif should_run_vlm:
+            vlm_status = "queued" if use_vlm else "triage_only"
+
+        _progress(
+            f"[CASE {case_index}/{total_cases}] {final_bucket.upper()} "
+            f"case={case_id} expected={int(expected)} final={int(final_positive)} "
+            f"det={int(deterministic_positive)} triage={int(triage_positive)} "
+            f"vlm={vlm_status} frames={frames_sent} confidence={confidence} "
+            f"action={completed_action} reasons={','.join(fallback_meta.get('reasons', []))}"
+        )
 
         result.cases.append(
             {
