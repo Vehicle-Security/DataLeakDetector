@@ -195,9 +195,11 @@ PRELIMINARY_OCR_TOKENS = (
 _OCR_READER: Any = None
 _OCR_READER_FAILED = False
 _OCR_READER_LOCK = Lock()
+_OCR_INFER_LOCK = Lock()
 _RAPID_OCR_READER: Any = None
 _RAPID_OCR_READER_FAILED = False
 _RAPID_OCR_READER_LOCK = Lock()
+_RAPID_OCR_INFER_LOCK = Lock()
 
 
 @dataclass
@@ -750,7 +752,8 @@ def _rapid_ocr_frame_text(frame: Any) -> str:
     if not reader:
         return ""
     try:
-        result = reader(frame)
+        with _RAPID_OCR_INFER_LOCK:
+            result = reader(frame)
     except Exception:
         return ""
     rows = result[0] if isinstance(result, tuple) else result
@@ -773,7 +776,8 @@ def _ocr_frame_text(frame: Any) -> str:
     if not reader:
         return ""
     try:
-        results = reader.readtext(frame, detail=0, paragraph=False)
+        with _OCR_INFER_LOCK:
+            results = reader.readtext(frame, detail=0, paragraph=False)
     except Exception:
         return ""
     return " ".join(str(item).strip() for item in results if str(item).strip())
@@ -806,6 +810,16 @@ def _ocr_prefilter_enabled() -> bool:
     if value in {"1", "true", "yes", "on"}:
         return _ocr_engine_name() != "none"
     return _ocr_engine_name() != "none"
+
+
+def _warm_ocr_reader() -> None:
+    if not _ocr_prefilter_enabled():
+        return
+    engine = _ocr_engine_name()
+    if engine == "easyocr":
+        _ocr_reader()
+    elif engine == "rapidocr":
+        _rapid_ocr_reader()
 
 
 def _adaptive_vlm_frame_budget(
@@ -1086,7 +1100,7 @@ def _annotate_and_limit_image_frames(
             "text_only_frames": 0,
         }
 
-    default_max_images = min(max_frames, 6 if ocr_enabled else 8)
+    default_max_images = min(max_frames, 5 if ocr_enabled else 8)
     max_image_frames = min(
         max_frames,
         _int_env("DLD_VLM_REVIEW_MAX_IMAGE_FRAMES", default_max_images, minimum=1),
@@ -1098,7 +1112,7 @@ def _annotate_and_limit_image_frames(
     scene_threshold = float(os.getenv("DLD_VLM_REVIEW_IMAGE_SCENE_THRESHOLD", "0.08"))
     max_ocr_frames = min(
         len(selected),
-        _int_env("DLD_VLM_REVIEW_MAX_OCR_FRAMES", min(len(selected), 3), minimum=0),
+        _int_env("DLD_VLM_REVIEW_MAX_OCR_FRAMES", min(len(selected), 4), minimum=0),
     )
     ocr_ranked = sorted(
         selected,
@@ -1714,6 +1728,9 @@ def run_benchmark(
     workers = max(1, int(vlm_workers))
     if pending_vlm_records:
         _progress(f"[VLM] running {len(pending_vlm_records)} live reviews with workers={workers}")
+        if _ocr_prefilter_enabled():
+            _progress(f"[VLM] warming OCR engine={_ocr_engine_name()}")
+            _warm_ocr_reader()
         future_to_record = {}
         with ThreadPoolExecutor(max_workers=workers) as executor:
             for record in pending_vlm_records:
