@@ -248,8 +248,14 @@ def analyze_frame_behavior(
                 except ValueError as e:
                     raise ValueError(f"无法解析事件时间戳: {event_timestamp}") from e
         
-        search_start_time = event_dt.strftime("%Y-%m-%d %H:%M:%S")
-        search_end_dt = event_dt + timedelta(seconds=search_duration)
+        pre_seconds = max(0, int(os.getenv("DLD_ANALYSIS_PRE_SECONDS", "8")))
+        post_seconds = max(
+            int(search_duration),
+            int(os.getenv("DLD_ANALYSIS_POST_SECONDS", str(search_duration))),
+        )
+        search_start_dt = event_dt - timedelta(seconds=pre_seconds)
+        search_start_time = search_start_dt.strftime("%Y-%m-%d %H:%M:%S")
+        search_end_dt = event_dt + timedelta(seconds=post_seconds)
         search_end_time = search_end_dt.strftime("%Y-%m-%d %H:%M:%S")
         
         filename = os.path.splitext(get_path_basename(current_file))[0]
@@ -275,6 +281,8 @@ def analyze_frame_behavior(
                 "search_end": search_end_time,
                 "target_keywords": target_keywords,
                 "search_duration": search_duration,
+                "pre_seconds": pre_seconds,
+                "post_seconds": post_seconds,
             }
             cache_key = hashlib.sha256(
                 json.dumps(cache_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -300,6 +308,13 @@ def analyze_frame_behavior(
         if result:
             result = dict(result)
             result["recording_start_time"] = rec_start_time
+            result["review_window"] = {
+                "anchor_timestamp": event_timestamp,
+                "start": search_start_time,
+                "end": search_end_time,
+                "pre_seconds": pre_seconds,
+                "post_seconds": post_seconds,
+            }
             if cache_enabled and cache_path:
                 try:
                     with open(cache_path, "w", encoding="utf-8") as f:
@@ -317,6 +332,13 @@ def analyze_frame_behavior(
                 "search_range": {
                     "start": search_start_time,
                     "end": search_end_time
+                },
+                "review_window": {
+                    "anchor_timestamp": event_timestamp,
+                    "start": search_start_time,
+                    "end": search_end_time,
+                    "pre_seconds": pre_seconds,
+                    "post_seconds": post_seconds,
                 },
                 "total_events": 0,
                 "events": []

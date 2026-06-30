@@ -11,7 +11,7 @@
 # 忽略文档
 **/doc/
 **/docs/
-
+**/reports/
 # 忽略输入输出
 **/gradio_temp/
 **/inputs/
@@ -25,7 +25,7 @@
 
 # 数据文件
 # 忽略数据文件
-**/data/memory.json
+**/data/*
 #**/logs/
 **/C++ETW/logs/
 **/C++ETW/bin/logs/

@@ -80,11 +80,19 @@ class DatalogFact:
 
 class LLMRuleGenerator:
     """使用LLM从日志和视频帧生成Datalog规则"""
+
+    @staticmethod
+    def _first_env(*names: str) -> str:
+        for name in names:
+            value = os.getenv(name)
+            if value:
+                return value
+        return ""
     
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
-        self.model_name = os.getenv("LLM_MODEL_NAME", "qwen-plus")
-        self.base_url = os.getenv("LLM_BASE_URL")
+        self.api_key = api_key or self._first_env("LLM_API_KEY", "OPENAI_API_KEY", "DASHSCOPE_API_KEY", "QWEN_API_KEY")
+        self.model_name = self._first_env("LLM_MODEL_NAME", "OPENAI_MODEL", "QWEN_MODEL") or "qwen-plus"
+        self.base_url = self._first_env("LLM_BASE_URL", "OPENAI_BASE_URL", "DASHSCOPE_BASE_URL", "QWEN_BASE_URL")
         
         if not self.api_key:
             raise ValueError("❌ 未配置 LLM_API_KEY，请在.env文件中设置")

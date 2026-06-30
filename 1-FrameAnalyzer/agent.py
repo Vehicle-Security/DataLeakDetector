@@ -23,10 +23,29 @@ load_dotenv(find_dotenv())
 logger = logging.getLogger("VideoAgent")
 
 class VideoFileOperationAgent:
-    def __init__(self, model_name=os.getenv("VL_MODEL_NAME", "gpt-5")):
+    @staticmethod
+    def _first_env(*names: str) -> str:
+        for name in names:
+            value = os.getenv(name)
+            if value:
+                return value
+        return ""
+
+    @classmethod
+    def _default_vlm_model(cls) -> str:
+        return cls._first_env("VL_MODEL_NAME", "MODEL_NAME", "OPENAI_MODEL", "QWEN_VL_MODEL", "QWEN_MODEL") or "qwen2.5-vl-72b-instruct"
+
+    @classmethod
+    def _vlm_api_config(cls) -> Dict[str, str]:
+        return {
+            "api_key": cls._first_env("OPENAI_API_KEY", "DASHSCOPE_API_KEY", "QWEN_API_KEY", "VL_API_KEY"),
+            "base_url": cls._first_env("OPENAI_BASE_URL", "DASHSCOPE_BASE_URL", "QWEN_BASE_URL", "VL_BASE_URL"),
+        }
+
+    def __init__(self, model_name=None):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self._init_models()
-        self.llm_model = model_name
+        self.llm_model = model_name or self._default_vlm_model()
 
     @staticmethod
     def _get_int_env(name: str, default: int, minimum: int = 1) -> int:
@@ -513,8 +532,8 @@ class VideoFileOperationAgent:
         )
         llm = ChatOpenAI(
             model=self.llm_model,
-            base_url=os.getenv("OPENAI_BASE_URL"),#"https://www.DMXapi.com/v1",
-            api_key=os.getenv("OPENAI_API_KEY"),#os.getenv("DMX_API_KEY"), 
+            base_url=self._vlm_api_config()["base_url"] or None,
+            api_key=self._vlm_api_config()["api_key"] or None,
         )
 
         table_rows = [

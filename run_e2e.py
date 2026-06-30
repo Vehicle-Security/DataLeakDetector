@@ -174,6 +174,10 @@ AI_CONTEXT_TOKENS = (
 )
 
 AMBIGUOUS_EXFIL_TOKENS = (
+    "file_selected",
+    "file picker",
+    "choose file",
+    "selected file",
     "clipboard",
     "paste",
     "copy",
@@ -182,10 +186,16 @@ AMBIGUOUS_EXFIL_TOKENS = (
     "upload",
     "attach",
     "attachment",
+    "compose",
+    "email",
+    "mail",
     "screenshot",
     "screen capture",
     "record",
     "recording",
+    "screen share",
+    "share screen",
+    "meeting",
     "http://",
     "https://",
     " post ",
@@ -204,8 +214,13 @@ AMBIGUOUS_EXFIL_TOKENS = (
     "\u5206\u4eab",
     "\u4e0a\u4f20",
     "\u9644\u4ef6",
+    "\u90ae\u7bb1",
+    "\u5199\u4fe1",
     "\u622a\u56fe",
     "\u5f55\u5c4f",
+    "\u5171\u4eab\u5c4f\u5e55",
+    "\u5c4f\u5e55\u5171\u4eab",
+    "\u4f1a\u8bae",
     "\u540c\u6b65",
     "\u4e91\u76d8",
     "u\u76d8",
@@ -224,6 +239,14 @@ def _flatten_log_text(value: Any) -> str:
 def _contains_any(text: str, tokens) -> bool:
     normalized = f" {text.lower()} "
     return any(token in normalized for token in tokens)
+
+
+def _first_env(*names: str) -> Optional[str]:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return None
 
 
 def _is_sensitive_hint_log(log: Dict[str, Any]) -> bool:
@@ -253,7 +276,34 @@ def _should_use_vlm_fallback(
         "decision": "skip",
         "reasons": [],
         "candidate_events": [],
+        "analysis_windows": [],
     }
+
+    try:
+        from suspicious_window_builder import build_analysis_windows
+
+        analysis_windows = build_analysis_windows(logs, log_first_result)
+    except Exception as exc:
+        analysis_windows = []
+        decision["window_builder_error"] = str(exc)
+
+    if analysis_windows:
+        decision["used"] = True
+        decision["decision"] = "run"
+        decision["analysis_windows"] = analysis_windows
+        decision["candidate_events"] = [
+            event
+            for window in analysis_windows
+            for event in window.get("candidate_events", [])
+        ][:24]
+        decision["reasons"] = sorted(
+            {
+                reason
+                for window in analysis_windows
+                for reason in window.get("reasons", [])
+            }
+        )
+        return True, decision
 
     if sensitive_count <= 0:
         decision["reasons"].append("no_sensitive_log_context")
@@ -388,6 +438,7 @@ def run_module3_pipeline(log_file: str, video_path: str,
     sensitive_keywords = ['薪资', '工资', '机密', '绝密', '合同', '财务',
                           '客户', '密码', '核心', '秘密', '内部', '报表',
                           '预算', '战略', '规划', '会议纪要', '员工']
+    sensitive_keywords = SENSITIVE_HINT_TOKENS
     logs_data = load_logs(log_file)
     existing_normalized = set(f.replace('\\\\', '/').replace('\\', '/').lower() for f in sensitive_files)
     
@@ -1528,9 +1579,9 @@ def generate_datalog_facts(logs: List[Dict], video_frames: List[Dict]) -> List[D
     """使用 LLM 生成 Datalog 事实"""
     from openai import OpenAI
 
-    api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
-    model_name = os.getenv("LLM_MODEL_NAME", "qwen-plus")
-    base_url = os.getenv("LLM_BASE_URL")
+    api_key = _first_env("LLM_API_KEY", "OPENAI_API_KEY", "DASHSCOPE_API_KEY", "QWEN_API_KEY")
+    model_name = _first_env("LLM_MODEL_NAME", "OPENAI_MODEL", "QWEN_MODEL") or "qwen-plus"
+    base_url = _first_env("LLM_BASE_URL", "OPENAI_BASE_URL", "DASHSCOPE_BASE_URL", "QWEN_BASE_URL")
 
     if not api_key:
         raise ValueError("❌ 未配置 LLM_API_KEY")

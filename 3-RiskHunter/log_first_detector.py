@@ -35,6 +35,16 @@ SENSITIVE_KEYWORDS = [
     "\u89c4\u5212",
     "\u4f1a\u8bae\u7eaa\u8981",
     "\u5458\u5de5",
+    "confidential",
+    "salary",
+    "payroll",
+    "contract",
+    "customer",
+    "client",
+    "finance",
+    "budget",
+    "strategy",
+    "roadmap",
 ]
 
 OPEN_TYPES = {"opened", "file_open", "open"}
@@ -46,8 +56,8 @@ DERIVE_TYPES = {
     "moved",
     "compressed",
     "converted",
-    "file_selected",
 }
+SELECTION_TYPES = {"file_selected"}
 NETWORK_UPLOAD_TYPES = {
     "http_post",
     "http_put",
@@ -107,6 +117,9 @@ EXPORT_CONTEXT_TOKENS = (
     "\u6253\u5370",
 )
 EXPORT_EXTENSIONS = {".pdf", ".csv", ".xlsx", ".xls", ".docx", ".doc", ".png", ".jpg", ".jpeg"}
+FILE_PATH_PATTERN = re.compile(
+    r"([A-Za-z]:[\\/][^\"'\r\n]+?\.[A-Za-z0-9]{1,8}|/[^\"'\r\n]+?\.[A-Za-z0-9]{1,8})"
+)
 
 
 def normalize_path(path: str) -> str:
@@ -152,6 +165,7 @@ def flatten_log_text(log: Dict[str, Any]) -> str:
         log.get("event_type", ""),
         log.get("file_path", ""),
         log.get("file_name", ""),
+        log.get("content_preview", ""),
         log.get("app_name", ""),
         log.get("process_info", {}).get("process_name", ""),
         log.get("window_info", {}).get("window_title", ""),
@@ -163,15 +177,64 @@ def flatten_log_text(log: Dict[str, Any]) -> str:
 
 
 def is_sensitive_name(name: str) -> bool:
-    return any(keyword in str(name or "") for keyword in SENSITIVE_KEYWORDS)
+    lowered = str(name or "").lower()
+    return any(keyword in lowered for keyword in SENSITIVE_KEYWORDS)
+
+
+def is_positive_upload_detection(upload_detection: Any) -> bool:
+    if not isinstance(upload_detection, dict) or not upload_detection.get("is_upload"):
+        return False
+    upload_type = str(upload_detection.get("upload_type", "")).strip().lower()
+    method = str(upload_detection.get("detection_method", "")).strip().lower()
+    negative_markers = (
+        "file access",
+        "open dialog",
+        "file picker",
+        "read access",
+        "download",
+        "rename",
+        "renamed",
+        "modified",
+        "local edit",
+        "\u4e0b\u8f7d",
+        "\u91cd\u547d\u540d",
+        "\u4fee\u6539",
+    )
+    if any(marker in upload_type for marker in negative_markers):
+        return False
+    if any(marker in method for marker in negative_markers):
+        return False
+    return True
+
+
+def _contains_external_marker(text: str, marker: str) -> bool:
+    marker = marker.lower()
+    if marker == "usb":
+        return bool(re.search(r"(?<![a-z0-9])usb(?![a-z0-9])", text))
+    return marker in text
+
+
+def file_hint_from_log(log: Dict[str, Any]) -> str:
+    for field in ("file_path", "file_name", "content_preview"):
+        value = str(log.get(field, "") or "").strip().strip("\"'")
+        if not value:
+            continue
+        if field == "file_path" and value:
+            return normalize_path(value)
+        match = FILE_PATH_PATTERN.search(value)
+        if match:
+            return normalize_path(match.group(1).strip().strip("\"'"))
+        if field == "content_preview" and is_sensitive_name(value):
+            return value
+    return ""
 
 
 def external_destination_reason(log: Dict[str, Any]) -> str:
     path = normalize_path(log.get("file_path", ""))
     text = flatten_log_text(log)
-    if any(marker in text for marker in CLOUD_SYNC_MARKERS):
+    if any(_contains_external_marker(text, marker) for marker in CLOUD_SYNC_MARKERS):
         return "cloud_sync"
-    if any(marker in text for marker in REMOVABLE_MARKERS):
+    if any(_contains_external_marker(text, marker) for marker in REMOVABLE_MARKERS):
         return "removable_media"
     if re.match(r"^[e-z]:/", path.lower()):
         if process_name_from_log(log) in {"explorer.exe", "finder", "unknown"}:
@@ -197,10 +260,7 @@ def is_upload_log(log: Dict[str, Any]) -> bool:
     event_type = str(log.get("event_type", "")).lower()
     if event_type in UPLOAD_TYPES:
         return True
-    if log.get("upload_detection", {}).get("is_upload"):
-        return True
-    window = str(log.get("window_info", {}).get("window_title", "")).lower()
-    if any(token in window for token in ["upload", "\u4e0a\u4f20", "\u53d1\u9001", "\u9644\u4ef6"]):
+    if is_positive_upload_detection(log.get("upload_detection")):
         return True
     return bool(is_network_upload_log(log) or is_external_transfer_log(log))
 
@@ -242,6 +302,23 @@ class LogFirstDetector:
 
         for log in logs_by_time:
             path = normalize_path(log.get("file_path", ""))
+            hinted_path = file_hint_from_log(log)
+            if not path and hinted_path and self._is_sensitive_path(hinted_path, {"file_name": basename(hinted_path)}):
+                source_by_key[file_key(hinted_path)] = {
+                    "file_path": hinted_path,
+                    "original_file": hinted_path,
+                    "process_name": process_name_from_log(log),
+                    "timestamp": log.get("timestamp", ""),
+                    "log": log,
+                }
+                self._append_operation(
+                    operation_records,
+                    seen_operations,
+                    log,
+                    hinted_path,
+                    "log-sensitive-hint",
+                    f"{process_name_from_log(log)} referenced {basename(hinted_path)}",
+                )
             if not path:
                 continue
 
