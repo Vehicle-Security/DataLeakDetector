@@ -708,7 +708,7 @@ def _ocr_reader() -> Any:
 
 
 def _ocr_frame_text(frame: Any) -> str:
-    if os.getenv("DLD_VLM_ENABLE_OCR_PREFILTER", "1").strip().lower() in {"0", "false", "no", "off"}:
+    if not _ocr_prefilter_enabled():
         return ""
     reader = _ocr_reader()
     if not reader:
@@ -738,6 +738,20 @@ def _ocr_risk_flags(text: str, sensitive_files: List[str]) -> List[str]:
                 flags.append("sensitive_name_visible")
                 return sorted(set(flags))
     return sorted(set(flags))
+
+
+def _ocr_prefilter_enabled() -> bool:
+    value = os.getenv("DLD_VLM_ENABLE_OCR_PREFILTER", "auto").strip().lower()
+    if value in {"0", "false", "no", "off"}:
+        return False
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    try:
+        import torch
+
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
 
 
 def _adaptive_vlm_frame_budget(
@@ -1009,27 +1023,27 @@ def _annotate_and_limit_image_frames(
     sensitive_files: List[str],
     max_frames: int,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    ocr_enabled = _ocr_prefilter_enabled()
     if not selected:
         return [], {
-            "ocr_enabled": os.getenv("DLD_VLM_ENABLE_OCR_PREFILTER", "1").strip().lower()
-            not in {"0", "false", "no", "off"},
+            "ocr_enabled": ocr_enabled,
             "image_frames": 0,
             "text_only_frames": 0,
         }
 
+    default_max_images = min(max_frames, 6 if ocr_enabled else 8)
     max_image_frames = min(
         max_frames,
-        _int_env("DLD_VLM_REVIEW_MAX_IMAGE_FRAMES", min(max_frames, 8), minimum=1),
+        _int_env("DLD_VLM_REVIEW_MAX_IMAGE_FRAMES", default_max_images, minimum=1),
     )
     min_image_frames = min(
         max_image_frames,
         _int_env("DLD_VLM_REVIEW_MIN_IMAGE_FRAMES", min(4, max_image_frames), minimum=1),
     )
     scene_threshold = float(os.getenv("DLD_VLM_REVIEW_IMAGE_SCENE_THRESHOLD", "0.08"))
-    ocr_enabled = os.getenv("DLD_VLM_ENABLE_OCR_PREFILTER", "1").strip().lower() not in {"0", "false", "no", "off"}
     max_ocr_frames = min(
         len(selected),
-        _int_env("DLD_VLM_REVIEW_MAX_OCR_FRAMES", min(len(selected), 6), minimum=0),
+        _int_env("DLD_VLM_REVIEW_MAX_OCR_FRAMES", min(len(selected), 3), minimum=0),
     )
     ocr_ranked = sorted(
         selected,
@@ -1107,7 +1121,8 @@ def _annotate_and_limit_image_frames(
 
     return selected, {
         "ocr_enabled": ocr_enabled,
-        "ocr_available": bool(_OCR_READER) or not _OCR_READER_FAILED,
+        "ocr_reader_loaded": bool(_OCR_READER),
+        "ocr_reader_failed": bool(_OCR_READER_FAILED),
         "max_image_frames": max_image_frames,
         "min_image_frames": min_image_frames,
         "max_ocr_frames": max_ocr_frames,
