@@ -203,6 +203,14 @@ def build_analysis_windows(
     log_first_result: Optional[Dict[str, Any]] = None,
     whitelist_apps: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
+    if isinstance(log_first_result, dict):
+        meta = log_first_result.get("log_first", {})
+        if isinstance(meta, dict) and int(meta.get("sensitive_events", 0) or 0) <= 0:
+            return []
+    if whitelist_apps is None and isinstance(log_first_result, dict):
+        meta = log_first_result.get("log_first", {})
+        if isinstance(meta, dict):
+            whitelist_apps = list(meta.get("whitelist_apps", []) or [])
     whitelist_apps = whitelist_apps or []
     pre_seconds = _get_int_env("DLD_ANALYSIS_PRE_SECONDS", 8)
     post_seconds = _get_int_env("DLD_ANALYSIS_POST_SECONDS", 90, minimum=1)

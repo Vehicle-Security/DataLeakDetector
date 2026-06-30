@@ -360,8 +360,11 @@ def _sensitive_files_from_logs(logs: List[Dict[str, Any]], log_first: Any) -> Li
     for log in logs:
         hint = log_first.file_hint_from_log(log)
         path = log_first.normalize_path(log.get("file_path", "") or hint)
+        if hasattr(log_first, "is_system_noise_path") and log_first.is_system_noise_path(path):
+            continue
         name = log.get("file_name") or log_first.basename(path)
-        if path and log_first.is_sensitive_name(f"{name} {path}"):
+        content_preview = str(log.get("content_preview", "") or "")
+        if path and log_first.is_sensitive_name(f"{name} {content_preview}"):
             key = log_first.file_key(path)
             if key not in seen:
                 seen.add(key)

@@ -120,6 +120,41 @@ EXPORT_EXTENSIONS = {".pdf", ".csv", ".xlsx", ".xls", ".docx", ".doc", ".png", "
 FILE_PATH_PATTERN = re.compile(
     r"([A-Za-z]:[\\/][^\"'\r\n]+?\.[A-Za-z0-9]{1,8}|/[^\"'\r\n]+?\.[A-Za-z0-9]{1,8})"
 )
+SYSTEM_NOISE_PATH_MARKERS = (
+    "/appdata/local/microsoft/edge/user data/",
+    "/appdata/local/google/chrome/user data/",
+    "/appdata/local/packages/microsoftwindows.client.cbs",
+    "/appdata/local/microsoft/windows/",
+    "/appdata/local/temp/",
+    "/appdata/local/lenovo/slbrowser/",
+    "/appdata/locallow/microsoft/cryptneturlcache/",
+    "/appdata/roaming/microsoft/windows/recent/",
+    "/appdata/roaming/tencent/",
+    "/appdata/roaming/qqex/",
+    "/appdata/roaming/qq/partitions/",
+    "/appdata/roaming/baidu/",
+    "/browserengine/users/",
+    "/nt_db/",
+    "/weblog/",
+    "/log/radium/",
+    "/windows/system32/",
+    "/program files/",
+    "/program files (x86)/",
+)
+SYSTEM_NOISE_BASENAMES = {
+    "cookies",
+    "cookies-journal",
+    "quotamanager",
+    "quotamanager-journal",
+    "local state",
+    "network persistent state",
+    "preferences",
+    "personalsetting.xml",
+    "current",
+    "lock",
+    "log",
+    "log.old",
+}
 
 
 def normalize_path(path: str) -> str:
@@ -179,6 +214,18 @@ def flatten_log_text(log: Dict[str, Any]) -> str:
 def is_sensitive_name(name: str) -> bool:
     lowered = str(name or "").lower()
     return any(keyword in lowered for keyword in SENSITIVE_KEYWORDS)
+
+
+def is_system_noise_path(path: str) -> bool:
+    normalized = normalize_path(path).lower()
+    if not normalized:
+        return False
+    base = basename(normalized)
+    if base in SYSTEM_NOISE_BASENAMES:
+        return True
+    if any(marker in normalized for marker in SYSTEM_NOISE_PATH_MARKERS):
+        return True
+    return bool(re.search(r"/cache(_data)?/|/indexeddb/|/code cache/|/webstorage/|/network/", normalized))
 
 
 def is_positive_upload_detection(upload_detection: Any) -> bool:
@@ -425,17 +472,20 @@ class LogFirstDetector:
                 "used": True,
                 "sensitive_events": len(source_by_key),
                 "direct_mappings": len(mappings),
+                "configured_sensitive_files": len(self.config.sensitive_files),
+                "blacklist_apps": list(self.config.blacklist_apps),
+                "whitelist_apps": list(self.config.whitelist_apps),
             },
         }
 
     def _is_sensitive_path(self, path: str, log: Dict[str, Any]) -> bool:
         path_key = file_key(path)
         name = log.get("file_name") or basename(path)
-        return (
-            path_key in self.sensitive_file_keys
-            or basename(path).lower() in self.sensitive_basenames
-            or is_sensitive_name(name)
-        )
+        if path_key in self.sensitive_file_keys or basename(path).lower() in self.sensitive_basenames:
+            return True
+        if is_system_noise_path(path):
+            return False
+        return is_sensitive_name(name)
 
     def _upload_detection_original_file(self, log: Dict[str, Any]) -> str:
         upload_detection = log.get("upload_detection")
@@ -457,6 +507,8 @@ class LogFirstDetector:
         event_type = str(log.get("event_type", ""))
         path = normalize_path(log.get("file_path", ""))
         if not path or event_type not in DERIVE_TYPES | UPLOAD_TYPES:
+            return None
+        if is_system_noise_path(path) and file_key(path) not in self.sensitive_file_keys:
             return None
 
         path_key = file_key(path)
@@ -517,6 +569,10 @@ class LogFirstDetector:
             return None
 
         path_key = file_key(path)
+        detected_original = self._upload_detection_original_file(log)
+        if is_system_noise_path(path) and path_key not in self.sensitive_file_keys and not detected_original:
+            return None
+
         original = mappings.get(path_key)
         source = source_by_key.get(path_key)
         if not source and original:
@@ -530,7 +586,6 @@ class LogFirstDetector:
                 "log": log,
             }
         if not source:
-            detected_original = self._upload_detection_original_file(log)
             if detected_original:
                 source = {
                     "file_path": detected_original,

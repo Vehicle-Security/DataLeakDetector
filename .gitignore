@@ -26,6 +26,7 @@
 # 数据文件
 # 忽略数据文件
 **/data/*
+/data.zip
 #**/logs/
 **/C++ETW/logs/
 **/C++ETW/bin/logs/

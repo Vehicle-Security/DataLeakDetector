@@ -227,6 +227,19 @@ AMBIGUOUS_EXFIL_TOKENS = (
     "\u53ef\u79fb\u52a8",
 )
 
+NO_LOG_ANCHOR_REVIEW_TOKENS = (
+    "teams",
+    "zoom",
+    "meeting",
+    "screen share",
+    "share screen",
+    "\u4f1a\u8bae",
+    "\u5f00\u4f1a",
+    "\u901a\u8bdd",
+    "\u5171\u4eab\u5c4f\u5e55",
+    "\u5c4f\u5e55\u5171\u4eab",
+)
+
 
 def _flatten_log_text(value: Any) -> str:
     if isinstance(value, dict):
@@ -270,6 +283,7 @@ def _should_use_vlm_fallback(
     """
     meta = log_first_result.get("log_first", {}) if isinstance(log_first_result, dict) else {}
     sensitive_count = int(meta.get("sensitive_events", 0) or 0)
+    configured_sensitive_count = int(meta.get("configured_sensitive_files", 0) or 0)
     decision = {
         "enabled": True,
         "used": False,
@@ -306,6 +320,24 @@ def _should_use_vlm_fallback(
         return True, decision
 
     if sensitive_count <= 0:
+        if configured_sensitive_count > 0:
+            for log in logs:
+                text = _flatten_log_text(log)
+                if not _contains_any(text, NO_LOG_ANCHOR_REVIEW_TOKENS):
+                    continue
+                reason = "configured_sensitive_file_with_external_meeting_context"
+                decision["used"] = True
+                decision["decision"] = "run"
+                decision["reasons"].append(reason)
+                decision["candidate_events"].append(
+                    {
+                        "timestamp": log.get("timestamp", ""),
+                        "event_type": log.get("event_type", ""),
+                        "app_name": log.get("app_name") or log.get("process_info", {}).get("process_name", ""),
+                        "reason": reason,
+                    }
+                )
+                return True, decision
         decision["reasons"].append("no_sensitive_log_context")
         return False, decision
 
