@@ -495,6 +495,95 @@ class E2ERegressionTests(unittest.TestCase):
                     {"cloud_sync", "removable_media", "network_upload", "file_upload"},
                 )
 
+    def test_visible_sensitive_anchor_routes_to_vlm_without_deterministic_upload(self):
+        run_e2e = load_module_from_path("run_e2e_visible_anchor_test", REPO_ROOT / "run_e2e.py")
+        module_dir = REPO_ROOT / "3-RiskHunter"
+        sys.path.insert(0, str(module_dir))
+        try:
+            log_first_module = load_module_from_path(
+                "log_first_visible_anchor_test",
+                module_dir / "log_first_detector.py",
+            )
+        finally:
+            sys.path.pop(0)
+
+        sensitive_file = "C:/Users/test/Desktop/客户联系方式.pdf"
+        logs = [
+            {
+                "timestamp": "2026-06-28T10:00:00.000",
+                "event_type": "modified",
+                "file_path": "C:/Users/test/AppData/Roaming/WPS/scope_v3.json",
+                "file_name": "scope_v3.json",
+                "process_info": {"process_name": "wps.exe"},
+                "window_info": {"window_title": "C:/Users/test/Desktop/客户联系方式.pdf - WPS Office"},
+            },
+            {
+                "timestamp": "2026-06-28T10:00:12.000",
+                "event_type": "clipboard_image",
+                "file_path": "",
+                "file_name": "",
+                "process_info": {"process_name": "SnippingTool.exe"},
+                "window_info": {"window_title": "截图工具"},
+            },
+        ]
+        detector = log_first_module.LogFirstDetector(
+            sensitive_files=[sensitive_file],
+            blacklist_apps=["SnippingTool"],
+            whitelist_apps=["WPS"],
+        )
+        result = detector.analyze(logs)
+
+        self.assertEqual(result["upload_events"], [])
+        self.assertGreater(result["log_first"]["sensitive_events"], 0)
+
+        should_run, meta = run_e2e._should_use_vlm_fallback(logs, result)
+        self.assertTrue(should_run)
+        self.assertEqual(meta["decision"], "run")
+
+    def test_content_paste_bypass_is_transfer_candidate_not_log_upload(self):
+        module_dir = REPO_ROOT / "3-RiskHunter"
+        sys.path.insert(0, str(module_dir))
+        try:
+            log_first_module = load_module_from_path(
+                "log_first_content_paste_test",
+                module_dir / "log_first_detector.py",
+            )
+        finally:
+            sys.path.pop(0)
+
+        logs = [
+            {
+                "timestamp": "2026-06-28T10:00:00.000",
+                "event_type": "file_open",
+                "file_path": "C:/Users/test/Desktop/公司合同.docx",
+                "file_name": "公司合同.docx",
+                "process_info": {"process_name": "wps.exe"},
+                "window_info": {"window_title": "公司合同.docx - WPS Office"},
+            },
+            {
+                "timestamp": "2026-06-28T10:00:30.000",
+                "event_type": "modified",
+                "file_path": "C:/Users/test/Desktop/很多人害怕独处.docx",
+                "file_name": "很多人害怕独处.docx",
+                "process_info": {"process_name": "wps.exe"},
+                "window_info": {"window_title": "很多人害怕独处.docx - WPS Office"},
+                "upload_detection": {
+                    "is_upload": True,
+                    "upload_type": "Content_Paste_Bypass",
+                    "original_file": "C:/Users/test/Desktop/公司合同.docx",
+                },
+            },
+        ]
+        detector = log_first_module.LogFirstDetector(
+            sensitive_files=["C:/Users/test/Desktop/公司合同.docx"],
+            blacklist_apps=["Chrome"],
+            whitelist_apps=["WPS"],
+        )
+        result = detector.analyze(logs)
+
+        self.assertEqual(result["upload_events"], [])
+        self.assertGreaterEqual(len(result["operation_records"]), 1)
+
     def test_connected_fact_injection_builds_leak_path_for_derived_upload(self):
         run_e2e = load_module_from_path("run_e2e_regression_test", REPO_ROOT / "run_e2e.py")
         run_e2e.import_modules()

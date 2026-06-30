@@ -243,9 +243,15 @@ def is_positive_upload_detection(upload_detection: Any) -> bool:
         "renamed",
         "modified",
         "local edit",
+        "content_paste",
+        "clipboard_paste",
+        "paste bypass",
+        "materialized",
+        "derived",
         "\u4e0b\u8f7d",
         "\u91cd\u547d\u540d",
         "\u4fee\u6539",
+        "\u7c98\u8d34",
     )
     if any(marker in upload_type for marker in negative_markers):
         return False
@@ -335,6 +341,7 @@ class LogFirstDetector:
         self.config.sensitive_files = list(sensitive_files)
         self.config.blacklist_apps = list(blacklist_apps)
         self.config.whitelist_apps = list(whitelist_apps)
+        self.sensitive_files = [normalize_path(path) for path in sensitive_files]
         self.sensitive_file_keys = {file_key(path) for path in sensitive_files}
         self.sensitive_basenames = {basename(path).lower() for path in sensitive_files}
 
@@ -349,6 +356,24 @@ class LogFirstDetector:
 
         for log in logs_by_time:
             path = normalize_path(log.get("file_path", ""))
+            configured_match = self._configured_sensitive_file_from_log(log)
+            if configured_match and file_key(configured_match) not in source_by_key:
+                source_by_key[file_key(configured_match)] = {
+                    "file_path": configured_match,
+                    "original_file": configured_match,
+                    "process_name": process_name_from_log(log),
+                    "timestamp": log.get("timestamp", ""),
+                    "log": log,
+                    "source_type": "visible_anchor",
+                }
+                self._append_operation(
+                    operation_records,
+                    seen_operations,
+                    log,
+                    configured_match,
+                    "log-visible-sensitive-anchor",
+                    f"{process_name_from_log(log)} showed {basename(configured_match)}",
+                )
             hinted_path = file_hint_from_log(log)
             if not path and hinted_path and self._is_sensitive_path(hinted_path, {"file_name": basename(hinted_path)}):
                 source_by_key[file_key(hinted_path)] = {
@@ -357,6 +382,7 @@ class LogFirstDetector:
                     "process_name": process_name_from_log(log),
                     "timestamp": log.get("timestamp", ""),
                     "log": log,
+                    "source_type": "file_hint",
                 }
                 self._append_operation(
                     operation_records,
@@ -378,6 +404,7 @@ class LogFirstDetector:
                     "process_name": process_name_from_log(log),
                     "timestamp": log.get("timestamp", ""),
                     "log": log,
+                    "source_type": "upload_metadata",
                 }
                 source_by_key[file_key(path)] = {
                     "file_path": path,
@@ -385,6 +412,7 @@ class LogFirstDetector:
                     "process_name": process_name_from_log(log),
                     "timestamp": log.get("timestamp", ""),
                     "log": log,
+                    "source_type": "upload_temp",
                 }
 
             if self._is_sensitive_path(path, log):
@@ -395,6 +423,7 @@ class LogFirstDetector:
                     "process_name": process_name_from_log(log),
                     "timestamp": log.get("timestamp", ""),
                     "log": log,
+                    "source_type": "file_log",
                 }
 
                 if log.get("event_type", "") in OPEN_TYPES:
@@ -417,6 +446,7 @@ class LogFirstDetector:
                         "process_name": process_name_from_log(log) or parent["process_name"],
                         "timestamp": log.get("timestamp", ""),
                         "log": log,
+                        "source_type": "derived_file_log",
                     }
 
                 if log.get("event_type", "") in DERIVE_TYPES:
@@ -487,6 +517,35 @@ class LogFirstDetector:
             return False
         return is_sensitive_name(name)
 
+    @staticmethod
+    def _compact_sensitive_text(text: str) -> str:
+        return re.sub(r"[\s._\-()（）\[\]【】]+", "", str(text or "").lower())
+
+    def _configured_sensitive_file_from_log(self, log: Dict[str, Any]) -> str:
+        if not self.sensitive_files:
+            return ""
+        text = " ".join(
+            str(part or "")
+            for part in (
+                log.get("file_path", ""),
+                log.get("file_name", ""),
+                log.get("content_preview", ""),
+                log.get("window_info", {}).get("window_title", ""),
+            )
+        )
+        compact_text = self._compact_sensitive_text(text)
+        if not compact_text:
+            return ""
+        for configured_path in self.sensitive_files:
+            configured_key = file_key(configured_path)
+            configured_base = basename(configured_path).lower()
+            configured_stem = self._compact_sensitive_text(stem(configured_path))
+            if configured_key in file_key(text) or configured_base in text.lower():
+                return configured_path
+            if len(configured_stem) >= 4 and configured_stem in compact_text:
+                return configured_path
+        return ""
+
     def _upload_detection_original_file(self, log: Dict[str, Any]) -> str:
         upload_detection = log.get("upload_detection")
         if not isinstance(upload_detection, dict):
@@ -522,6 +581,8 @@ class LogFirstDetector:
         current_ts = parse_timestamp_ms(log.get("timestamp", ""))
 
         for candidate in source_by_key.values():
+            if candidate.get("source_type") == "visible_anchor":
+                continue
             parent_path = candidate["file_path"]
             parent_stem = stem(parent_path)
             if file_key(parent_path) == path_key:
@@ -584,6 +645,7 @@ class LogFirstDetector:
                 "process_name": process_name_from_log(log),
                 "timestamp": log.get("timestamp", ""),
                 "log": log,
+                "source_type": "direct_upload_file",
             }
         if not source:
             if detected_original:
@@ -593,6 +655,7 @@ class LogFirstDetector:
                     "process_name": process_name_from_log(log),
                     "timestamp": log.get("timestamp", ""),
                     "log": log,
+                    "source_type": "upload_metadata",
                 }
                 mappings[path_key] = detected_original
         if not source:

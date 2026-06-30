@@ -321,9 +321,21 @@ def _should_use_vlm_fallback(
 
     if sensitive_count <= 0:
         if configured_sensitive_count > 0:
+            try:
+                from frontend_app_classifier import classify_log_context
+            except Exception:
+                classify_log_context = None
+
             for log in logs:
-                text = _flatten_log_text(log)
-                if not _contains_any(text, NO_LOG_ANCHOR_REVIEW_TOKENS):
+                if classify_log_context:
+                    context = classify_log_context(log)
+                    should_review = bool(context.get("visual_review"))
+                    categories = context.get("categories", [])
+                else:
+                    text = _flatten_log_text(log)
+                    should_review = _contains_any(text, NO_LOG_ANCHOR_REVIEW_TOKENS)
+                    categories = []
+                if not should_review:
                     continue
                 reason = "configured_sensitive_file_with_external_meeting_context"
                 decision["used"] = True
@@ -335,6 +347,7 @@ def _should_use_vlm_fallback(
                         "event_type": log.get("event_type", ""),
                         "app_name": log.get("app_name") or log.get("process_info", {}).get("process_name", ""),
                         "reason": reason,
+                        "frontend_categories": categories,
                     }
                 )
                 return True, decision
