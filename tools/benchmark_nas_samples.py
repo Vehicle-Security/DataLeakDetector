@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import importlib.util
 import json
 import os
@@ -231,6 +232,13 @@ class BenchmarkSummary:
 
 def _progress(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
+
+
+def _int_env(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        return max(minimum, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return max(minimum, default)
 
 
 def _load_module(name: str, path: Path):
@@ -481,6 +489,87 @@ def _windows_from_fallback(fallback_meta: Dict[str, Any], logs: List[Dict[str, A
     return [(min(parsed), max(parsed))]
 
 
+def _adaptive_vlm_frame_budget(
+    fallback_meta: Dict[str, Any],
+    logs: List[Dict[str, Any]],
+    max_frames: int,
+) -> Tuple[int, Dict[str, Any]]:
+    cap = max(1, int(max_frames))
+    min_frames = min(cap, _int_env("DLD_VLM_REVIEW_MIN_FRAMES", min(4, cap), minimum=1))
+    base_frames = min(cap, max(min_frames, _int_env("DLD_VLM_REVIEW_BASE_FRAMES", 6, minimum=1)))
+    frames = base_frames
+    reasons: List[str] = []
+
+    windows = _windows_from_fallback(fallback_meta, logs)
+    durations = [max(0.0, (end - start).total_seconds()) for start, end in windows]
+    total_window_seconds = sum(durations)
+    max_window_seconds = max(durations) if durations else 0.0
+
+    def bump(amount: int, reason: str) -> None:
+        nonlocal frames
+        if frames >= cap:
+            return
+        frames = min(cap, frames + amount)
+        reasons.append(reason)
+
+    if len(windows) >= 2:
+        bump(2, "multiple_review_windows")
+    if len(windows) >= 4:
+        bump(1, "many_review_windows")
+    if total_window_seconds >= 120:
+        bump(2, "long_total_review_window")
+    elif total_window_seconds >= 60:
+        bump(1, "medium_total_review_window")
+    if max_window_seconds >= 90:
+        bump(1, "long_single_review_window")
+
+    candidate_events = fallback_meta.get("candidate_events", []) or []
+    if len(candidate_events) >= 8:
+        bump(2, "many_candidate_events")
+    elif len(candidate_events) >= 4:
+        bump(1, "several_candidate_events")
+
+    fallback_reasons = [str(item or "") for item in fallback_meta.get("reasons", []) or []]
+    if len(fallback_reasons) >= 3:
+        bump(1, "multiple_fallback_reasons")
+
+    text_parts: List[str] = list(fallback_reasons)
+    for event in candidate_events[:16]:
+        text_parts.extend(
+            str(event.get(key, "") or "")
+            for key in ("event_type", "app_name", "file_name", "content_preview")
+        )
+        window_info = event.get("window_info")
+        if isinstance(window_info, dict):
+            text_parts.append(str(window_info.get("window_title", "") or ""))
+    signal_text = " ".join(text_parts).lower()
+
+    if any(token in signal_text for token in ("vm", "virtual", "remote desktop", "mstsc", "anydesk", "todesk", "sunlogin", "\u865a\u62df\u673a", "\u8fdc\u7a0b")):
+        bump(2, "remote_or_vm_context")
+    if any(token in signal_text for token in ("meeting", "screen_share", "share screen", "zoom", "teams", "feishu", "lark", "\u4f1a\u8bae", "\u5c4f\u5e55\u5171\u4eab")):
+        bump(2, "meeting_or_screen_share_context")
+    if any(token in signal_text for token in ("clipboard", "paste", "copy", "screenshot", "\u526a\u8d34\u677f", "\u7c98\u8d34", "\u590d\u5236", "\u622a\u56fe")):
+        bump(1, "clipboard_or_screenshot_context")
+    if any(token in signal_text for token in ("upload", "drive", "mail", "attach", "send", "git", "\u4e0a\u4f20", "\u90ae\u7bb1", "\u9644\u4ef6", "\u53d1\u9001")):
+        bump(1, "external_transfer_context")
+    if any(token in signal_text for token in ("chatgpt", "claude", "gemini", "deepseek", "kimi", "poe", "ai_service", "\u5bf9\u8bdd", "\u8f93\u5165\u6846")):
+        bump(1, "ai_context")
+
+    return frames, {
+        "adaptive": True,
+        "min_frames": min_frames,
+        "base_frames": base_frames,
+        "max_frames": cap,
+        "selected_frames": frames,
+        "window_count": len(windows),
+        "total_window_seconds": round(total_window_seconds, 3),
+        "max_window_seconds": round(max_window_seconds, 3),
+        "candidate_events": len(candidate_events),
+        "fallback_reasons": fallback_reasons,
+        "complexity_reasons": reasons,
+    }
+
+
 def _review_log_context(logs: List[Dict[str, Any]], windows: List[Tuple[datetime, datetime]], limit: int = 24) -> List[Dict[str, Any]]:
     rows = []
     for log in logs:
@@ -644,7 +733,7 @@ def _select_representative_frames(candidates: List[Dict[str, Any]], max_frames: 
         key=lambda item: (float(item.get("scene_score", 0.0)), int(item.get("frame_index", 0))),
         reverse=True,
     )
-    min_gap = max(1, int(os.getenv("DLD_VLM_REVIEW_MIN_FRAME_GAP", "12")))
+    min_gap = _int_env("DLD_VLM_REVIEW_MIN_FRAME_GAP", 12, minimum=1)
     for item in ranked:
         if len(selected) >= max_frames:
             break
@@ -704,7 +793,7 @@ def _extract_representative_frame_images(
 
     candidate_budget = max(
         max_frames,
-        int(os.getenv("DLD_VLM_REVIEW_CANDIDATE_FRAMES", str(max(24, max_frames * 6)))),
+        _int_env("DLD_VLM_REVIEW_CANDIDATE_FRAMES", max(24, max_frames * 6), minimum=1),
     )
     frame_times = _frame_time_candidates(windows, max_frames, candidate_budget)
     if not frame_times:
@@ -764,7 +853,12 @@ def _live_vlm_review_case(
     video_path = _choose_video_file(case_dir)
     rec_start = _recording_start(groundtruth, logs)
     if not video_path or not rec_start:
-        return {"status": "skipped", "reason": "missing_video_or_recording_start", "is_violation": True}
+        return {
+            "status": "skipped",
+            "reason": "missing_video_or_recording_start",
+            "is_violation": True,
+            "max_frames_requested": max_frames,
+        }
 
     windows = _windows_from_fallback(fallback_meta, logs)
     images = _extract_representative_frame_images(
@@ -772,17 +866,28 @@ def _live_vlm_review_case(
         rec_start,
         windows,
         max_frames,
-        max_edge=int(os.getenv("DLD_VLM_REVIEW_IMAGE_MAX_EDGE", "960")),
-        jpeg_quality=int(os.getenv("DLD_VLM_REVIEW_JPEG_QUALITY", "65")),
+        max_edge=_int_env("DLD_VLM_REVIEW_IMAGE_MAX_EDGE", 960, minimum=1),
+        jpeg_quality=_int_env("DLD_VLM_REVIEW_JPEG_QUALITY", 65, minimum=1),
     )
     if not images:
-        return {"status": "skipped", "reason": "no_frames_extracted", "is_violation": True}
+        return {
+            "status": "skipped",
+            "reason": "no_frames_extracted",
+            "is_violation": True,
+            "max_frames_requested": max_frames,
+        }
 
     api_key = _first_env("OPENAI_API_KEY", "DASHSCOPE_API_KEY", "QWEN_API_KEY", "VL_API_KEY")
     base_url = _first_env("OPENAI_BASE_URL", "DASHSCOPE_BASE_URL", "QWEN_BASE_URL", "VL_BASE_URL")
     model = _first_env("VL_MODEL_NAME", "OPENAI_MODEL", "QWEN_VL_MODEL", "QWEN_MODEL") or "qwen3.7-plus"
     if not api_key:
-        return {"status": "skipped", "reason": "missing_vlm_api_key", "is_violation": True}
+        return {
+            "status": "skipped",
+            "reason": "missing_vlm_api_key",
+            "is_violation": True,
+            "frames_sent": len(images),
+            "max_frames_requested": max_frames,
+        }
 
     from langchain_core.messages import HumanMessage
     from langchain_openai import ChatOpenAI
@@ -837,6 +942,7 @@ def _live_vlm_review_case(
         return {"status": "failed", "reason": "bad_json_response", "raw": text, "is_violation": True}
     verdict["status"] = "success"
     verdict["frames_sent"] = len(images)
+    verdict["max_frames_requested"] = max_frames
     verdict["frame_selection"] = [
         {
             "index": image["index"],
@@ -979,7 +1085,8 @@ def run_benchmark(
     case_filters: Optional[List[str]] = None,
     use_vlm: bool = False,
     max_vlm_cases: int = 0,
-    max_vlm_frames: int = 6,
+    max_vlm_frames: int = 12,
+    vlm_workers: int = 1,
 ) -> Dict[str, Any]:
     from data_leak_detector.legacy_paths import RISK_HUNTER_IMPL
 
@@ -1008,6 +1115,10 @@ def run_benchmark(
         case_dirs.append((case_dir, case_id))
 
     total_cases = len(case_dirs)
+    case_records: List[Dict[str, Any]] = []
+    pending_vlm_records: List[Dict[str, Any]] = []
+    live_limit = str(max_vlm_cases) if max_vlm_cases > 0 else "all"
+
     for case_index, (case_dir, case_id) in enumerate(case_dirs, 1):
         gt_path = _choose_groundtruth(case_dir)
         if not gt_path:
@@ -1040,32 +1151,108 @@ def run_benchmark(
         expected = _expected_positive(groundtruth)
         deterministic_positive = len(detection.get("upload_events", [])) > 0
         triage_positive = deterministic_positive or should_run_vlm
-        vlm_verdict: Optional[Dict[str, Any]] = None
-        correlation_bundle: Optional[Dict[str, Any]] = None
-        final_positive = triage_positive
+
+        adaptive_frames = 0
+        frame_budget_meta: Dict[str, Any] = {}
         if (
             use_vlm
             and should_run_vlm
             and not deterministic_positive
-            and (max_vlm_cases <= 0 or result.live_vlm_reviews < max_vlm_cases)
+            and (max_vlm_cases <= 0 or len(pending_vlm_records) < max_vlm_cases)
         ):
-            next_live_idx = result.live_vlm_reviews + 1
-            live_limit = str(max_vlm_cases) if max_vlm_cases > 0 else "all"
-            _progress(
-                f"[VLM {next_live_idx}/{live_limit} START] "
-                f"case={case_id} progress={case_index}/{total_cases} "
-                f"expected={int(expected)} reasons={','.join(fallback_meta.get('reasons', []))} "
-                f"max_frames={max_vlm_frames}"
-            )
-            result.live_vlm_reviews += 1
-            vlm_verdict = _live_vlm_review_case(
-                case_dir=case_dir,
-                groundtruth=groundtruth,
-                logs=logs,
-                sensitive_files=sensitive_files,
-                fallback_meta=fallback_meta,
+            adaptive_frames, frame_budget_meta = _adaptive_vlm_frame_budget(
+                fallback_meta,
+                logs,
                 max_frames=max_vlm_frames,
             )
+            next_live_idx = len(pending_vlm_records) + 1
+            _progress(
+                f"[VLM {next_live_idx}/{live_limit} QUEUED] "
+                f"case={case_id} progress={case_index}/{total_cases} "
+                f"expected={int(expected)} reasons={','.join(fallback_meta.get('reasons', []))} "
+                f"frames={adaptive_frames}/{max_vlm_frames} "
+                f"complexity={','.join(frame_budget_meta.get('complexity_reasons', [])) or 'base'}"
+            )
+        record = {
+            "case_index": case_index,
+            "total_cases": total_cases,
+            "case_dir": case_dir,
+            "case_id": case_id,
+            "log_source_name": log_source_name,
+            "groundtruth": groundtruth,
+            "logs": logs,
+            "sensitive_files": sensitive_files,
+            "detection": detection,
+            "fallback_meta": fallback_meta,
+            "expected": expected,
+            "deterministic_positive": deterministic_positive,
+            "triage_positive": triage_positive,
+            "should_run_vlm": should_run_vlm,
+            "adaptive_vlm_frames": adaptive_frames,
+            "vlm_frame_budget": frame_budget_meta,
+            "vlm_live_queued": adaptive_frames > 0,
+            "live_vlm_verdict": None,
+        }
+        case_records.append(record)
+        if adaptive_frames > 0:
+            pending_vlm_records.append(record)
+
+    result.live_vlm_reviews = len(pending_vlm_records)
+    workers = max(1, int(vlm_workers))
+    if pending_vlm_records:
+        _progress(f"[VLM] running {len(pending_vlm_records)} live reviews with workers={workers}")
+        future_to_record = {}
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            for record in pending_vlm_records:
+                future = executor.submit(
+                    _live_vlm_review_case,
+                    case_dir=record["case_dir"],
+                    groundtruth=record["groundtruth"],
+                    logs=record["logs"],
+                    sensitive_files=record["sensitive_files"],
+                    fallback_meta=record["fallback_meta"],
+                    max_frames=record["adaptive_vlm_frames"],
+                )
+                future_to_record[future] = record
+
+            for done_index, future in enumerate(as_completed(future_to_record), 1):
+                record = future_to_record[future]
+                try:
+                    verdict = future.result()
+                except Exception as exc:
+                    verdict = {
+                        "status": "failed",
+                        "reason": f"exception:{type(exc).__name__}",
+                        "error": str(exc),
+                        "is_violation": True,
+                        "max_frames_requested": record["adaptive_vlm_frames"],
+                    }
+                record["live_vlm_verdict"] = verdict
+                _progress(
+                    f"[VLM {done_index}/{len(pending_vlm_records)} DONE] "
+                    f"case={record['case_id']} status={verdict.get('status', 'unknown')} "
+                    f"frames={verdict.get('frames_sent', 0)}/{record['adaptive_vlm_frames']} "
+                    f"reason={verdict.get('reason', '')}"
+                )
+
+    for record in case_records:
+        case_index = record["case_index"]
+        total_cases = record["total_cases"]
+        case_id = record["case_id"]
+        logs = record["logs"]
+        sensitive_files = record["sensitive_files"]
+        groundtruth = record["groundtruth"]
+        detection = record["detection"]
+        fallback_meta = record["fallback_meta"]
+        expected = record["expected"]
+        deterministic_positive = record["deterministic_positive"]
+        triage_positive = record["triage_positive"]
+        should_run_vlm = record["should_run_vlm"]
+        vlm_verdict = record["live_vlm_verdict"]
+
+        correlation_bundle: Optional[Dict[str, Any]] = None
+        final_positive = triage_positive
+        if vlm_verdict:
             if vlm_verdict.get("status") == "success":
                 frame_segments = _frame_segments_from_vlm_verdict(
                     vlm_verdict,
@@ -1104,20 +1291,26 @@ def run_benchmark(
             confidence = str(vlm_verdict.get("confidence", ""))
             completed_action = str(vlm_verdict.get("completed_action", ""))
         elif should_run_vlm:
-            vlm_status = "queued" if use_vlm else "triage_only"
+            if not use_vlm:
+                vlm_status = "triage_only"
+            elif record["vlm_live_queued"]:
+                vlm_status = "queued"
+            else:
+                vlm_status = "live_limit_reached"
 
         _progress(
             f"[CASE {case_index}/{total_cases}] {final_bucket.upper()} "
             f"case={case_id} expected={int(expected)} final={int(final_positive)} "
             f"det={int(deterministic_positive)} triage={int(triage_positive)} "
-            f"vlm={vlm_status} frames={frames_sent} confidence={confidence} "
+            f"vlm={vlm_status} frames={frames_sent} "
+            f"requested_frames={record['adaptive_vlm_frames']} confidence={confidence} "
             f"action={completed_action} reasons={','.join(fallback_meta.get('reasons', []))}"
         )
 
         result.cases.append(
             {
                 "case": case_id,
-                "log_file": log_source_name,
+                "log_file": record["log_source_name"],
                 "expected_positive": expected,
                 "triage_positive": triage_positive,
                 "deterministic_positive": deterministic_positive,
@@ -1130,6 +1323,9 @@ def run_benchmark(
                 "sensitive_files": len(sensitive_files),
                 "vlm_decision": fallback_meta.get("decision"),
                 "vlm_reasons": fallback_meta.get("reasons", []),
+                "vlm_live_queued": record["vlm_live_queued"],
+                "adaptive_vlm_frames": record["adaptive_vlm_frames"],
+                "vlm_frame_budget": record["vlm_frame_budget"],
                 "live_vlm_verdict": vlm_verdict,
                 "correlation_bundle": correlation_bundle,
             }
@@ -1173,7 +1369,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--json-output", type=Path, help="Write full JSON report to this path.")
     parser.add_argument("--use-vlm", action="store_true", help="Call a live VLM to verify triage-only cases.")
     parser.add_argument("--max-vlm-cases", type=int, default=0, help="Maximum live VLM cases to review; 0 means no limit.")
-    parser.add_argument("--max-vlm-frames", type=int, default=6, help="Maximum frames sent per live VLM case.")
+    parser.add_argument(
+        "--max-vlm-frames",
+        type=int,
+        default=12,
+        help="Hard cap for adaptive live VLM frames per case.",
+    )
+    parser.add_argument(
+        "--vlm-workers",
+        type=int,
+        default=_int_env("DLD_VLM_WORKERS", 1, minimum=1),
+        help="Number of concurrent live VLM requests.",
+    )
     args = parser.parse_args(argv)
 
     report = run_benchmark(
@@ -1183,6 +1390,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         use_vlm=args.use_vlm,
         max_vlm_cases=args.max_vlm_cases,
         max_vlm_frames=args.max_vlm_frames,
+        vlm_workers=args.vlm_workers,
     )
     if args.json_output:
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
