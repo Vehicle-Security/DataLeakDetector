@@ -21,8 +21,14 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DATA_ROOT = REPO_ROOT / "data" / "nas_samples"
+MAIN_DIR = REPO_ROOT / "main"
+DEFAULT_DATA_ROOT = REPO_ROOT / "spec" / "data" / "nas_samples"
 LOG_FILE_PRIORITY = ("keyevents.json", "logs.json")
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+if str(MAIN_DIR) not in sys.path:
+    sys.path.insert(0, str(MAIN_DIR))
 
 try:
     from dotenv import load_dotenv
@@ -122,12 +128,25 @@ EXTRA_LOG_TOKENS = (
     "send",
     "share",
     "meeting",
+    "vmware",
+    "virtualbox",
+    "hyper-v",
+    "virtual machine",
+    "ubuntu - vmware",
+    "openeuler",
+    "remote desktop",
+    "mstsc",
+    "anydesk",
+    "todesk",
+    "sunlogin",
     "\u4e0a\u4f20",
     "\u9644\u4ef6",
     "\u53d1\u9001",
     "\u5206\u4eab",
     "\u4f1a\u8bae",
     "\u90ae\u7bb1",
+    "\u865a\u62df\u673a",
+    "\u8fdc\u7a0b\u684c\u9762",
 )
 
 
@@ -612,7 +631,7 @@ def _live_vlm_review_case(
 
     api_key = _first_env("OPENAI_API_KEY", "DASHSCOPE_API_KEY", "QWEN_API_KEY", "VL_API_KEY")
     base_url = _first_env("OPENAI_BASE_URL", "DASHSCOPE_BASE_URL", "QWEN_BASE_URL", "VL_BASE_URL")
-    model = _first_env("VL_MODEL_NAME", "OPENAI_MODEL", "QWEN_VL_MODEL", "QWEN_MODEL") or "qwen2.5-vl-72b-instruct"
+    model = _first_env("VL_MODEL_NAME", "OPENAI_MODEL", "QWEN_VL_MODEL", "QWEN_MODEL") or "qwen3.7-plus"
     if not api_key:
         return {"status": "skipped", "reason": "missing_vlm_api_key", "is_violation": True}
 
@@ -752,10 +771,7 @@ def _run_event_correlator_bundle(
     groundtruth: Any,
     frame_segments: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    correlator_root = REPO_ROOT / "2-EventCorrelator"
-    if str(correlator_root) not in sys.path:
-        sys.path.insert(0, str(correlator_root))
-    from event_correlator import EventCorrelator
+    from data_leak_detector.event_correlator import EventCorrelator
 
     recording_start = ""
     if isinstance(groundtruth, dict):
@@ -797,11 +813,13 @@ def run_benchmark(
     max_vlm_cases: int = 0,
     max_vlm_frames: int = 6,
 ) -> Dict[str, Any]:
-    risk_dir = REPO_ROOT / "3-RiskHunter"
+    from data_leak_detector.legacy_paths import RISK_HUNTER_IMPL
+
+    risk_dir = RISK_HUNTER_IMPL
     sys.path.insert(0, str(risk_dir))
     try:
         log_first = _load_module("nas_log_first_detector", risk_dir / "log_first_detector.py")
-        run_e2e = _load_module("nas_run_e2e", REPO_ROOT / "run_e2e.py")
+        run_e2e = _load_module("nas_run_e2e", REPO_ROOT / "main" / "run_e2e.py")
     finally:
         if str(risk_dir) in sys.path:
             sys.path.remove(str(risk_dir))

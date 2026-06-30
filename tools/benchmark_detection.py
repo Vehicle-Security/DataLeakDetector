@@ -15,9 +15,12 @@ from typing import Any, Dict, Iterable, List, Optional
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REALISTIC_CASES_PATH = REPO_ROOT / "fixtures" / "realistic_log_cases.json"
-QWEN_VLM_CASES_PATH = REPO_ROOT / "fixtures" / "qwen_vlm_response_cases.json"
-MISSED_CASES_PATH = REPO_ROOT / "fixtures" / "currently_unrecognized_violation_cases.json"
+MAIN_DIR = REPO_ROOT / "main"
+if str(MAIN_DIR) not in sys.path:
+    sys.path.insert(0, str(MAIN_DIR))
+REALISTIC_CASES_PATH = REPO_ROOT / "spec" / "fixtures" / "realistic_log_cases.json"
+QWEN_VLM_CASES_PATH = REPO_ROOT / "spec" / "fixtures" / "qwen_vlm_response_cases.json"
+MISSED_CASES_PATH = REPO_ROOT / "spec" / "fixtures" / "currently_unrecognized_violation_cases.json"
 
 DEFAULT_BLACKLIST_APPS = [
     "ChatGPT",
@@ -237,14 +240,18 @@ def _iter_log_fixture_cases(include_missed: bool) -> Iterable[tuple[str, Dict[st
 
 
 def run_benchmark(include_missed: bool = True) -> Dict[str, Any]:
-    frame_dir = REPO_ROOT / "1-FrameAnalyzer"
-    risk_dir = REPO_ROOT / "3-RiskHunter"
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from data_leak_detector.legacy_paths import FRAME_ANALYZER_IMPL, RISK_HUNTER_IMPL
+
+    frame_dir = FRAME_ANALYZER_IMPL
+    risk_dir = RISK_HUNTER_IMPL
     sys.path.insert(0, str(frame_dir))
     sys.path.insert(0, str(risk_dir))
     try:
         agent_module = _load_module("benchmark_frame_agent", frame_dir / "agent.py")
         log_first_module = _load_module("benchmark_log_first_detector", risk_dir / "log_first_detector.py")
-        run_e2e_module = _load_module("benchmark_run_e2e", REPO_ROOT / "run_e2e.py")
+        run_e2e_module = _load_module("benchmark_run_e2e", REPO_ROOT / "main" / "run_e2e.py")
     finally:
         for path in (str(risk_dir), str(frame_dir)):
             if path in sys.path:

@@ -8,9 +8,9 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REALISTIC_CASES_PATH = REPO_ROOT / "fixtures" / "realistic_log_cases.json"
-QWEN_VLM_CASES_PATH = REPO_ROOT / "fixtures" / "qwen_vlm_response_cases.json"
-CURRENTLY_UNRECOGNIZED_CASES_PATH = REPO_ROOT / "fixtures" / "currently_unrecognized_violation_cases.json"
+REALISTIC_CASES_PATH = REPO_ROOT / "spec" / "fixtures" / "realistic_log_cases.json"
+QWEN_VLM_CASES_PATH = REPO_ROOT / "spec" / "fixtures" / "qwen_vlm_response_cases.json"
+CURRENTLY_UNRECOGNIZED_CASES_PATH = REPO_ROOT / "spec" / "fixtures" / "currently_unrecognized_violation_cases.json"
 BENCHMARK_SCRIPT_PATH = REPO_ROOT / "tools" / "benchmark_detection.py"
 
 
@@ -24,7 +24,7 @@ def load_module_from_path(module_name: str, file_path: Path):
 
 class E2ERegressionTests(unittest.TestCase):
     def test_prompt_loader_ignores_conflicting_prompts_module(self):
-        prompt_loader_path = REPO_ROOT / "1-FrameAnalyzer" / "prompt_loader.py"
+        prompt_loader_path = REPO_ROOT / "01-FrameAnalyzer" / "prompt_loader.py"
         original_prompts = sys.modules.get("prompts")
         sys.modules["prompts"] = types.ModuleType("prompts")
         try:
@@ -41,7 +41,7 @@ class E2ERegressionTests(unittest.TestCase):
     def test_critical_accuracy_fixtures_do_not_contain_mojibake(self):
         bad_tokens = ["鍛", "姝", "绮", "閭", "娴", "鐢", "鏈", "涓", "杈", "宸", "甯", "瀹", "寰", "浼", "钖", "妫", "闀", "�"]
         paths = [
-            REPO_ROOT / "1-FrameAnalyzer" / "agent.py",
+            REPO_ROOT / "01-FrameAnalyzer" / "agent.py",
             REALISTIC_CASES_PATH,
             QWEN_VLM_CASES_PATH,
         ]
@@ -56,7 +56,7 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertEqual(offenders, [])
 
     def test_frame_analyzer_limits_vlm_frames_and_keeps_context(self):
-        module_dir = REPO_ROOT / "1-FrameAnalyzer"
+        module_dir = REPO_ROOT / "01-FrameAnalyzer"
         sys.path.insert(0, str(module_dir))
         old_limit = os.environ.get("DLD_VLM_MAX_FRAMES")
         os.environ["DLD_VLM_MAX_FRAMES"] = "5"
@@ -100,7 +100,7 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertEqual([item["idx"] for item in selected[-3:]], [13, 18, 25])
 
     def test_qwen_vlm_response_postprocessing_filters_duplicates_and_noise(self):
-        module_dir = REPO_ROOT / "1-FrameAnalyzer"
+        module_dir = REPO_ROOT / "01-FrameAnalyzer"
         sys.path.insert(0, str(module_dir))
         try:
             agent_module = load_module_from_path(
@@ -127,7 +127,7 @@ class E2ERegressionTests(unittest.TestCase):
                 self.assertEqual(meta["vlm_dropped_events"], len(raw_events) - case["expected_kept"])
 
     def test_previously_missed_vlm_violation_cases_are_kept(self):
-        module_dir = REPO_ROOT / "1-FrameAnalyzer"
+        module_dir = REPO_ROOT / "01-FrameAnalyzer"
         sys.path.insert(0, str(module_dir))
         try:
             agent_module = load_module_from_path(
@@ -152,7 +152,7 @@ class E2ERegressionTests(unittest.TestCase):
                 self.assertEqual(final_events[0]["operation_type"], case["desired_operation"])
 
     def test_qwen_guardrail_prompt_contains_false_positive_constraints(self):
-        module_dir = REPO_ROOT / "1-FrameAnalyzer"
+        module_dir = REPO_ROOT / "01-FrameAnalyzer"
         sys.path.insert(0, str(module_dir))
         try:
             agent_module = load_module_from_path(
@@ -170,7 +170,7 @@ class E2ERegressionTests(unittest.TestCase):
     def test_sync_processed_statistics_uses_processed_count(self):
         stats_module = load_module_from_path(
             "upload_detector_stats_test",
-            REPO_ROOT / "3-RiskHunter" / "upload_detector_stats.py",
+            REPO_ROOT / "01-FrameAnalyzer" / "risk_hunter" / "upload_detector_stats.py",
         )
         state = {"processed_count": 13, "statistics": {}}
 
@@ -193,8 +193,8 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertGreaterEqual(report["vlm_pressure"]["estimated_vlm_calls"], 1)
 
     def test_vlm_fallback_gate_runs_for_ai_only_sample_but_skips_benign_sample(self):
-        run_e2e = load_module_from_path("run_e2e_vlm_gate_test", REPO_ROOT / "run_e2e.py")
-        module_dir = REPO_ROOT / "3-RiskHunter"
+        run_e2e = load_module_from_path("run_e2e_vlm_gate_test", REPO_ROOT / "main" / "run_e2e.py")
+        module_dir = REPO_ROOT / "01-FrameAnalyzer" / "risk_hunter"
         sys.path.insert(0, str(module_dir))
         try:
             log_first_module = load_module_from_path(
@@ -260,8 +260,8 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertIn("no_ai_or_ambiguous_exfil_context", benign_meta["reasons"])
 
     def test_vlm_fallback_gate_handles_noisy_and_complex_contexts(self):
-        run_e2e = load_module_from_path("run_e2e_complex_gate_test", REPO_ROOT / "run_e2e.py")
-        module_dir = REPO_ROOT / "3-RiskHunter"
+        run_e2e = load_module_from_path("run_e2e_complex_gate_test", REPO_ROOT / "main" / "run_e2e.py")
+        module_dir = REPO_ROOT / "01-FrameAnalyzer" / "risk_hunter"
         sys.path.insert(0, str(module_dir))
         old_window = os.environ.get("DLD_VLM_FALLBACK_WINDOW_SEC")
         os.environ["DLD_VLM_FALLBACK_WINDOW_SEC"] = "300"
@@ -333,6 +333,28 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertEqual(no_sensitive_meta["decision"], "skip")
         self.assertIn("no_sensitive_log_context", no_sensitive_meta["reasons"])
 
+        no_anchor_vm_context = [
+            {
+                "timestamp": "2026-06-28T09:01:00.000",
+                "event_type": "app_switch",
+                "file_path": "",
+                "file_name": "",
+                "app_name": "vmware",
+                "process_info": {"process_name": "vmware.exe"},
+                "window_info": {"window_title": "Ubuntu - VMware Workstation"},
+            }
+        ]
+        no_anchor_vm_log_first = detector.analyze(no_anchor_vm_context)
+        should_run_vm, vm_meta = run_e2e._should_use_vlm_fallback(
+            no_anchor_vm_context,
+            no_anchor_vm_log_first,
+        )
+
+        self.assertTrue(should_run_vm)
+        self.assertEqual(vm_meta["decision"], "run")
+        self.assertIn("configured_sensitive_file_with_visual_review_context", vm_meta["reasons"])
+        self.assertIn("virtual_machine", vm_meta["candidate_events"][0]["frontend_categories"])
+
         clipboard_near_sensitive = [
             sensitive_open,
             {
@@ -376,8 +398,8 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertIn("no_ai_or_ambiguous_exfil_context", chat_meta["reasons"])
 
     def test_realistic_log_fixtures_match_expected_detection_policy(self):
-        run_e2e = load_module_from_path("run_e2e_realistic_fixture_test", REPO_ROOT / "run_e2e.py")
-        module_dir = REPO_ROOT / "3-RiskHunter"
+        run_e2e = load_module_from_path("run_e2e_realistic_fixture_test", REPO_ROOT / "main" / "run_e2e.py")
+        module_dir = REPO_ROOT / "01-FrameAnalyzer" / "risk_hunter"
         sys.path.insert(0, str(module_dir))
         old_window = os.environ.get("DLD_VLM_FALLBACK_WINDOW_SEC")
         os.environ["DLD_VLM_FALLBACK_WINDOW_SEC"] = "300"
@@ -464,7 +486,7 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertIn("ambiguous_exfil_context_near_sensitive_log", reasons)
 
     def test_previously_missed_log_violation_cases_become_deterministic_events(self):
-        module_dir = REPO_ROOT / "3-RiskHunter"
+        module_dir = REPO_ROOT / "01-FrameAnalyzer" / "risk_hunter"
         sys.path.insert(0, str(module_dir))
         try:
             log_first_module = load_module_from_path(
@@ -496,8 +518,8 @@ class E2ERegressionTests(unittest.TestCase):
                 )
 
     def test_visible_sensitive_anchor_routes_to_vlm_without_deterministic_upload(self):
-        run_e2e = load_module_from_path("run_e2e_visible_anchor_test", REPO_ROOT / "run_e2e.py")
-        module_dir = REPO_ROOT / "3-RiskHunter"
+        run_e2e = load_module_from_path("run_e2e_visible_anchor_test", REPO_ROOT / "main" / "run_e2e.py")
+        module_dir = REPO_ROOT / "01-FrameAnalyzer" / "risk_hunter"
         sys.path.insert(0, str(module_dir))
         try:
             log_first_module = load_module_from_path(
@@ -541,7 +563,7 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertEqual(meta["decision"], "run")
 
     def test_content_paste_bypass_is_transfer_candidate_not_log_upload(self):
-        module_dir = REPO_ROOT / "3-RiskHunter"
+        module_dir = REPO_ROOT / "01-FrameAnalyzer" / "risk_hunter"
         sys.path.insert(0, str(module_dir))
         try:
             log_first_module = load_module_from_path(
@@ -585,7 +607,7 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertGreaterEqual(len(result["operation_records"]), 1)
 
     def test_connected_fact_injection_builds_leak_path_for_derived_upload(self):
-        run_e2e = load_module_from_path("run_e2e_regression_test", REPO_ROOT / "run_e2e.py")
+        run_e2e = load_module_from_path("run_e2e_regression_test", REPO_ROOT / "main" / "run_e2e.py")
         run_e2e.import_modules()
         engine = run_e2e.DatalogEngine()
         logs = [
@@ -628,8 +650,76 @@ class E2ERegressionTests(unittest.TestCase):
         self.assertTrue(leak_paths[0].leaked_file.endswith("员工薪资明细表Q4_part1.xlsx"))
         self.assertTrue(any(fact.relation == "CrossProcessTransfer" for fact in injected_facts))
 
+    def test_event_correlator_stage_enriches_main_detection_result(self):
+        run_e2e = load_module_from_path("run_e2e_correlator_stage_test", REPO_ROOT / "main" / "run_e2e.py")
+        run_e2e.import_modules()
+
+        original = "C:/Users/test/Desktop/customer_salary.xlsx"
+        derived = "C:/Users/test/Desktop/customer_salary_part1.xlsx"
+        logs = [
+            {
+                "timestamp": "2026-06-28T10:00:00.000",
+                "event_type": "file_open",
+                "file_path": original,
+                "file_name": "customer_salary.xlsx",
+                "process_info": {"process_name": "excel.exe"},
+                "window_info": {"window_title": "customer_salary.xlsx - Excel"},
+            },
+            {
+                "timestamp": "2026-06-28T10:00:12.000",
+                "event_type": "created",
+                "file_path": derived,
+                "file_name": "customer_salary_part1.xlsx",
+                "source_file": original,
+                "process_info": {"process_name": "python.exe"},
+                "window_info": {"window_title": "split customer salary"},
+            },
+            {
+                "timestamp": "2026-06-28T10:01:00.000",
+                "event_type": "file_upload",
+                "file_path": derived,
+                "file_name": "customer_salary_part1.xlsx",
+                "process_info": {"process_name": "msedge.exe"},
+                "window_info": {"window_title": "QQMail attachment upload"},
+            },
+        ]
+        detection_result = {
+            "sensitive_files": [original],
+            "upload_events": [],
+            "alert_events": [],
+            "info_events": [],
+            "operation_records": [
+                {
+                    "operation_time": "2026-06-28 10:01:00",
+                    "sensitive_file_path": original,
+                    "current_file": derived,
+                    "app_name": "QQMail",
+                    "operation": "mail_attachment_upload",
+                    "behavior_category": "data_exfiltration_candidate",
+                }
+            ],
+            "file_mappings": {},
+            "statistics": {},
+        }
+
+        bundle = run_e2e.run_event_correlator_stage(
+            logs=logs,
+            detection_result=detection_result,
+            recording_start_time="2026-06-28 10:00:00",
+            session_id="unit",
+        )
+
+        self.assertEqual(bundle["analysis_status"], "success")
+        self.assertGreaterEqual(len(bundle["upload_candidates"]), 1)
+        self.assertEqual(
+            detection_result["file_mappings"]["direct_file_mappings"][derived],
+            original,
+        )
+        self.assertGreaterEqual(len(detection_result["correlation_upload_candidates"]), 1)
+        self.assertGreaterEqual(detection_result["statistics"]["event_correlator_upload_candidates"], 1)
+
     def test_extract_hidden_operations_splits_semicolon_delimited_outputs(self):
-        module_dir = REPO_ROOT / "2-FileTracker"
+        module_dir = REPO_ROOT / "01-FrameAnalyzer" / "file_tracker"
         sys.path.insert(0, str(module_dir))
         try:
             tools_module = load_module_from_path(
@@ -664,7 +754,7 @@ class E2ERegressionTests(unittest.TestCase):
         )
 
     def test_update_worklist_skips_requeue_for_known_sensitive_derived_file(self):
-        module_dir = REPO_ROOT / "2-FileTracker"
+        module_dir = REPO_ROOT / "01-FrameAnalyzer" / "file_tracker"
         sys.path.insert(0, str(module_dir))
         try:
             nodes_module = load_module_from_path(
@@ -713,7 +803,7 @@ class E2ERegressionTests(unittest.TestCase):
         )
 
     def test_python_datalog_engine_does_not_expand_transfer_cycles(self):
-        module_dir = REPO_ROOT / "4-ThreatDetector"
+        module_dir = REPO_ROOT / "03-LeakReasoner"
         sys.path.insert(0, str(module_dir))
         try:
             engine_module = load_module_from_path(

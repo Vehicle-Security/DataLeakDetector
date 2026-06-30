@@ -1,6 +1,11 @@
 
 # DataLeakDetector
 
+See [spec/ARCHITECTURE.md](spec/ARCHITECTURE.md) for the canonical three-module layout.
+
+New code should import from `main/data_leak_detector` (`data_leak_detector.*`)
+instead of hard-coding implementation paths.
+
 ## 项目介绍
 
 1. 一个基于视频分析和LLM推理的数据泄漏检测系统，能够自动识别视频中的敏感信息并进行智能判断。
@@ -55,6 +60,6 @@ python [app.py](http://app.py)
 > 📊 场景关键帧保存完成:
 > 📈 总场景数: 2
 > ✅ 成功保存: 2
-> 📁 保存位置: ./output/scene_keyframes
+> 📁 保存位置: ./spec/output/scene_keyframes
 
 

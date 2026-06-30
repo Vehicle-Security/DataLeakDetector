@@ -1,5 +1,6 @@
 # 忽略无关文件
 */__pycache__/
+__pycache__/
 **/.vscode/
 **/.vs/
 **/*.pyc
@@ -19,6 +20,7 @@
 **/output/
 **/*.log
 **/output*/
+**/vlm_debug_frames/
 **/*debug*/
 **/records/
 **/recordings/
@@ -27,6 +29,7 @@
 # 忽略数据文件
 **/data/*
 /data.zip
+**/data.zip
 #**/logs/
 **/C++ETW/logs/
 **/C++ETW/bin/logs/

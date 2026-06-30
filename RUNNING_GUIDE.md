@@ -14,14 +14,14 @@ conda activate dataleak
 在项目根目录执行：
 
 ```bash
-pip install -r 2-FileTracker/requirements.txt
-pip install -r 4-ThreatDetector/requirements.txt
+pip install -r 01-FrameAnalyzer/file_tracker/requirements.txt
+pip install -r 03-LeakReasoner/requirements.txt
 pip install opencv-python torch torchvision easyocr thefuzz Pillow moviepy
 ```
 
 ### 1.3 配置大模型 (LLM) 密钥
 
-在项目的 `4-ThreatDetector` 目录下，新建 `.env` 文件，填入你的大模型密钥：
+在项目的 `03-LeakReasoner` 目录下，新建 `.env` 文件，填入你的大模型密钥：
 
 ```env
 # 必填：大模型 API 密钥
@@ -76,7 +76,7 @@ brew install souffle
 
 ```bash
 conda activate dataleak
-cd 4-ThreatDetector
+cd 03-LeakReasoner
 python test.py
 ```
 
@@ -106,12 +106,12 @@ python test.py
 
 ```bash
 cd DataLeakDetector-main
-python run_e2e.py --log "你的日志文件.json" --video "你的录屏文件.mp4"
+python main/run_e2e.py --log "你的日志文件.json" --video "你的录屏文件.mp4"
 ```
 
 可选参数：
 ```bash
-python run_e2e.py --log log.json --video video.mp4 --keywords 机密 合同 工资
+python main/run_e2e.py --log log.json --video video.mp4 --keywords 机密 合同 工资
 ```
 
 ---
@@ -122,9 +122,9 @@ python run_e2e.py --log log.json --video video.mp4 --keywords 机密 合同 工�
 **A**: 这是正常现象。引擎会自动降级为 Python 模式，不影响使用。你会看到 `[WARN]` 提示后紧跟 `[OK]`，说明降级成功。
 
 ### Q: `LLM_API_KEY` 相关报错？
-**A**: 请确保 `4-ThreatDetector/.env` 文件已正确配置你的大模型密钥。
+**A**: 请确保 `03-LeakReasoner/.env` 文件已正确配置你的大模型密钥。
 
-### Q: `run_e2e.py` 没有输出结果？
+### Q: `main/run_e2e.py` 没有输出结果？
 **A**: 请确保：
 1. 提供的日志文件 (`.json`) 格式正确，包含 `timestamp`, `file_path`, `event_type` 等字段
 2. 日志中存在与默认敏感关键词匹配的文件操作
