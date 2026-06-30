@@ -193,6 +193,89 @@ PRELIMINARY_OCR_TOKENS = (
     "\u5199\u90ae\u4ef6",
 )
 
+EXTERNAL_SINK_TOKENS = (
+    "chatgpt",
+    "claude",
+    "gemini",
+    "deepseek",
+    "kimi",
+    "poe",
+    "doubao",
+    "tongyi",
+    "gmail",
+    "outlook",
+    "proton",
+    "mail",
+    "email",
+    "dropbox",
+    "onedrive",
+    "google drive",
+    "baidu",
+    "weiyun",
+    "quark",
+    "github",
+    "gitlab",
+    "gitee",
+    "bitbucket",
+    "csdn",
+    "zhihu",
+    "juejin",
+    "qq",
+    "wechat",
+    "dingtalk",
+    "feishu",
+    "lark",
+    "teams",
+    "zoom",
+    "\u90ae\u7bb1",
+    "\u4e91\u76d8",
+    "\u7f51\u76d8",
+    "\u9644\u4ef6",
+    "\u53d1\u9001",
+    "\u4e0a\u4f20",
+    "\u5206\u4eab",
+    "\u5bf9\u8bdd",
+    "\u8f93\u5165\u6846",
+)
+
+ATTEMPT_ACTION_TOKENS = (
+    "file_selected",
+    "clipboard_text",
+    "clipboard_copy",
+    "clipboard_image",
+    "paste",
+    "attach",
+    "attachment",
+    "send",
+    "upload",
+    "share",
+    "commit",
+    "\u9009\u62e9\u6587\u4ef6",
+    "\u526a\u8d34\u677f",
+    "\u590d\u5236",
+    "\u7c98\u8d34",
+    "\u9644\u4ef6",
+    "\u53d1\u9001",
+    "\u4e0a\u4f20",
+    "\u5206\u4eab",
+)
+
+POSITIVE_RISK_LEVELS = {
+    "attempted",
+    "in_progress",
+    "content_exposed",
+    "completed",
+}
+
+MONITOR_UI_TOKENS = (
+    "localhost:5000",
+    "localhost 5000",
+    "win monitor",
+    "\u6570\u636e\u6cc4\u9732\u884c\u4e3a\u76d1\u63a7",
+    "\u63a7\u5236\u9762\u677f",
+    "\u4f1a\u8bdd\u5217\u8868",
+)
+
 _OCR_READER: Any = None
 _OCR_READER_FAILED = False
 _OCR_READER_LOCK = Lock()
@@ -335,12 +418,12 @@ def _read_json_lenient(path: Path) -> Any:
     last_error: Optional[json.JSONDecodeError] = None
     for candidate in candidates:
         try:
-            return json.loads(candidate)
+            return json.loads(candidate, strict=False)
         except json.JSONDecodeError as exc:
             last_error = exc
 
     for candidate in candidates:
-        decoder = json.JSONDecoder()
+        decoder = json.JSONDecoder(strict=False)
         items = []
         pos = 0
         try:
@@ -876,6 +959,20 @@ def _contains_gate_token(text: str, tokens: Iterable[str]) -> bool:
     return any(token in padded for token in tokens)
 
 
+def _sensitive_signal_present(text: str, detection: Dict[str, Any]) -> bool:
+    compact_text = _compact_ocr_text(text)
+    if not compact_text:
+        return False
+    for record in detection.get("operation_records", [])[:128]:
+        for key in ("sensitive_file_path", "source_path", "target_path", "description"):
+            value = str(record.get(key, "") or "")
+            for token in (value, Path(value).name, Path(value).stem):
+                compact = _compact_ocr_text(token)
+                if compact and len(compact) >= 3 and compact in compact_text:
+                    return True
+    return False
+
+
 def _vlm_gate_features(
     logs: List[Dict[str, Any]],
     detection: Dict[str, Any],
@@ -926,6 +1023,9 @@ def _vlm_gate_features(
         "selection_or_clipboard_event": bool(event_types & selection_events),
         "completion_text": _contains_gate_token(signal_text, COMPLETION_OCR_TOKENS),
         "preliminary_text": _contains_gate_token(signal_text, PRELIMINARY_OCR_TOKENS),
+        "sensitive_context": _sensitive_signal_present(signal_text, detection),
+        "external_sink_context": _contains_gate_token(signal_text, EXTERNAL_SINK_TOKENS),
+        "attempt_action_context": _contains_gate_token(signal_text, ATTEMPT_ACTION_TOKENS),
         "screenshot_context": _contains_gate_token(
             signal_text,
             ("screenshot", "screen capture", "snipping", "snipaste", "\u622a\u56fe", "\u622a\u5c4f"),
@@ -994,25 +1094,31 @@ def _local_vlm_gate_decision(
         return decision
 
     positive_reasons: List[str] = []
-    if features["explicit_transfer_event"]:
+    sensitive_context = bool(features.get("sensitive_context"))
+    external_sink_context = bool(features.get("external_sink_context"))
+    completed_or_attempted = bool(features.get("completion_text") or features.get("attempt_action_context"))
+    if features["explicit_transfer_event"] and sensitive_context:
         positive_reasons.append("explicit_transfer_event")
-    if features["screenshot_context"]:
+    if features["direct_visual_capture_event"] and sensitive_context:
+        positive_reasons.append("direct_visual_capture_event")
+    if features["screenshot_context"] and sensitive_context and completed_or_attempted:
         positive_reasons.append("screenshot_context")
-    if features["export_context"]:
+    if features["export_context"] and sensitive_context and external_sink_context:
         positive_reasons.append("export_context")
 
     if normalized_mode in {"adaptive", "aggressive"}:
         if (
             features["vm_context"]
+            and sensitive_context
             and not features["preliminary_text"]
             and not features["external_cloud_or_mail_context"]
         ):
             positive_reasons.append("vm_context")
 
     if normalized_mode == "aggressive":
-        if features["git_context"] and features["completion_text"]:
+        if features["git_context"] and features["completion_text"] and sensitive_context:
             positive_reasons.append("git_context_with_completion_text")
-        if features["archive_or_convert_context"] and features["completion_text"]:
+        if features["archive_or_convert_context"] and features["completion_text"] and sensitive_context:
             positive_reasons.append("archive_or_convert_with_completion_text")
 
     if positive_reasons:
@@ -1051,6 +1157,7 @@ def _local_ocr_vlm_verdict(
     return {
         "status": "local_ocr_positive",
         "is_violation": True,
+        "risk_level": "completed",
         "confidence": 0.88,
         "completed_action": "local_ocr",
         "evidence_frames": evidence_frames,
@@ -1080,7 +1187,7 @@ def _local_ocr_vlm_verdict(
     }
 
 
-VLM_REVIEW_CACHE_VERSION = "v1"
+VLM_REVIEW_CACHE_VERSION = "v2"
 
 
 def _bool_env(name: str, default: bool = True) -> bool:
@@ -1344,10 +1451,10 @@ def _review_log_context(logs: List[Dict[str, Any]], windows: List[Tuple[datetime
     return rows
 
 
-def _sample_frame_times(windows: List[Tuple[datetime, datetime]], max_frames: int) -> List[datetime]:
+def _sample_frame_times(windows: List[Tuple[datetime, datetime]], max_frames: int) -> List[Tuple[datetime, str]]:
     if max_frames <= 0:
         return []
-    points: List[datetime] = []
+    points: List[Tuple[datetime, str]] = []
     per_window = max(1, max_frames // max(1, len(windows)))
     for start, end in windows:
         duration = max(0.0, (end - start).total_seconds())
@@ -1355,18 +1462,68 @@ def _sample_frame_times(windows: List[Tuple[datetime, datetime]], max_frames: in
         if count <= 0:
             break
         if count == 1 or duration == 0:
-            points.append(start + timedelta(seconds=duration / 2))
+            points.append((start + timedelta(seconds=duration / 2), "sample_mid"))
         else:
             for idx in range(count):
-                points.append(start + timedelta(seconds=duration * idx / (count - 1)))
+                points.append((start + timedelta(seconds=duration * idx / (count - 1)), "sample"))
     return points[:max_frames]
+
+
+def _event_anchor_times(
+    windows: List[Tuple[datetime, datetime]],
+    fallback_meta: Dict[str, Any],
+    logs: List[Dict[str, Any]],
+    max_points: int,
+) -> List[Tuple[datetime, str]]:
+    if max_points <= 0:
+        return []
+
+    padded_windows = [
+        (start - timedelta(seconds=5), end + timedelta(seconds=60))
+        for start, end in windows
+    ]
+
+    def in_window(dt: datetime) -> bool:
+        return not padded_windows or any(start <= dt <= end for start, end in padded_windows)
+
+    events: List[Dict[str, Any]] = []
+    events.extend(item for item in fallback_meta.get("candidate_events", []) or [] if isinstance(item, dict))
+    events.extend(item for item in logs if isinstance(item, dict))
+
+    anchors: List[Tuple[datetime, str]] = []
+    for event in events:
+        dt = _parse_dt(event.get("timestamp", ""))
+        if not dt or not in_window(dt):
+            continue
+        text = _event_text(event).lower()
+        if not any(token.lower() in text for token in ATTEMPT_ACTION_TOKENS + COMPLETION_OCR_TOKENS + EXTERNAL_SINK_TOKENS):
+            continue
+
+        event_type = str(event.get("event_type", "") or "").lower()
+        if any(token in text for token in ("upload", "\u4e0a\u4f20", "send", "\u53d1\u9001", "attach", "\u9644\u4ef6", "commit")):
+            offsets = (-3, 0, 5, 12, 25, 45)
+            reason = f"event_anchor_transfer:{event_type or 'unknown'}"
+        elif any(token in text for token in ("file_selected", "clipboard", "paste", "\u526a\u8d34", "\u590d\u5236", "\u7c98\u8d34")):
+            offsets = (0, 3, 8, 15, 30)
+            reason = f"event_anchor_precursor:{event_type or 'unknown'}"
+        else:
+            offsets = (0, 8, 20)
+            reason = f"event_anchor_context:{event_type or 'unknown'}"
+
+        for offset in offsets:
+            anchors.append((dt + timedelta(seconds=offset), reason))
+            if len(anchors) >= max_points:
+                return anchors
+    return anchors[:max_points]
 
 
 def _frame_time_candidates(
     windows: List[Tuple[datetime, datetime]],
     max_frames: int,
     max_candidates: int,
-) -> List[datetime]:
+    fallback_meta: Optional[Dict[str, Any]] = None,
+    logs: Optional[List[Dict[str, Any]]] = None,
+) -> List[Tuple[datetime, str]]:
     if max_frames <= 0:
         return []
     if not windows:
@@ -1375,7 +1532,12 @@ def _frame_time_candidates(
     budget = max(max_frames, max_candidates)
     durations = [max(0.0, (end - start).total_seconds()) for start, end in windows]
     total_duration = sum(durations) or float(len(windows))
-    points: List[datetime] = []
+    points: List[Tuple[datetime, str]] = _event_anchor_times(
+        windows,
+        fallback_meta or {},
+        logs or [],
+        max_points=min(budget, _int_env("DLD_VLM_REVIEW_MAX_ANCHOR_CANDIDATES", 36, minimum=0)),
+    )
 
     for idx, (start, end) in enumerate(windows):
         remaining_windows = len(windows) - idx
@@ -1390,20 +1552,22 @@ def _frame_time_candidates(
         count = max(1, count)
 
         if count == 1 or duration <= 0:
-            points.append(start + timedelta(seconds=duration / 2))
+            points.append((start + timedelta(seconds=duration / 2), "window_mid_candidate"))
             continue
         for pos in range(count):
             ratio = pos / (count - 1)
-            points.append(start + timedelta(seconds=duration * ratio))
+            points.append((start + timedelta(seconds=duration * ratio), "window_candidate"))
 
-    deduped = []
-    seen = set()
-    for dt in sorted(points):
+    deduped: List[Tuple[datetime, str]] = []
+    seen: Dict[str, str] = {}
+    for dt, reason in sorted(points, key=lambda item: item[0]):
         key = dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         if key in seen:
+            if reason not in seen[key]:
+                seen[key] = f"{seen[key]}+{reason}"
             continue
-        seen.add(key)
-        deduped.append(dt)
+        seen[key] = reason
+        deduped.append((dt, reason))
     return deduped[:budget]
 
 
@@ -1423,7 +1587,7 @@ def _select_representative_frames(candidates: List[Dict[str, Any]], max_frames: 
         return []
     if len(candidates) <= max_frames:
         for item in candidates:
-            item["selection_reason"] = item.get("selection_reason") or "candidate"
+            item["selection_reason"] = item.get("selection_reason") or item.get("selection_hint") or "candidate"
         return candidates
 
     selected: Dict[int, Dict[str, Any]] = {}
@@ -1438,6 +1602,15 @@ def _select_representative_frames(candidates: List[Dict[str, Any]], max_frames: 
         copy = dict(item)
         copy["selection_reason"] = reason
         selected[key] = copy
+
+    anchor_limit = min(max_frames, _int_env("DLD_VLM_REVIEW_MAX_ANCHOR_FRAMES", max(2, max_frames // 3), minimum=1))
+    anchor_candidates = [
+        item
+        for item in candidates
+        if "event_anchor" in str(item.get("selection_hint", ""))
+    ]
+    for item in sorted(anchor_candidates, key=lambda value: int(value.get("frame_index", 0)))[:anchor_limit]:
+        add(item, str(item.get("selection_hint") or "event_anchor"))
 
     add(candidates[0], "window_start")
     if len(candidates) > 2:
@@ -1521,6 +1694,9 @@ def _annotate_and_limit_image_frames(
         if "window_start" in reason or "window_end" in reason:
             image_priority += 3.0
             image_reasons.append("boundary_context")
+        if "event_anchor" in reason:
+            image_priority += 3.5
+            image_reasons.append("event_anchor")
         if "completion_keyword" in flags or "sensitive_name_visible" in flags:
             image_priority += 4.0
             image_reasons.append("ocr_risk_hit")
@@ -1533,6 +1709,9 @@ def _annotate_and_limit_image_frames(
         if not ocr_text:
             image_priority += 0.5
             image_reasons.append("ocr_not_run" if ocr_enabled and not should_ocr else "no_ocr_text")
+        elif any(token in ocr_text.lower() for token in MONITOR_UI_TOKENS) and not flags:
+            image_priority -= 3.0
+            image_reasons.append("monitor_ui_downrank")
 
         item["ocr_text"] = ocr_text[:500]
         item["ocr_flags"] = flags
@@ -1634,7 +1813,7 @@ def _extract_representative_frame_images(
         max_frames,
         _int_env("DLD_VLM_REVIEW_CANDIDATE_FRAMES", max(24, max_frames * 6), minimum=1),
     )
-    frame_times = _frame_time_candidates(review_segments, max_frames, candidate_budget)
+    frame_times = _frame_time_candidates(review_segments, max_frames, candidate_budget, fallback_meta, logs)
     if not frame_times:
         frame_times = _sample_frame_times(review_segments or windows, max_frames)
 
@@ -1647,7 +1826,7 @@ def _extract_representative_frame_images(
     previous_thumb = None
     seen_frames = set()
     try:
-        for dt in frame_times:
+        for dt, hint in frame_times:
             offset = max(0.0, (dt - recording_start).total_seconds())
             frame_index = int(round(offset * fps))
             if frame_count:
@@ -1666,6 +1845,7 @@ def _extract_representative_frame_images(
                     "timestamp": dt.strftime("%Y-%m-%d %H:%M:%S"),
                     "frame_index": frame_index,
                     "scene_score": scene_score,
+                    "selection_hint": hint,
                     "frame": frame,
                 }
             )
@@ -1704,6 +1884,57 @@ def _extract_representative_frame_images(
         "selected_frames": len(selected),
         **prefilter_meta,
     }
+
+
+def _build_vlm_review_prompt(
+    sensitive_files: List[str],
+    candidate_events: List[Dict[str, Any]],
+    review_logs: List[Dict[str, Any]],
+) -> str:
+    return f"""You are auditing a desktop recording for possible sensitive-data leakage.
+Use only the provided log context and sampled video frames. Prefer visual evidence over OCR when they disagree.
+
+Sensitive files or objects:
+{json.dumps(sensitive_files, ensure_ascii=False, indent=2)}
+
+Candidate log events:
+{json.dumps(candidate_events, ensure_ascii=False, indent=2)}
+
+Relevant in-window log summary:
+{json.dumps(review_logs, ensure_ascii=False, indent=2)}
+
+Frame notes:
+- Frames with image_sent=true include the real image.
+- Frames with image_sent=false are text/OCR timeline context only.
+- OCR can be wrong or incomplete, so do not rely on OCR alone when the image contradicts it.
+- Ignore the monitor application's own status page as proof of leakage.
+
+Return both a completed-action verdict and a risk-stage verdict:
+- is_violation=true only when the evidence shows completed leakage or direct exposure of sensitive content in an external sink.
+- risk_level must be one of: none, preparation, selected_or_attached, in_progress, content_exposed, completed.
+- Use selected_or_attached when a sensitive file is selected or attached in an external sink but not submitted yet.
+- Use in_progress when upload/send/share is visibly underway but completion is not shown.
+- Use content_exposed when sensitive text/image content is visible in an external AI/chat/editor/message input or conversation, even without a separate sent confirmation.
+- Use completed when upload/send/share/commit/publish success, remote listing, sent message, shared screen exposure, screenshot capture, or VM/remote copy completion is visible.
+- Use preparation for opening a sink page, browsing, right-clicking, or unrelated local editing without sensitive data entering the sink.
+- Use none when there is no sensitive-object interaction.
+
+Strict completion rules:
+- Email/chat is completed only after sent/success, the message appears in the conversation, or the recipient-visible artifact is shown.
+- Cloud/Git/community upload is completed only after success, remote listing, commit/publish success, or a generated remote attachment link.
+- AI/chat input containing sensitive content is content_exposed even before a final submit if the content is visible in the external service.
+- A draft, file picker, highlighted send button, selected file, or upload page alone is not completed, but may be selected_or_attached or in_progress.
+
+Output exactly one JSON object and no markdown:
+{{
+  "is_violation": true,
+  "risk_level": "none|preparation|selected_or_attached|in_progress|content_exposed|completed",
+  "confidence": 0.0,
+  "completed_action": "send|upload|share|publish|commit|ai_input|screen_share|screenshot|vm_copy|none|unknown",
+  "evidence_frames": [1, 2],
+  "reason": "short explanation"
+}}
+"""
 
 
 def _live_vlm_review_case(
@@ -1819,6 +2050,7 @@ def _live_vlm_review_case(
 - 输出一个 JSON 对象，不要 markdown:
 {{"is_violation": true/false, "confidence": 0.0-1.0, "completed_action": "send|upload|screen_share|screenshot|vm_copy|none|unknown", "evidence_frames": [1,2], "reason": "..."}}
 """
+    prompt = _build_vlm_review_prompt(sensitive_files, candidate_events, review_logs)
     contents: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
     for image in frame_records:
         contents.append(
@@ -1853,7 +2085,7 @@ def _live_vlm_review_case(
             "frame_plan": frame_plan,
         }
     try:
-        verdict = json.loads(match.group(0))
+        verdict = json.loads(match.group(0), strict=False)
     except json.JSONDecodeError:
         return {
             "status": "failed",
@@ -1918,6 +2150,127 @@ def _postprocess_vlm_verdict(verdict: Dict[str, Any]) -> None:
     verdict["raw_is_violation"] = verdict.get("is_violation")
     verdict["is_violation"] = False
     verdict["postprocess_reason"] = "downgraded_preliminary_action_without_completion_evidence"
+
+
+def _normalize_risk_level(value: str) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "selected": "selected_or_attached",
+        "attached": "selected_or_attached",
+        "attempt": "attempted",
+        "attempting": "attempted",
+        "exposed": "content_exposed",
+        "complete": "completed",
+    }
+    normalized = aliases.get(normalized, normalized)
+    allowed = {
+        "none",
+        "preparation",
+        "attempted",
+        "selected_or_attached",
+        "in_progress",
+        "content_exposed",
+        "completed",
+    }
+    return normalized if normalized in allowed else ""
+
+
+def _infer_risk_level_from_verdict(verdict: Dict[str, Any]) -> str:
+    if bool(verdict.get("is_violation")):
+        action = str(verdict.get("completed_action", "") or "").lower()
+        if action in {"ai_input", "screen_share", "screenshot", "vm_copy"}:
+            return "content_exposed"
+        return "completed"
+
+    reason = str(verdict.get("reason", "") or "").lower()
+    if not reason:
+        return "none"
+
+    in_progress_markers = (
+        "uploading",
+        "in progress",
+        "upload progress",
+        "\u6b63\u5728\u4e0a\u4f20",
+        "\u4e0a\u4f20\u4e2d",
+        "\u4e0a\u4f20\u8fdb\u5ea6",
+        "\u6b63\u5728\u5f00\u59cb\u4e0a\u4f20",
+    )
+    selected_markers = (
+        "selected file",
+        "file_selected",
+        "attached",
+        "as attachment",
+        "\u5df2\u4f5c\u4e3a\u9644\u4ef6",
+        "\u9644\u4ef6\u5df2\u6dfb\u52a0",
+        "\u5df2\u6dfb\u52a0\u4e3a\u9644\u4ef6",
+        "\u9009\u4e2d\u4e86\u654f\u611f\u6587\u4ef6",
+        "\u6dfb\u52a0\u9644\u4ef6",
+    )
+    exposed_markers = (
+        "sensitive content is visible",
+        "visible in the input",
+        "pasted into",
+        "appears in the conversation",
+        "\u654f\u611f\u5185\u5bb9\u5df2",
+        "\u51fa\u73b0\u5728\u8f93\u5165\u6846",
+        "\u7c98\u8d34\u5230",
+        "\u5bf9\u8bdd\u6d88\u606f",
+    )
+    negative_markers = (
+        "not observed",
+        "no evidence",
+        "did not see",
+        "without evidence",
+        "not in the sensitive",
+        "\u672a\u89c1",
+        "\u672a\u89c2\u5bdf\u5230",
+        "\u6ca1\u6709",
+        "\u65e0\u8bc1\u636e",
+        "\u4e0d\u5728\u654f\u611f",
+        "\u975e\u654f\u611f",
+        "\u53d6\u6d88",
+        "\u64a4\u56de",
+    )
+
+    if any(marker in reason for marker in in_progress_markers):
+        return "in_progress"
+    if any(marker in reason for marker in selected_markers) and not any(marker in reason for marker in negative_markers):
+        return "selected_or_attached"
+    if any(marker in reason for marker in exposed_markers) and not any(marker in reason for marker in negative_markers):
+        return "content_exposed"
+    return "preparation" if any(marker in reason for marker in EXTERNAL_SINK_TOKENS) else "none"
+
+
+def _postprocess_vlm_verdict(verdict: Dict[str, Any]) -> None:
+    risk_level = _normalize_risk_level(str(verdict.get("risk_level", "") or ""))
+    verdict["risk_level"] = risk_level or _infer_risk_level_from_verdict(verdict)
+    if not verdict.get("is_violation"):
+        return
+    if verdict["risk_level"] in {"content_exposed", "completed"}:
+        return
+    verdict["raw_is_violation"] = verdict.get("is_violation")
+    verdict["is_violation"] = False
+    verdict["postprocess_reason"] = "downgraded_non_completed_risk_stage"
+
+
+def _vlm_final_positive(verdict: Dict[str, Any]) -> bool:
+    policy = os.getenv("DLD_VLM_FINAL_POLICY", "risk").strip().lower()
+    if policy in {"completed", "completion", "strict"}:
+        return bool(verdict.get("is_violation"))
+
+    risk_level = _normalize_risk_level(str(verdict.get("risk_level", "") or "")) or _infer_risk_level_from_verdict(verdict)
+    verdict["risk_level"] = risk_level
+    if risk_level not in POSITIVE_RISK_LEVELS:
+        return bool(verdict.get("is_violation"))
+    try:
+        confidence = float(verdict.get("confidence", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    try:
+        min_confidence = float(os.getenv("DLD_VLM_RISK_MIN_CONFIDENCE", "0.45"))
+    except (TypeError, ValueError):
+        min_confidence = 0.45
+    return confidence >= min_confidence or bool(verdict.get("is_violation"))
 
 
 def _verdict_timestamp(fallback_meta: Dict[str, Any], logs: List[Dict[str, Any]]) -> str:
@@ -1995,6 +2348,28 @@ def _run_event_correlator_bundle(
         "session_metadata": {"source": "nas_benchmark"},
     }
     return EventCorrelator().run(payload)
+
+
+def _logs_for_correlation(
+    logs: List[Dict[str, Any]],
+    fallback_meta: Dict[str, Any],
+    limit: int = 160,
+) -> List[Dict[str, Any]]:
+    windows = _windows_from_fallback(fallback_meta, logs)
+    if not windows:
+        return logs[:limit]
+
+    rows: List[Dict[str, Any]] = []
+    for log in logs:
+        dt = _parse_dt(log.get("timestamp", ""))
+        if not dt:
+            continue
+        if not any(start - timedelta(seconds=10) <= dt <= end + timedelta(seconds=60) for start, end in windows):
+            continue
+        rows.append(log)
+        if len(rows) >= limit:
+            break
+    return rows or logs[:limit]
 
 
 def _case_dirs(root: Path, stages: Optional[List[str]]) -> Iterable[Path]:
@@ -2112,6 +2487,7 @@ def run_benchmark(
                 local_vlm_verdict = {
                     "status": "local_positive",
                     "is_violation": True,
+                    "risk_level": "completed",
                     "confidence": 0.92 if vlm_gate.get("mode") == "strict" else 0.86,
                     "completed_action": "local_gate",
                     "reason": vlm_gate.get("reason", "local_feature_gate_positive"),
@@ -2262,6 +2638,7 @@ def run_benchmark(
         final_positive = triage_positive
         if vlm_verdict:
             if vlm_verdict.get("status") == "success":
+                vlm_positive = _vlm_final_positive(vlm_verdict)
                 frame_segments = _frame_segments_from_vlm_verdict(
                     vlm_verdict,
                     sensitive_files,
@@ -2270,12 +2647,12 @@ def run_benchmark(
                 )
                 correlation_bundle = _run_event_correlator_bundle(
                     case_id,
-                    logs=[],
+                    logs=_logs_for_correlation(logs, fallback_meta),
                     sensitive_files=sensitive_files,
                     groundtruth=groundtruth,
                     frame_segments=frame_segments,
                 )
-                final_positive = len(correlation_bundle.get("upload_candidates", [])) > 0
+                final_positive = vlm_positive or len(correlation_bundle.get("upload_candidates", [])) > 0
             else:
                 final_positive = True
         elif deterministic_positive:
@@ -2294,12 +2671,14 @@ def run_benchmark(
         frame_context_count = 0
         confidence = ""
         completed_action = ""
+        risk_level = ""
         if vlm_verdict:
             vlm_status = str(vlm_verdict.get("status", "unknown"))
             frames_sent = int(vlm_verdict.get("frames_sent", 0) or 0)
             frame_context_count = int(vlm_verdict.get("frame_context_count", 0) or 0)
             confidence = str(vlm_verdict.get("confidence", ""))
             completed_action = str(vlm_verdict.get("completed_action", ""))
+            risk_level = str(vlm_verdict.get("risk_level", ""))
         elif should_run_vlm:
             if not use_vlm:
                 vlm_status = "triage_only"
@@ -2314,7 +2693,7 @@ def run_benchmark(
             f"det={int(deterministic_positive)} triage={int(triage_positive)} "
             f"vlm={vlm_status} image_frames={frames_sent} context_frames={frame_context_count} "
             f"requested_frames={record['adaptive_vlm_frames']} confidence={confidence} "
-            f"action={completed_action} reasons={','.join(fallback_meta.get('reasons', []))}"
+            f"action={completed_action} risk={risk_level} reasons={','.join(fallback_meta.get('reasons', []))}"
         )
 
         result.cases.append(
