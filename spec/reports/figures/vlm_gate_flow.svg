@@ -1,21 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1360" viewBox="0 0 2200 1360">
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1280" viewBox="0 0 2200 1280">
   <defs>
     <style>
       .title { font: 700 54px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
       .subtitle { font: 28px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #52616f; }
-      .section { font: 700 30px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
-      .node-title { font: 700 25px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
+      .card-title { font: 700 25px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
       .body { font: 22px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #203246; }
       .small { font: 19px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #52616f; }
-      .node { fill: #ffffff; stroke: #8ea3ba; stroke-width: 2.6; rx: 18; }
-      .decision { fill: #fff7d6; stroke: #f59e0b; stroke-width: 3; }
-      .positive { fill: #dcfce7; stroke: #22c55e; stroke-width: 3; rx: 18; }
-      .muted { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 2.6; rx: 18; }
-      .review { fill: #ede9fe; stroke: #a78bfa; stroke-width: 3; rx: 18; }
-      .band { stroke: #cbd5e1; stroke-width: 2; rx: 30; }
-      .edge { stroke: #4b5f76; stroke-width: 4.8; fill: none; }
-      .dash { stroke: #64748b; stroke-width: 3.8; fill: none; stroke-dasharray: 12 10; }
       .label { font: 700 19px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #334155; }
+      .card { fill: #ffffff; stroke: #8ea3ba; stroke-width: 2.6; rx: 18; }
+      .decision { fill: #fff7d6; stroke: #f59e0b; stroke-width: 3; rx: 18; }
+      .local { fill: #dcfce7; stroke: #22c55e; stroke-width: 3; rx: 18; }
+      .remote { fill: #ede9fe; stroke: #a78bfa; stroke-width: 3; rx: 18; }
+      .skip { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 2.6; rx: 18; }
+      .final { fill: #e0f7ff; stroke: #38bdf8; stroke-width: 3; rx: 20; }
+      .edge { stroke: #4b5f76; stroke-width: 4.6; fill: none; }
+      .thin { stroke: #64748b; stroke-width: 3.4; fill: none; stroke-dasharray: 10 8; }
     </style>
     <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5f76"/>
@@ -23,98 +22,113 @@
     <marker id="arrow-muted" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
     </marker>
-    <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="9" stdDeviation="9" flood-color="#1f2937" flood-opacity="0.10"/>
-    </filter>
   </defs>
 
-  <rect x="0" y="0" width="2200" height="1360" fill="#ffffff"/>
-  <text class="title" x="70" y="82">VLM 触发门控与最终判定</text>
-  <text class="subtitle" x="74" y="126">先用日志规则保证精度，再把无法确定但可疑的样本送入视觉复核</text>
+  <rect width="2200" height="1280" fill="#ffffff"/>
+  <text class="title" x="70" y="82">VLM 复核门控流程</text>
+  <text class="subtitle" x="74" y="126">当前实现：先确定性日志判断，再 local feature gate，最后才进入 OCR / remote VLM 复核</text>
 
-  <rect class="band" x="60" y="180" width="620" height="925" fill="#eff6ff"/>
-  <rect class="band" x="760" y="180" width="620" height="925" fill="#fff7d6"/>
-  <rect class="band" x="1460" y="180" width="675" height="925" fill="#ecfdf3"/>
-  <text class="section" x="100" y="230">日志优先</text>
-  <text class="section" x="800" y="230">视觉复核</text>
-  <text class="section" x="1500" y="230">融合判定</text>
+  <!-- Main path -->
+  <rect class="card" x="90" y="265" width="280" height="140"/>
+  <text class="card-title" x="120" y="307">NAS case</text>
+  <text class="body" x="120" y="345">logs + video</text>
+  <text class="body" x="120" y="377">groundtruth 仅用于评测</text>
 
-  <g filter="url(#soft-shadow)">
-    <rect class="node" x="115" y="300" width="420" height="135"/>
-    <text class="node-title" x="145" y="340">NAS 样本</text>
-    <text class="body" x="145" y="378">系统日志 + 录屏 + 标注</text>
-    <text class="body" x="145" y="408">按 case 逐例运行</text>
+  <rect class="card" x="460" y="265" width="330" height="140"/>
+  <text class="card-title" x="490" y="307">LogFirstDetector</text>
+  <text class="body" x="490" y="345">upload_events</text>
+  <text class="body" x="490" y="377">file mappings / fallback meta</text>
 
-    <rect class="node" x="115" y="535" width="420" height="160"/>
-    <text class="node-title" x="145" y="575">LogFirstDetector</text>
-    <text class="body" x="145" y="613">敏感锚点、派生映射、上传事件</text>
-    <text class="body" x="145" y="645">生成 deterministic 与 fallback meta</text>
+  <rect class="decision" x="880" y="265" width="300" height="140"/>
+  <text class="card-title" x="925" y="318">deterministic</text>
+  <text class="card-title" x="962" y="352">positive?</text>
 
-    <polygon class="decision" points="325,800 555,915 325,1030 95,915"/>
-    <text class="node-title" x="220" y="898">日志是否足够</text>
-    <text class="node-title" x="232" y="932">确认外发？</text>
+  <rect class="card" x="1270" y="265" width="330" height="140"/>
+  <text class="card-title" x="1300" y="307">Fallback builder</text>
+  <text class="body" x="1300" y="345">should_run_vlm</text>
+  <text class="body" x="1300" y="377">reasons / windows / candidates</text>
 
-    <rect class="positive" x="805" y="265" width="430" height="145"/>
-    <text class="node-title" x="835" y="305">确定性命中</text>
-    <text class="body" x="835" y="343">直接进入最终结果</text>
-    <text class="body" x="835" y="375">通常精度高，调用成本为零</text>
+  <rect class="decision" x="1690" y="265" width="300" height="140"/>
+  <text class="card-title" x="1740" y="318">should run</text>
+  <text class="card-title" x="1776" y="352">VLM?</text>
 
-    <rect class="node" x="805" y="520" width="430" height="175"/>
-    <text class="node-title" x="835" y="560">Fallback Gate</text>
-    <text class="body" x="835" y="598">AI / 邮箱 / 网盘 / IM / 会议</text>
-    <text class="body" x="835" y="630">剪贴板 / 截图 / VM / 远程桌面</text>
-    <text class="body" x="835" y="662">只放行有敏感上下文的窗口</text>
+  <path class="edge" marker-end="url(#arrow)" d="M370 335 L460 335"/>
+  <path class="edge" marker-end="url(#arrow)" d="M790 335 L880 335"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1180 335 L1270 335"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1600 335 L1690 335"/>
 
-    <polygon class="decision" points="1020,780 1250,895 1020,1010 790,895"/>
-    <text class="node-title" x="910" y="878">是否需要</text>
-    <text class="node-title" x="928" y="912">Live VLM？</text>
+  <!-- Deterministic yes branch -->
+  <rect class="local" x="880" y="500" width="300" height="130"/>
+  <text class="card-title" x="915" y="542">log positive</text>
+  <text class="body" x="915" y="580">frames_sent=0</text>
+  <text class="body" x="915" y="610">不进入 live VLM</text>
+  <path class="edge" marker-end="url(#arrow)" d="M1030 405 L1030 500"/>
+  <text class="label" x="1044" y="462">是</text>
 
-    <rect class="muted" x="1505" y="270" width="465" height="145"/>
-    <text class="node-title" x="1535" y="310">跳过 VLM</text>
-    <text class="body" x="1535" y="348">无敏感上下文或纯噪声</text>
-    <text class="body" x="1535" y="380">按日志结果收敛</text>
+  <!-- should_run no branch -->
+  <rect class="skip" x="1690" y="500" width="300" height="130"/>
+  <text class="card-title" x="1735" y="542">skip VLM</text>
+  <text class="body" x="1735" y="580">无敏感上下文</text>
+  <text class="body" x="1735" y="610">或纯噪声样例</text>
+  <path class="edge" marker-end="url(#arrow)" d="M1840 405 L1840 500"/>
+  <text class="label" x="1854" y="462">否</text>
 
-    <rect class="review" x="1505" y="515" width="465" height="150"/>
-    <text class="node-title" x="1535" y="555">构造复核窗口</text>
-    <text class="body" x="1535" y="593">anchor 前后文 + post buffer</text>
-    <text class="body" x="1535" y="625">候选事件与外部汇类型</text>
+  <!-- Review path -->
+  <rect class="card" x="90" y="760" width="320" height="145"/>
+  <text class="card-title" x="120" y="802">Local feature gate</text>
+  <text class="body" x="120" y="840">all / strict / adaptive / aggressive</text>
+  <text class="body" x="120" y="872">强本地证据短路</text>
 
-    <rect class="review" x="1505" y="745" width="465" height="150"/>
-    <text class="node-title" x="1535" y="785">代表帧选择</text>
-    <text class="body" x="1535" y="823">起点 / 中点 / 终点</text>
-    <text class="body" x="1535" y="855">scene-change 高分帧</text>
+  <rect class="decision" x="500" y="760" width="280" height="145"/>
+  <text class="card-title" x="535" y="815">local</text>
+  <text class="card-title" x="532" y="849">positive?</text>
 
-    <rect class="review" x="1505" y="975" width="465" height="150"/>
-    <text class="node-title" x="1535" y="1015">Live VLM + Correlator</text>
-    <text class="body" x="1535" y="1053">判断完成态并绑定外发对象</text>
-    <text class="body" x="1535" y="1085">过滤草稿、等待、取消和误触</text>
-  </g>
+  <rect class="remote" x="870" y="760" width="330" height="145"/>
+  <text class="card-title" x="900" y="802">Remote review queue</text>
+  <text class="body" x="900" y="840">adaptive frame budget</text>
+  <text class="body" x="900" y="872">抽帧 + OCR + image_sent</text>
 
-  <path class="edge" marker-end="url(#arrow)" d="M325 435 L325 535"/>
-  <path class="edge" marker-end="url(#arrow)" d="M325 695 L325 800"/>
-  <path class="edge" marker-end="url(#arrow)" d="M555 915 C710 915 720 337 805 337"/>
-  <text class="label" x="610" y="820">是</text>
-  <path class="edge" marker-end="url(#arrow)" d="M325 1030 C325 1130 1020 1130 1020 1010"/>
-  <text class="label" x="386" y="1115">否，进入门控</text>
-  <path class="edge" marker-end="url(#arrow)" d="M1020 695 L1020 780"/>
-  <path class="edge" marker-end="url(#arrow)" d="M1250 895 C1390 895 1385 342 1505 342"/>
-  <text class="label" x="1335" y="820">否</text>
-  <path class="edge" marker-end="url(#arrow)" d="M1020 1010 C1120 1150 1468 590 1505 590"/>
-  <text class="label" x="1150" y="1050">是</text>
-  <path class="edge" marker-end="url(#arrow)" d="M1738 665 L1738 745"/>
-  <path class="edge" marker-end="url(#arrow)" d="M1738 895 L1738 975"/>
+  <rect class="decision" x="1290" y="760" width="280" height="145"/>
+  <text class="card-title" x="1326" y="815">local OCR</text>
+  <text class="card-title" x="1360" y="849">hit?</text>
 
-  <rect class="positive" x="815" y="1160" width="1250" height="110"/>
-  <text class="node-title" x="850" y="1202">最终分桶</text>
-  <text class="body" x="1035" y="1202">triage 保召回，deterministic 保精度，final 融合 VLM 后输出 TP / FP / TN / FN 与逐例日志</text>
-  <path class="edge" marker-end="url(#arrow)" d="M1020 410 L1020 1160"/>
-  <path class="edge" marker-end="url(#arrow)" d="M1738 1125 L1738 1160"/>
-  <path class="edge" marker-end="url(#arrow)" d="M1738 415 C1738 455 1440 1150 1440 1160"/>
+  <rect class="remote" x="1660" y="760" width="330" height="145"/>
+  <text class="card-title" x="1690" y="802">Remote VLM</text>
+  <text class="body" x="1690" y="840">image_sent=true 帧带原图</text>
+  <text class="body" x="1690" y="872">text-only 帧补时间线</text>
 
-  <path class="dash" marker-end="url(#arrow-muted)" d="M2065 1215 C2130 1215 2135 165 330 165 C110 165 95 590 115 615"/>
-  <text class="small" x="1020" y="155">FN / FP 样本回流：调整完成态 prompt、后处理规则、窗口扩展与候选帧数量</text>
+  <path class="edge" marker-end="url(#arrow)" d="M1840 405 C1840 690 250 690 250 760"/>
+  <text class="label" x="1645" y="690">是，进入复核路径</text>
+  <path class="edge" marker-end="url(#arrow)" d="M410 832 L500 832"/>
+  <path class="edge" marker-end="url(#arrow)" d="M780 832 L870 832"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1200 832 L1290 832"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1570 832 L1660 832"/>
+  <text class="label" x="804" y="812">否</text>
+  <text class="label" x="1592" y="812">否</text>
 
-  <rect class="node" x="115" y="1160" width="580" height="110" fill="#f8fafc"/>
-  <text class="node-title" x="145" y="1202">当前诊断</text>
-  <text class="body" x="145" y="1240">瓶颈不是“是否送 VLM”，而是 VLM 对发送完成态的保守判断。</text>
+  <rect class="local" x="500" y="1010" width="280" height="120"/>
+  <text class="card-title" x="530" y="1052">local_positive</text>
+  <text class="body" x="530" y="1090">model=local_vlm_gate</text>
+  <path class="edge" marker-end="url(#arrow)" d="M640 905 L640 1010"/>
+  <text class="label" x="654" y="962">是</text>
+
+  <rect class="local" x="1290" y="1010" width="280" height="120"/>
+  <text class="card-title" x="1315" y="1052">local_ocr_positive</text>
+  <text class="body" x="1315" y="1090">完成态 + 敏感名</text>
+  <path class="edge" marker-end="url(#arrow)" d="M1430 905 L1430 1010"/>
+  <text class="label" x="1444" y="962">是</text>
+
+  <!-- Final bucket -->
+  <rect class="final" x="760" y="1165" width="700" height="85"/>
+  <text class="card-title" x="790" y="1217">最终分桶：</text>
+  <text class="body" x="940" y="1217">triage / deterministic / final -> TP / FP / TN / FN</text>
+
+  <path class="edge" marker-end="url(#arrow)" d="M1030 630 C1030 760 1110 1090 1110 1165"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1840 630 C1840 1110 1280 1138 1230 1165"/>
+  <path class="edge" marker-end="url(#arrow)" d="M640 1130 C710 1160 740 1165 760 1198"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1430 1130 C1360 1160 1320 1165 1290 1198"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1825 905 C1825 1125 1450 1135 1370 1165"/>
+
+  <path class="thin" marker-end="url(#arrow-muted)" d="M1460 1208 C1740 1208 2020 1120 2020 832"/>
+  <text class="small" x="1500" y="1238">FN / FP 回流：调整 fallback、feature gate、OCR gate、抽帧参数和 prompt</text>
 </svg>

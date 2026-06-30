@@ -145,6 +145,107 @@ COMPLETION_TERMS = (
     "\u63d0\u4ea4\u6210\u529f",
 )
 
+CAPABILITY_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "compose_message",
+        (
+            "compose",
+            "new message",
+            "write mail",
+            "new mail",
+            "\u5199\u4fe1",
+            "\u5199\u90ae\u4ef6",
+            "\u65b0\u5efa\u90ae\u4ef6",
+            "\u6536\u4ef6\u4eba",
+            "\u4e3b\u9898",
+        ),
+    ),
+    (
+        "attach_file",
+        (
+            "attach",
+            "attachment",
+            "add file",
+            "choose file",
+            "file picker",
+            "\u9644\u4ef6",
+            "\u6dfb\u52a0\u9644\u4ef6",
+            "\u9009\u62e9\u6587\u4ef6",
+        ),
+    ),
+    (
+        "upload_file",
+        (
+            "upload",
+            "drop files",
+            "drag files",
+            "uploading",
+            "\u4e0a\u4f20",
+            "\u6b63\u5728\u4e0a\u4f20",
+            "\u62d6\u62fd",
+        ),
+    ),
+    (
+        "send_message",
+        (
+            "send",
+            "sent",
+            "delivered",
+            "\u53d1\u9001",
+            "\u5df2\u53d1\u9001",
+            "\u53d1\u9001\u6210\u529f",
+        ),
+    ),
+    (
+        "publish_content",
+        (
+            "publish",
+            "post",
+            "submit",
+            "commit",
+            "\u53d1\u5e03",
+            "\u63d0\u4ea4",
+            "\u63d0\u4ea4\u66f4\u6539",
+        ),
+    ),
+    (
+        "chat_input",
+        (
+            "prompt",
+            "message",
+            "ask",
+            "chat",
+            "\u8f93\u5165",
+            "\u5bf9\u8bdd",
+            "\u63d0\u95ee",
+        ),
+    ),
+    (
+        "screen_share",
+        (
+            "share screen",
+            "screen sharing",
+            "present",
+            "\u5c4f\u5e55\u5171\u4eab",
+            "\u5171\u4eab\u5c4f\u5e55",
+            "\u6f14\u793a",
+        ),
+    ),
+    (
+        "remote_or_vm",
+        (
+            "vmware",
+            "virtualbox",
+            "remote desktop",
+            "mstsc",
+            "anydesk",
+            "todesk",
+            "\u865a\u62df\u673a",
+            "\u8fdc\u7a0b\u684c\u9762",
+        ),
+    ),
+)
+
 
 def _flatten(value: Any) -> str:
     if isinstance(value, dict):
@@ -177,6 +278,11 @@ def classify_frontend_app(log: dict[str, Any]) -> dict[str, Any]:
     for category, tokens in FRONTEND_CATEGORY_RULES:
         if _contains_any(text, tokens):
             categories.append(category)
+    capabilities = [
+        capability
+        for capability, tokens in CAPABILITY_RULES
+        if _contains_any(text, tokens)
+    ]
 
     is_browser = _contains_any(text, BROWSER_TOKENS) or bool(url)
     primary_category = categories[0] if categories else ("browser" if is_browser else "desktop_app")
@@ -196,6 +302,7 @@ def classify_frontend_app(log: dict[str, Any]) -> dict[str, Any]:
         "is_external": primary_category in EXTERNAL_FRONTEND_CATEGORIES,
         "visual_review": primary_category in VISUAL_REVIEW_CATEGORIES,
         "completion_hint": _contains_any(text, COMPLETION_TERMS),
+        "capabilities": capabilities,
     }
 
 

@@ -343,6 +343,7 @@ class BenchmarkSummary:
     triage: Metrics = field(default_factory=Metrics)
     deterministic: Metrics = field(default_factory=Metrics)
     final: Metrics = field(default_factory=Metrics)
+    confirmed: Metrics = field(default_factory=Metrics)
     cases: List[Dict[str, Any]] = field(default_factory=list)
     skipped: List[Dict[str, str]] = field(default_factory=list)
     deterministic_hits: int = 0
@@ -358,6 +359,7 @@ class BenchmarkSummary:
                 "triage": self.triage.to_dict(),
                 "deterministic": self.deterministic.to_dict(),
                 "final": self.final.to_dict(),
+                "confirmed": self.confirmed.to_dict(),
                 "deterministic_hits": self.deterministic_hits,
                 "vlm_reviews": self.vlm_reviews,
                 "live_vlm_reviews": self.live_vlm_reviews,
@@ -1187,7 +1189,7 @@ def _local_ocr_vlm_verdict(
     }
 
 
-VLM_REVIEW_CACHE_VERSION = "v2"
+VLM_REVIEW_CACHE_VERSION = "v3"
 
 
 def _bool_env(name: str, default: bool = True) -> bool:
@@ -1912,6 +1914,7 @@ Frame notes:
 Return both a completed-action verdict and a risk-stage verdict:
 - is_violation=true only when the evidence shows completed leakage or direct exposure of sensitive content in an external sink.
 - risk_level must be one of: none, preparation, selected_or_attached, in_progress, content_exposed, completed.
+- Identify frontend applications by category/capability, not by a fixed brand list. If the brand is unknown, infer the category from UI features.
 - Use selected_or_attached when a sensitive file is selected or attached in an external sink but not submitted yet.
 - Use in_progress when upload/send/share is visibly underway but completion is not shown.
 - Use content_exposed when sensitive text/image content is visible in an external AI/chat/editor/message input or conversation, even without a separate sent confirmation.
@@ -1931,6 +1934,25 @@ Output exactly one JSON object and no markdown:
   "risk_level": "none|preparation|selected_or_attached|in_progress|content_exposed|completed",
   "confidence": 0.0,
   "completed_action": "send|upload|share|publish|commit|ai_input|screen_share|screenshot|vm_copy|none|unknown",
+  "frontend_app": {{
+    "name": "observed app or site",
+    "category": "email|cloud_storage|ai_service|messaging|code_repo|community_publish|meeting|workplace|desktop_app|unknown",
+    "capabilities": ["compose_message", "attach_file", "upload_file", "send_message", "publish_content", "chat_input", "screen_share"]
+  }},
+  "observed_actions": [
+    {{
+      "action_type": "open_file|copy_content|paste_content|select_file|attach_file|upload_start|upload_complete|send_message|publish_content|screenshot|screen_record|screen_share|save_as|convert_file|compress_file|rename_file|vm_copy|external_exposure|none|unknown",
+      "risk_level": "none|preparation|selected_or_attached|in_progress|content_exposed|completed",
+      "time": "YYYY-MM-DD HH:MM:SS or empty",
+      "app": "app or site",
+      "app_category": "category",
+      "source_file": "sensitive or derived file if visible",
+      "derived_file": "derived file if any",
+      "evidence_frames": [1, 2],
+      "confidence": 0.0,
+      "description": "short audit-ready evidence statement"
+    }}
+  ],
   "evidence_frames": [1, 2],
   "reason": "short explanation"
 }}
@@ -2005,6 +2027,7 @@ def _live_vlm_review_case(
 
     local_ocr_verdict = _local_ocr_vlm_verdict(frame_records, max_frames, frame_plan, enabled=local_ocr_gate)
     if local_ocr_verdict:
+        _postprocess_vlm_actions(local_ocr_verdict, sensitive_files, logs)
         return remember(local_ocr_verdict)
 
     if not api_key:
@@ -2121,6 +2144,7 @@ def _live_vlm_review_case(
     ]
     verdict["model"] = model
     _postprocess_vlm_verdict(verdict)
+    _postprocess_vlm_actions(verdict, sensitive_files, logs)
     return remember(verdict)
 
 
@@ -2273,6 +2297,167 @@ def _vlm_final_positive(verdict: Dict[str, Any]) -> bool:
     return confidence >= min_confidence or bool(verdict.get("is_violation"))
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_action_type(value: str) -> str:
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "upload": "upload_complete",
+        "send": "send_message",
+        "share": "screen_share",
+        "publish": "publish_content",
+        "commit": "publish_content",
+        "ai_input": "external_exposure",
+        "local_gate": "external_exposure",
+        "local_ocr": "external_exposure",
+    }
+    text = aliases.get(text, text)
+    allowed = {
+        "open_file",
+        "copy_content",
+        "paste_content",
+        "select_file",
+        "attach_file",
+        "upload_start",
+        "upload_complete",
+        "send_message",
+        "publish_content",
+        "screenshot",
+        "screen_record",
+        "screen_share",
+        "save_as",
+        "convert_file",
+        "compress_file",
+        "rename_file",
+        "vm_copy",
+        "external_exposure",
+        "none",
+        "unknown",
+    }
+    return text if text in allowed else "unknown"
+
+
+def _frame_timestamps_by_index(verdict: Optional[Dict[str, Any]]) -> Dict[int, str]:
+    if not isinstance(verdict, dict):
+        return {}
+    result: Dict[int, str] = {}
+    for frame in verdict.get("frame_selection", []) or []:
+        if not isinstance(frame, dict):
+            continue
+        try:
+            index = int(frame.get("index", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if index:
+            result[index] = str(frame.get("timestamp", "") or "")
+    return result
+
+
+def _normalize_frontend_app(value: Any, logs: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        app = dict(value)
+    else:
+        app = {}
+
+    if logs and not app.get("category"):
+        context = _frontend_context_from_logs(logs)
+        primary = context.get("primary") or {}
+        app.update(
+            {
+                "name": primary.get("display_name", ""),
+                "category": primary.get("category", "unknown"),
+                "capabilities": primary.get("capabilities", []),
+            }
+        )
+
+    capabilities = app.get("capabilities", [])
+    if not isinstance(capabilities, list):
+        capabilities = [str(capabilities)]
+    return {
+        "name": str(app.get("name") or app.get("display_name") or app.get("app") or ""),
+        "category": str(app.get("category") or "unknown"),
+        "capabilities": sorted({str(item) for item in capabilities if str(item or "").strip()}),
+    }
+
+
+def _normalize_observed_actions(
+    verdict: Dict[str, Any],
+    sensitive_files: List[str],
+    logs: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    frontend = _normalize_frontend_app(verdict.get("frontend_app"), logs)
+    frame_times = _frame_timestamps_by_index(verdict)
+    raw_actions = verdict.get("observed_actions")
+    if not isinstance(raw_actions, list) or not raw_actions:
+        evidence_frames = [
+            int(item)
+            for item in verdict.get("evidence_frames", []) or []
+            if str(item).strip().isdigit()
+        ]
+        action_type = _normalize_action_type(str(verdict.get("completed_action", "") or "unknown"))
+        raw_actions = [
+            {
+                "action_type": action_type,
+                "risk_level": verdict.get("risk_level", ""),
+                "time": frame_times.get(evidence_frames[0], "") if evidence_frames else _verdict_timestamp({}, logs or []),
+                "app": frontend.get("name", ""),
+                "app_category": frontend.get("category", "unknown"),
+                "source_file": sensitive_files[0] if sensitive_files else "",
+                "evidence_frames": evidence_frames,
+                "confidence": verdict.get("confidence", 0.0),
+                "description": str(verdict.get("reason", "") or ""),
+            }
+        ]
+
+    normalized: List[Dict[str, Any]] = []
+    for index, action in enumerate(raw_actions):
+        if not isinstance(action, dict):
+            continue
+        risk_level = _normalize_risk_level(str(action.get("risk_level", "") or "")) or _normalize_risk_level(
+            str(verdict.get("risk_level", "") or "")
+        )
+        evidence_frames = []
+        for item in action.get("evidence_frames", []) or []:
+            try:
+                evidence_frames.append(int(item))
+            except (TypeError, ValueError):
+                continue
+        action_time = str(action.get("time", "") or "")
+        if not action_time and evidence_frames:
+            action_time = frame_times.get(evidence_frames[0], "")
+        normalized.append(
+            {
+                "action_id": f"vlm_action_{index}",
+                "action_type": _normalize_action_type(str(action.get("action_type", "") or "")),
+                "risk_level": risk_level or "none",
+                "time": action_time,
+                "app": str(action.get("app") or frontend.get("name") or ""),
+                "app_category": str(action.get("app_category") or frontend.get("category") or "unknown"),
+                "source_file": str(action.get("source_file") or (sensitive_files[0] if sensitive_files else "")),
+                "derived_file": str(action.get("derived_file") or ""),
+                "evidence_frames": evidence_frames,
+                "confidence": round(_safe_float(action.get("confidence", verdict.get("confidence", 0.0))), 4),
+                "description": str(action.get("description") or verdict.get("reason", "") or ""),
+                "evidence_source": "remote_vlm" if verdict.get("status") == "success" else str(verdict.get("status", "vlm")),
+            }
+        )
+    return normalized
+
+
+def _postprocess_vlm_actions(
+    verdict: Dict[str, Any],
+    sensitive_files: List[str],
+    logs: Optional[List[Dict[str, Any]]] = None,
+) -> None:
+    verdict["frontend_app"] = _normalize_frontend_app(verdict.get("frontend_app"), logs)
+    verdict["observed_actions"] = _normalize_observed_actions(verdict, sensitive_files, logs)
+
+
 def _verdict_timestamp(fallback_meta: Dict[str, Any], logs: List[Dict[str, Any]]) -> str:
     for event in fallback_meta.get("candidate_events", []) or []:
         timestamp = str(event.get("timestamp", "") or "").strip()
@@ -2372,6 +2557,188 @@ def _logs_for_correlation(
     return rows or logs[:limit]
 
 
+def _frontend_context_from_logs(logs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    try:
+        from data_leak_detector.event_correlator import classify_frontend_app
+    except Exception:
+        classify_frontend_app = None
+
+    categories: Dict[str, int] = {}
+    capabilities: set[str] = set()
+    observations: List[Dict[str, Any]] = []
+    for log in logs[:300]:
+        if classify_frontend_app:
+            frontend = classify_frontend_app(log)
+        else:
+            frontend = {"category": "unknown", "display_name": str(log.get("app_name", "") or ""), "capabilities": []}
+        category = str(frontend.get("category", "unknown") or "unknown")
+        categories[category] = categories.get(category, 0) + 1
+        capabilities.update(str(item) for item in frontend.get("capabilities", []) or [] if str(item or "").strip())
+        if frontend.get("is_external") or frontend.get("capabilities"):
+            observations.append(
+                {
+                    "timestamp": log.get("timestamp", ""),
+                    "category": category,
+                    "display_name": frontend.get("display_name", ""),
+                    "capabilities": frontend.get("capabilities", []),
+                    "window_title": frontend.get("window_title", ""),
+                }
+            )
+        if len(observations) >= 12:
+            break
+
+    primary_category = "unknown"
+    if categories:
+        primary_category = max(categories.items(), key=lambda item: item[1])[0]
+    return {
+        "primary": {
+            "category": primary_category,
+            "display_name": observations[0].get("display_name", primary_category) if observations else primary_category,
+            "capabilities": sorted(capabilities),
+        },
+        "category_counts": categories,
+        "capabilities": sorted(capabilities),
+        "observations": observations,
+    }
+
+
+def _review_source(
+    deterministic_positive: bool,
+    vlm_verdict: Optional[Dict[str, Any]],
+    vlm_live_queued: bool,
+) -> str:
+    if deterministic_positive:
+        return "deterministic"
+    if not isinstance(vlm_verdict, dict):
+        return "remote_vlm_pending" if vlm_live_queued else "triage"
+    status = str(vlm_verdict.get("status", "") or "")
+    if status in {"local_positive", "local_ocr_positive"}:
+        return "local_gate"
+    if status == "success":
+        return "remote_vlm_cache" if vlm_verdict.get("cache_hit") else "remote_vlm"
+    return status or "unknown"
+
+
+def _confirmed_leak_positive(
+    deterministic_positive: bool,
+    vlm_verdict: Optional[Dict[str, Any]],
+    correlation_bundle: Optional[Dict[str, Any]],
+) -> bool:
+    if deterministic_positive:
+        return True
+    if isinstance(correlation_bundle, dict) and correlation_bundle.get("upload_candidates"):
+        return True
+    if not isinstance(vlm_verdict, dict):
+        return False
+    status = str(vlm_verdict.get("status", "") or "")
+    if status not in {"success", "local_positive", "local_ocr_positive"}:
+        return False
+    if status == "local_positive":
+        risk_level = _normalize_risk_level(str(vlm_verdict.get("risk_level", "") or ""))
+        return bool(vlm_verdict.get("is_violation")) and risk_level == "completed"
+    return bool(vlm_verdict.get("is_violation"))
+
+
+def _audit_evidence_sources(actions: List[Dict[str, Any]]) -> List[str]:
+    return sorted(
+        {
+            str(action.get("evidence_source", "") or "").strip()
+            for action in actions
+            if str(action.get("evidence_source", "") or "").strip()
+        }
+    )
+
+
+def _detection_actions(
+    case_id: str,
+    detection: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    actions: List[Dict[str, Any]] = []
+    for index, event in enumerate(detection.get("upload_events", []) or []):
+        if hasattr(event, "__dict__"):
+            raw = dict(event.__dict__)
+        elif isinstance(event, dict):
+            raw = event
+        else:
+            raw = {}
+        actions.append(
+            {
+                "action_id": f"{case_id}:det_upload_{index}",
+                "action_type": "upload_complete",
+                "risk_level": "completed",
+                "time": str(raw.get("timestamp", "") or raw.get("time", "") or ""),
+                "app": str(raw.get("app_name", "") or raw.get("process_name", "") or ""),
+                "app_category": "unknown",
+                "source_file": str(raw.get("file_path", "") or raw.get("file_name", "") or ""),
+                "derived_file": "",
+                "evidence_frames": [],
+                "confidence": round(_safe_float(raw.get("confidence", 0.95), 0.95), 4),
+                "description": str(raw.get("description", "") or "deterministic upload event"),
+                "evidence_source": "deterministic",
+            }
+        )
+    return actions
+
+
+def _correlation_actions(
+    case_id: str,
+    correlation_bundle: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if not isinstance(correlation_bundle, dict):
+        return []
+    actions: List[Dict[str, Any]] = []
+    for index, candidate in enumerate(correlation_bundle.get("upload_candidates", []) or []):
+        current_files = candidate.get("current_files", []) or []
+        actions.append(
+            {
+                "action_id": f"{case_id}:corr_upload_{index}",
+                "action_type": _normalize_action_type(str(candidate.get("operation_type", "") or "upload_complete")),
+                "risk_level": "completed",
+                "time": str(candidate.get("timestamp", "") or ""),
+                "app": str(candidate.get("app_name", "") or ""),
+                "app_category": str(candidate.get("sink_type", "") or "external_sink"),
+                "source_file": str(candidate.get("original_file", "") or ""),
+                "derived_file": str(current_files[0] if current_files else ""),
+                "evidence_frames": [],
+                "confidence": round(_safe_float(candidate.get("confidence", 0.0)), 4),
+                "description": f"EventCorrelator upload candidate via {candidate.get('sink_type', 'external_sink')}",
+                "evidence_source": "event_correlator",
+                "evidence_refs": candidate.get("evidence_refs", []),
+                "mapping_links": candidate.get("mapping_links", []),
+            }
+        )
+    return actions
+
+
+def _vlm_actions(
+    case_id: str,
+    vlm_verdict: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if not isinstance(vlm_verdict, dict):
+        return []
+    result = []
+    for index, action in enumerate(vlm_verdict.get("observed_actions", []) or []):
+        if not isinstance(action, dict):
+            continue
+        item = dict(action)
+        item["action_id"] = f"{case_id}:{item.get('action_id') or f'vlm_action_{index}'}"
+        result.append(item)
+    return result
+
+
+def _build_audit_actions(
+    case_id: str,
+    detection: Dict[str, Any],
+    vlm_verdict: Optional[Dict[str, Any]],
+    correlation_bundle: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    actions = []
+    actions.extend(_detection_actions(case_id, detection))
+    actions.extend(_vlm_actions(case_id, vlm_verdict))
+    actions.extend(_correlation_actions(case_id, correlation_bundle))
+    return actions
+
+
 def _case_dirs(root: Path, stages: Optional[List[str]]) -> Iterable[Path]:
     stage_dirs = [root / stage for stage in stages] if stages else [path for path in root.iterdir() if path.is_dir()]
     for stage_dir in stage_dirs:
@@ -2458,6 +2825,7 @@ def run_benchmark(
         )
         detection = detector.analyze(logs)
         should_run_vlm, fallback_meta = run_e2e._should_use_vlm_fallback(logs, detection)
+        frontend_context = _frontend_context_from_logs(logs)
 
         expected = _expected_positive(groundtruth)
         deterministic_positive = len(detection.get("upload_events", [])) > 0
@@ -2496,8 +2864,9 @@ def run_benchmark(
                     "max_frames_requested": 0,
                     "model": "local_vlm_gate",
                 }
+                _postprocess_vlm_actions(local_vlm_verdict, sensitive_files, logs)
                 _progress(
-                    f"[VLM LOCAL] case={case_id} progress={case_index}/{total_cases} "
+                    f"[LOCAL GATE] case={case_id} progress={case_index}/{total_cases} "
                     f"gate={vlm_gate.get('mode')} reason={vlm_gate.get('reason')}"
                 )
             elif max_vlm_cases <= 0 or len(pending_vlm_records) < max_vlm_cases:
@@ -2529,6 +2898,7 @@ def run_benchmark(
             "sensitive_files": sensitive_files,
             "detection": detection,
             "fallback_meta": fallback_meta,
+            "frontend_context": frontend_context,
             "expected": expected,
             "deterministic_positive": deterministic_positive,
             "triage_positive": triage_positive,
@@ -2628,6 +2998,7 @@ def run_benchmark(
         groundtruth = record["groundtruth"]
         detection = record["detection"]
         fallback_meta = record["fallback_meta"]
+        frontend_context = record["frontend_context"]
         expected = record["expected"]
         deterministic_positive = record["deterministic_positive"]
         triage_positive = record["triage_positive"]
@@ -2636,6 +3007,7 @@ def run_benchmark(
 
         correlation_bundle: Optional[Dict[str, Any]] = None
         final_positive = triage_positive
+        confirmed_leak = deterministic_positive
         if vlm_verdict:
             if vlm_verdict.get("status") == "success":
                 vlm_positive = _vlm_final_positive(vlm_verdict)
@@ -2655,12 +3027,18 @@ def run_benchmark(
                 final_positive = vlm_positive or len(correlation_bundle.get("upload_candidates", [])) > 0
             else:
                 final_positive = True
+            confirmed_leak = _confirmed_leak_positive(deterministic_positive, vlm_verdict, correlation_bundle)
         elif deterministic_positive:
             final_positive = True
+            confirmed_leak = True
+        review_source = _review_source(deterministic_positive, vlm_verdict, record["vlm_live_queued"])
+        audit_actions = _build_audit_actions(case_id, detection, vlm_verdict, correlation_bundle)
+        evidence_sources = _audit_evidence_sources(audit_actions)
 
         triage_bucket = result.triage.add(expected, triage_positive)
         deterministic_bucket = result.deterministic.add(expected, deterministic_positive)
         final_bucket = result.final.add(expected, final_positive)
+        confirmed_bucket = result.confirmed.add(expected, confirmed_leak)
         if deterministic_positive:
             result.deterministic_hits += 1
         if should_run_vlm:
@@ -2690,10 +3068,11 @@ def run_benchmark(
         _progress(
             f"[CASE {case_index}/{total_cases}] {final_bucket.upper()} "
             f"case={case_id} expected={int(expected)} final={int(final_positive)} "
+            f"confirmed={int(confirmed_leak)} "
             f"det={int(deterministic_positive)} triage={int(triage_positive)} "
             f"vlm={vlm_status} image_frames={frames_sent} context_frames={frame_context_count} "
             f"requested_frames={record['adaptive_vlm_frames']} confidence={confidence} "
-            f"action={completed_action} risk={risk_level} reasons={','.join(fallback_meta.get('reasons', []))}"
+            f"action={completed_action} risk={risk_level} source={review_source} reasons={','.join(fallback_meta.get('reasons', []))}"
         )
 
         result.cases.append(
@@ -2707,9 +3086,16 @@ def run_benchmark(
                 "deterministic_bucket": deterministic_bucket,
                 "final_positive": final_positive,
                 "final_bucket": final_bucket,
+                "risk_positive": final_positive,
+                "confirmed_leak": confirmed_leak,
+                "confirmed_bucket": confirmed_bucket,
+                "review_source": review_source,
+                "evidence_sources": evidence_sources,
                 "upload_events": len(detection.get("upload_events", [])),
                 "operation_records": len(detection.get("operation_records", [])),
                 "sensitive_files": len(sensitive_files),
+                "frontend_context": frontend_context,
+                "audit_actions": audit_actions,
                 "vlm_decision": fallback_meta.get("decision"),
                 "vlm_reasons": fallback_meta.get("reasons", []),
                 "vlm_live_queued": record["vlm_live_queued"],
@@ -2727,7 +3113,7 @@ def run_benchmark(
 def _print_report(report: Dict[str, Any]) -> None:
     print("\nNAS Sample Benchmark")
     print("=" * 40)
-    for name in ("triage", "deterministic", "final"):
+    for name in ("triage", "deterministic", "final", "confirmed"):
         metrics = report["summary"][name]
         print(
             f"{name:14} precision={metrics['precision']:.4f} "
@@ -2744,11 +3130,15 @@ def _print_report(report: Dict[str, Any]) -> None:
         f"skipped={report['summary']['skipped_cases']}"
     )
     failures = [case for case in report["cases"] if case["final_bucket"] in {"fp", "fn"}]
+    confirmed_failures = [case for case in report["cases"] if case["confirmed_bucket"] in {"fp", "fn"}]
     print(f"final_failures={len(failures)}")
+    print(f"confirmed_failures={len(confirmed_failures)}")
     for case in failures[:30]:
         print(
             f"- {case['case']} {case['final_bucket']} "
             f"det={case['upload_events']} vlm={case['vlm_decision']} "
+            f"source={case.get('review_source', '')} "
+            f"evidence={','.join(case.get('evidence_sources', []))} "
             f"reasons={','.join(case['vlm_reasons'])}"
         )
 

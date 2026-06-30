@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1360" viewBox="0 0 2200 1360">
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1280" viewBox="0 0 2200 1280">
   <defs>
     <style>
       .title { font: 700 54px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
@@ -7,12 +7,12 @@
       .node-title { font: 700 25px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
       .body { font: 22px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #203246; }
       .small { font: 19px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #52616f; }
+      .group { stroke: #cbd5e1; stroke-width: 2.2; rx: 28; }
       .node { fill: #ffffff; stroke: #8ea3ba; stroke-width: 2.6; rx: 18; }
-      .hub { fill: #fff7d6; stroke: #f59e0b; stroke-width: 3; rx: 24; }
-      .sink { fill: #fee2e2; stroke: #f87171; stroke-width: 3; rx: 24; }
-      .group { stroke: #cbd5e1; stroke-width: 2; rx: 30; }
+      .hub { fill: #fff7d6; stroke: #f59e0b; stroke-width: 3; rx: 20; }
+      .out { fill: #dcfce7; stroke: #22c55e; stroke-width: 3; rx: 20; }
       .edge { stroke: #4b5f76; stroke-width: 4.6; fill: none; }
-      .weak { stroke: #64748b; stroke-width: 3.6; fill: none; stroke-dasharray: 12 10; }
+      .weak { stroke: #64748b; stroke-width: 3.4; fill: none; stroke-dasharray: 11 9; }
       .label { font: 700 18px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #334155; }
     </style>
     <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
@@ -21,130 +21,94 @@
     <marker id="arrow-weak" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
     </marker>
-    <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="9" stdDeviation="9" flood-color="#1f2937" flood-opacity="0.10"/>
-    </filter>
   </defs>
 
-  <rect x="0" y="0" width="2200" height="1360" fill="#ffffff"/>
-  <text class="title" x="70" y="82">轻量证据图模型</text>
-  <text class="subtitle" x="74" y="126">把日志、窗口、文件派生、视觉证据和 Datalog facts 统一成可追溯的审计链</text>
+  <rect width="2200" height="1280" fill="#ffffff"/>
+  <text class="title" x="70" y="82">当前证据结构</text>
+  <text class="subtitle" x="74" y="126">不是已落地的 Neo4j 图；当前实现主要落在 CorrelationBundle、file_lineage、UploadCandidate、Datalog facts 和 JSON 报告中</text>
 
-  <rect class="group" x="60" y="175" width="455" height="830" fill="#eff6ff"/>
+  <rect class="group" x="60" y="175" width="460" height="790" fill="#eff6ff"/>
   <text class="group-title" x="95" y="225">原始观测</text>
-  <rect class="group" x="555" y="175" width="485" height="830" fill="#ecfdf3"/>
-  <text class="group-title" x="590" y="225">对象与上下文</text>
-  <rect class="group" x="1080" y="175" width="485" height="830" fill="#fff7d6"/>
-  <text class="group-title" x="1115" y="225">视觉复核与候选</text>
-  <rect class="group" x="1605" y="175" width="530" height="830" fill="#f5f3ff"/>
-  <text class="group-title" x="1640" y="225">推理、存储与评测</text>
+  <rect class="group" x="565" y="175" width="470" height="790" fill="#ecfdf3"/>
+  <text class="group-title" x="600" y="225">归一化对象</text>
+  <rect class="group" x="1080" y="175" width="500" height="790" fill="#fff7d6"/>
+  <text class="group-title" x="1115" y="225">CorrelationBundle</text>
+  <rect class="group" x="1625" y="175" width="510" height="790" fill="#f5f3ff"/>
+  <text class="group-title" x="1660" y="225">推理与报告</text>
 
-  <g filter="url(#soft-shadow)">
-    <rect class="node" x="105" y="280" width="340" height="135"/>
-    <text class="node-title" x="132" y="320">LogEvent</text>
-    <text class="body" x="132" y="358">文件 / 窗口 / 剪贴板</text>
-    <text class="body" x="132" y="388">进程 / 网络行为</text>
+  <rect class="node" x="105" y="290" width="350" height="125"/>
+  <text class="node-title" x="132" y="330">LogEvent</text>
+  <text class="body" x="132" y="368">timestamp / event_type</text>
+  <text class="body" x="132" y="398">file_path / window / process</text>
 
-    <rect class="node" x="105" y="500" width="340" height="135"/>
-    <text class="node-title" x="132" y="540">VideoFrame</text>
-    <text class="body" x="132" y="578">OCR / VLM 看到的页面</text>
-    <text class="body" x="132" y="608">按钮、附件、聊天内容</text>
+  <rect class="node" x="105" y="500" width="350" height="125"/>
+  <text class="node-title" x="132" y="540">FrameRecord</text>
+  <text class="body" x="132" y="578">selected frame</text>
+  <text class="body" x="132" y="608">OCR / image_sent / scene_score</text>
 
-    <rect class="node" x="105" y="720" width="340" height="135"/>
-    <text class="node-title" x="132" y="760">PolicyHint</text>
-    <text class="body" x="132" y="798">敏感文件命中</text>
-    <text class="body" x="132" y="828">黑白名单与外部域名</text>
+  <rect class="node" x="105" y="710" width="350" height="125"/>
+  <text class="node-title" x="132" y="750">Policy / Sensitive Hint</text>
+  <text class="body" x="132" y="788">sensitive_files</text>
+  <text class="body" x="132" y="818">blacklist / whitelist</text>
 
-    <rect class="node" x="605" y="270" width="360" height="130"/>
-    <text class="node-title" x="632" y="310">SensitiveFile</text>
-    <text class="body" x="632" y="348">原始敏感对象</text>
-    <text class="body" x="632" y="378">配置命中或日志推断</text>
+  <rect class="node" x="610" y="275" width="360" height="120"/>
+  <text class="node-title" x="637" y="315">NormalizedLogEvent</text>
+  <text class="body" x="637" y="353">标准化时间、路径、应用</text>
 
-    <rect class="node" x="605" y="470" width="360" height="130"/>
-    <text class="node-title" x="632" y="510">DerivedArtifact</text>
-    <text class="body" x="632" y="548">导出、压缩、重命名</text>
-    <text class="body" x="632" y="578">复制后的外发文件</text>
+  <rect class="node" x="610" y="455" width="360" height="120"/>
+  <text class="node-title" x="637" y="495">FrontendApp</text>
+  <text class="body" x="637" y="533">email / ai_service / cloud</text>
 
-    <rect class="node" x="605" y="670" width="360" height="130"/>
-    <text class="node-title" x="632" y="710">FrontendApp</text>
-    <text class="body" x="632" y="748">邮箱 / AI / 网盘</text>
-    <text class="body" x="632" y="778">会议 / VM / 远程桌面</text>
+  <rect class="node" x="610" y="635" width="360" height="120"/>
+  <text class="node-title" x="637" y="675">FileLineage</text>
+  <text class="body" x="637" y="713">direct mappings / full chains</text>
 
-    <rect class="node" x="605" y="860" width="360" height="105"/>
-    <text class="node-title" x="632" y="900">AnalysisWindow</text>
-    <text class="body" x="632" y="938">anchor + post buffer</text>
+  <rect class="node" x="610" y="810" width="360" height="110"/>
+  <text class="node-title" x="637" y="850">FrameSegment</text>
+  <text class="body" x="637" y="888">VLM/视觉观察片段</text>
 
-    <rect class="node" x="1130" y="280" width="360" height="135"/>
-    <text class="node-title" x="1157" y="320">SelectedFrame</text>
-    <text class="body" x="1157" y="358">代表帧 + 场景变化分数</text>
-    <text class="body" x="1157" y="388">保留抽帧原因</text>
+  <rect class="hub" x="1130" y="250" width="390" height="125"/>
+  <text class="node-title" x="1157" y="290">analysis_windows</text>
+  <text class="body" x="1157" y="328">可疑时间窗和 post buffer</text>
 
-    <rect class="hub" x="1130" y="505" width="360" height="145"/>
-    <text class="node-title" x="1157" y="548">VLM Segment</text>
-    <text class="body" x="1157" y="586">完成 / 草稿 / 取消 / 等待</text>
-    <text class="body" x="1157" y="616">给出证据引用</text>
+  <rect class="hub" x="1130" y="435" width="390" height="125"/>
+  <text class="node-title" x="1157" y="475">correlated_events</text>
+  <text class="body" x="1157" y="513">日志 + segment 绑定</text>
 
-    <rect class="node" x="1130" y="735" width="360" height="145"/>
-    <text class="node-title" x="1157" y="778">UploadCandidate</text>
-    <text class="body" x="1157" y="816">源对象 -> 当前对象 -> 外部汇</text>
-    <text class="body" x="1157" y="846">sink、置信度、证据来源</text>
+  <rect class="hub" x="1130" y="620" width="390" height="125"/>
+  <text class="node-title" x="1157" y="660">upload_candidates</text>
+  <text class="body" x="1157" y="698">original_file / current_files / sink</text>
 
-    <rect class="node" x="1655" y="280" width="390" height="135"/>
-    <text class="node-title" x="1682" y="320">Neo4j / JSON Graph</text>
-    <text class="body" x="1682" y="358">File、Event、Window 节点</text>
-    <text class="body" x="1682" y="388">关系边可回放</text>
+  <rect class="hub" x="1130" y="805" width="390" height="125"/>
+  <text class="node-title" x="1157" y="845">operation_records</text>
+  <text class="body" x="1157" y="883">报告和推理的中间记录</text>
 
-    <rect class="node" x="1655" y="505" width="390" height="145"/>
-    <text class="node-title" x="1682" y="548">Datalog Facts</text>
-    <text class="body" x="1682" y="586">OpenFile / TransferFile</text>
-    <text class="body" x="1682" y="616">CrossProcess / LeakFile</text>
+  <rect class="node" x="1675" y="285" width="390" height="125"/>
+  <text class="node-title" x="1702" y="325">Datalog Facts</text>
+  <text class="body" x="1702" y="363">Open / Transfer / CrossProcess / Leak</text>
 
-    <rect class="sink" x="1655" y="735" width="390" height="145"/>
-    <text class="node-title" x="1682" y="778">Final Verdict</text>
-    <text class="body" x="1682" y="816">泄露路径 + 解释</text>
-    <text class="body" x="1682" y="846">TP / FP / TN / FN</text>
-  </g>
+  <rect class="out" x="1675" y="500" width="390" height="125"/>
+  <text class="node-title" x="1702" y="540">leak_paths</text>
+  <text class="body" x="1702" y="578">污染传播后的泄露路径</text>
 
-  <path class="edge" marker-end="url(#arrow)" d="M445 347 C515 347 535 335 605 335"/>
-  <text class="label" x="492" y="318">打开 / 命中</text>
-  <path class="edge" marker-end="url(#arrow)" d="M965 335 C1015 335 1080 348 1130 348"/>
-  <text class="label" x="1002" y="320">源对象</text>
-  <path class="edge" marker-end="url(#arrow)" d="M965 535 C1032 535 1065 807 1130 807"/>
-  <text class="label" x="1002" y="646">对象绑定</text>
-  <path class="edge" marker-end="url(#arrow)" d="M445 568 C550 568 500 913 605 913"/>
-  <text class="label" x="468" y="720">窗口时间轴</text>
-  <path class="edge" marker-end="url(#arrow)" d="M965 913 C1040 913 1055 348 1130 348"/>
-  <text class="label" x="986" y="884">抽样</text>
-  <path class="edge" marker-end="url(#arrow)" d="M1490 348 C1555 348 1588 348 1655 348"/>
-  <text class="label" x="1520" y="320">写图</text>
-  <path class="edge" marker-end="url(#arrow)" d="M1490 578 C1552 578 1590 578 1655 578"/>
-  <text class="label" x="1523" y="552">注入事实</text>
-  <path class="edge" marker-end="url(#arrow)" d="M1490 807 C1552 807 1590 807 1655 807"/>
-  <text class="label" x="1522" y="781">候选判定</text>
-  <path class="edge" marker-end="url(#arrow)" d="M445 787 C515 787 535 535 605 535"/>
-  <text class="label" x="490" y="665">派生线索</text>
-  <path class="edge" marker-end="url(#arrow)" d="M965 735 C1035 735 1058 578 1130 578"/>
-  <text class="label" x="1005" y="705">可疑上下文</text>
-  <path class="edge" marker-end="url(#arrow)" d="M1310 415 L1310 505"/>
-  <text class="label" x="1326" y="470">视觉证据</text>
-  <path class="edge" marker-end="url(#arrow)" d="M1310 650 L1310 735"/>
-  <text class="label" x="1326" y="704">完成态</text>
-  <path class="edge" marker-end="url(#arrow)" d="M1850 650 L1850 735"/>
-  <text class="label" x="1866" y="704">推理</text>
+  <rect class="out" x="1675" y="715" width="390" height="125"/>
+  <text class="node-title" x="1702" y="755">full_evidence JSON</text>
+  <text class="body" x="1702" y="793">summary + bundle + facts + paths</text>
 
-  <path class="weak" marker-end="url(#arrow-weak)" d="M2045 807 C2128 807 2120 1060 1320 1060 C700 1060 700 965 785 965"/>
-  <text class="small" x="1230" y="1042">误报 / 漏报回流到窗口、派生链、VLM prompt 与规则阈值</text>
+  <path class="edge" marker-end="url(#arrow)" d="M455 352 C520 352 545 335 610 335"/>
+  <path class="edge" marker-end="url(#arrow)" d="M455 562 C530 562 540 865 610 865"/>
+  <path class="edge" marker-end="url(#arrow)" d="M455 772 C530 772 540 695 610 695"/>
+  <path class="edge" marker-end="url(#arrow)" d="M970 335 C1045 335 1055 312 1130 312"/>
+  <path class="edge" marker-end="url(#arrow)" d="M970 515 C1045 515 1055 497 1130 497"/>
+  <path class="edge" marker-end="url(#arrow)" d="M970 695 C1045 695 1055 682 1130 682"/>
+  <path class="edge" marker-end="url(#arrow)" d="M970 865 C1045 865 1055 867 1130 867"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1520 682 C1595 682 1600 347 1675 347"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1870 410 L1870 500"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1870 625 L1870 715"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1520 497 C1600 497 1600 777 1675 777"/>
 
-  <rect class="node" x="105" y="1090" width="555" height="150" fill="#f8fafc"/>
-  <text class="node-title" x="135" y="1132">确定性证据</text>
-  <text class="body" x="135" y="1170">日志能直接连接敏感对象与上传、拷贝、网络发送时，</text>
-  <text class="body" x="135" y="1202">无需依赖 VLM，优先保留高精度结论。</text>
-  <rect class="node" x="815" y="1090" width="555" height="150" fill="#f8fafc"/>
-  <text class="node-title" x="845" y="1132">视觉证据</text>
-  <text class="body" x="845" y="1170">日志只能定位可疑窗口时，VLM 判定是否完成发送、</text>
-  <text class="body" x="845" y="1202">上传、共享、复制或远程外发。</text>
-  <rect class="node" x="1525" y="1090" width="555" height="150" fill="#f8fafc"/>
-  <text class="node-title" x="1555" y="1132">审计闭环</text>
-  <text class="body" x="1555" y="1170">最终判断保留对象绑定、证据来源、抽帧原因、</text>
-  <text class="body" x="1555" y="1202">推理事实和评测分桶。</text>
+  <path class="weak" marker-end="url(#arrow-weak)" d="M2065 777 C2140 777 2140 1110 1325 1110 C760 1110 760 920 790 920"/>
+  <text class="small" x="1050" y="1092">误报/漏报回流到窗口构建、lineage、VLM segment 和 Datalog fact 映射</text>
+
+  <text class="small" x="70" y="1195">说明：Neo4j 写入仍属于后续计划；本图只描述当前代码已经输出或消费的数据结构。</text>
 </svg>
