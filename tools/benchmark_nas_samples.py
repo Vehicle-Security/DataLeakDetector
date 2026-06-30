@@ -367,6 +367,15 @@ def _sensitive_files_from_groundtruth(groundtruth: Any) -> List[str]:
     return files
 
 
+def _looks_like_file_reference(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text or len(text) > 260:
+        return False
+    if "/" in text or "\\" in text:
+        return True
+    return bool(re.search(r"\.[A-Za-z0-9]{1,8}$", text))
+
+
 def _sensitive_files_from_logs(logs: List[Dict[str, Any]], log_first: Any) -> List[str]:
     seen = set()
     files = []
@@ -374,6 +383,8 @@ def _sensitive_files_from_logs(logs: List[Dict[str, Any]], log_first: Any) -> Li
         hint = log_first.file_hint_from_log(log)
         path = log_first.normalize_path(log.get("file_path", "") or hint)
         if hasattr(log_first, "is_system_noise_path") and log_first.is_system_noise_path(path):
+            continue
+        if not _looks_like_file_reference(path):
             continue
         name = log.get("file_name") or log_first.basename(path)
         content_preview = str(log.get("content_preview", "") or "")
@@ -445,6 +456,64 @@ def _windows_from_fallback(fallback_meta: Dict[str, Any], logs: List[Dict[str, A
     if not parsed:
         return []
     return [(min(parsed), max(parsed))]
+
+
+def _review_log_context(logs: List[Dict[str, Any]], windows: List[Tuple[datetime, datetime]], limit: int = 24) -> List[Dict[str, Any]]:
+    rows = []
+    for log in logs:
+        dt = _parse_dt(log.get("timestamp", ""))
+        if not dt:
+            continue
+        if windows and not any(start - timedelta(seconds=3) <= dt <= end + timedelta(seconds=3) for start, end in windows):
+            continue
+        text = " ".join(
+            str(part or "")
+            for part in (
+                log.get("event_type", ""),
+                log.get("file_path", ""),
+                log.get("file_name", ""),
+                log.get("content_preview", ""),
+                log.get("app_name", ""),
+                log.get("process_info", {}).get("process_name", ""),
+                log.get("window_info", {}).get("window_title", ""),
+            )
+        ).lower()
+        if not any(
+            token in text
+            for token in (
+                "clipboard",
+                "paste",
+                "copy",
+                "chatgpt",
+                "poe",
+                "gemini",
+                "upload",
+                "send",
+                "mail",
+                "drive",
+                "share",
+                "\u7c98\u8d34",
+                "\u590d\u5236",
+                "\u4e0a\u4f20",
+                "\u53d1\u9001",
+                "\u90ae\u7bb1",
+                "\u5206\u4eab",
+            )
+        ):
+            continue
+        rows.append(
+            {
+                "timestamp": log.get("timestamp", ""),
+                "event_type": log.get("event_type", ""),
+                "app_name": log.get("app_name") or log.get("process_info", {}).get("process_name", ""),
+                "file_name": log.get("file_name", ""),
+                "window_title": log.get("window_info", {}).get("window_title", ""),
+                "content_preview": str(log.get("content_preview", "") or "")[:220],
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
 
 
 def _sample_frame_times(windows: List[Tuple[datetime, datetime]], max_frames: int) -> List[datetime]:
@@ -551,6 +620,7 @@ def _live_vlm_review_case(
     from langchain_openai import ChatOpenAI
 
     candidate_events = fallback_meta.get("candidate_events", [])[:12]
+    review_logs = _review_log_context(logs, windows)
     prompt = f"""你是数据泄露审计员。请只根据给定日志上下文和视频关键帧，判断是否已经完成敏感数据外泄。
 
 敏感文件/对象:
@@ -559,10 +629,14 @@ def _live_vlm_review_case(
 候选日志事件:
 {json.dumps(candidate_events, ensure_ascii=False, indent=2)}
 
+窗口内关键日志摘要:
+{json.dumps(review_logs, ensure_ascii=False, indent=2)}
+
 判定规则:
 - 只有看到或能强证据确认发送成功、上传完成、附件已提交、屏幕共享/截图/VM复制已暴露敏感内容，才判定 is_violation=true。
 - 以下情况必须判定 false：仅打开敏感文件、右键/选择文件、进入上传页、附件已添加但仍在编辑页、保存草稿/草稿箱、取消/关闭、下载文件、正常编辑、复制到本地白名单应用、监控系统自己的“已完成/完成状态”提示。
 - 邮件/聊天必须看到“已发送/发送成功/消息已出现在会话中/收件方可见”等完成态才为 true；“发送按钮高亮”“写信页面”“草稿”都不是完成态。
+- AI 服务/网页聊天是特殊 sink：只要敏感文本已经出现在外部 AI/聊天输入框、prompt 框、对话消息或回答上下文中，即视为内容已暴露，可以判定 true；仅打开 AI 页面但未出现敏感内容则为 false。
 - 网盘/Git/网页上传必须看到“上传完成/文件已出现在远端列表/提交成功”等完成态才为 true；“选择文件/上传对话框/进度未完成”都不是完成态。
 - 不要把日志里的 risk_level、category、监控系统页面状态当作完成外泄证据，它们只能说明需要人工/VLM复核。
 - 如果画面看不清或证据不足，判定 false，但 confidence 给低一些，reason 写明缺什么证据。
@@ -619,6 +693,86 @@ def _postprocess_vlm_verdict(verdict: Dict[str, Any]) -> None:
     verdict["postprocess_reason"] = "downgraded_preliminary_action_without_completion_evidence"
 
 
+def _verdict_timestamp(fallback_meta: Dict[str, Any], logs: List[Dict[str, Any]]) -> str:
+    for event in fallback_meta.get("candidate_events", []) or []:
+        timestamp = str(event.get("timestamp", "") or "").strip()
+        if timestamp:
+            dt = _parse_dt(timestamp)
+            return dt.strftime("%Y-%m-%d %H:%M:%S") if dt else timestamp.replace("T", " ").split(".")[0]
+    for log in logs:
+        timestamp = str(log.get("timestamp", "") or "").strip()
+        if timestamp:
+            dt = _parse_dt(timestamp)
+            return dt.strftime("%Y-%m-%d %H:%M:%S") if dt else timestamp.replace("T", " ").split(".")[0]
+    return ""
+
+
+def _frame_segments_from_vlm_verdict(
+    verdict: Dict[str, Any],
+    sensitive_files: List[str],
+    fallback_meta: Dict[str, Any],
+    logs: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if verdict.get("status") != "success" or not verdict.get("is_violation"):
+        return []
+
+    timestamp = _verdict_timestamp(fallback_meta, logs)
+    completed_action = str(verdict.get("completed_action", "") or "unknown")
+    primary_resource = sensitive_files[0] if sensitive_files else "unknown"
+    candidate_events = fallback_meta.get("candidate_events", []) or []
+    app_name = ""
+    if candidate_events:
+        app_name = str(candidate_events[0].get("app_name", "") or "")
+    if not app_name:
+        for log in logs:
+            app_name = str(log.get("app_name") or log.get("process_info", {}).get("process_name", "") or "")
+            if app_name:
+                break
+
+    return [
+        {
+            "segment_id": "vlm_verdict_0",
+            "time_range": f"{timestamp} - {timestamp}" if timestamp else "",
+            "app_name": app_name or "unknown",
+            "operation_type": completed_action,
+            "primary_resource": primary_resource,
+            "related_resources": list(sensitive_files[1:]),
+            "action_description": str(verdict.get("reason", "") or ""),
+            "visible_evidence": [str(verdict.get("reason", "") or "")],
+            "supporting_timestamps": [timestamp] if timestamp else [],
+            "confidence": float(verdict.get("confidence", 0.0) or 0.0),
+        }
+    ]
+
+
+def _run_event_correlator_bundle(
+    case_id: str,
+    logs: List[Dict[str, Any]],
+    sensitive_files: List[str],
+    groundtruth: Any,
+    frame_segments: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    correlator_root = REPO_ROOT / "2-EventCorrelator"
+    if str(correlator_root) not in sys.path:
+        sys.path.insert(0, str(correlator_root))
+    from event_correlator import EventCorrelator
+
+    recording_start = ""
+    if isinstance(groundtruth, dict):
+        recording_start = str(groundtruth.get("recording_start_time", "") or "")
+
+    payload = {
+        "session_id": case_id.replace("\\", "/"),
+        "record_id": case_id.replace("\\", "/"),
+        "log_events": logs,
+        "frame_segments": frame_segments,
+        "sensitive_files": sensitive_files,
+        "recording_start_time": recording_start,
+        "session_metadata": {"source": "nas_benchmark"},
+    }
+    return EventCorrelator().run(payload)
+
+
 def _case_dirs(root: Path, stages: Optional[List[str]]) -> Iterable[Path]:
     stage_dirs = [root / stage for stage in stages] if stages else [path for path in root.iterdir() if path.is_dir()]
     for stage_dir in stage_dirs:
@@ -638,6 +792,7 @@ def _case_dirs(root: Path, stages: Optional[List[str]]) -> Iterable[Path]:
 def run_benchmark(
     root: Path,
     stages: Optional[List[str]] = None,
+    case_filters: Optional[List[str]] = None,
     use_vlm: bool = False,
     max_vlm_cases: int = 0,
     max_vlm_frames: int = 6,
@@ -660,6 +815,11 @@ def run_benchmark(
 
         gt_path = _choose_groundtruth(case_dir)
         case_id = str(case_dir.relative_to(root))
+        if case_filters:
+            normalized_case_id = case_id.replace("\\", "/").lower()
+            wanted = {item.replace("\\", "/").strip().lower() for item in case_filters}
+            if normalized_case_id not in wanted and case_dir.name.lower() not in wanted:
+                continue
         if not gt_path:
             result.skipped.append({"case": case_id, "reason": "missing_groundtruth_or_logs"})
             continue
@@ -689,6 +849,7 @@ def run_benchmark(
         deterministic_positive = len(detection.get("upload_events", [])) > 0
         triage_positive = deterministic_positive or should_run_vlm
         vlm_verdict: Optional[Dict[str, Any]] = None
+        correlation_bundle: Optional[Dict[str, Any]] = None
         final_positive = triage_positive
         if (
             use_vlm
@@ -706,7 +867,20 @@ def run_benchmark(
                 max_frames=max_vlm_frames,
             )
             if vlm_verdict.get("status") == "success":
-                final_positive = bool(vlm_verdict.get("is_violation"))
+                frame_segments = _frame_segments_from_vlm_verdict(
+                    vlm_verdict,
+                    sensitive_files,
+                    fallback_meta,
+                    logs,
+                )
+                correlation_bundle = _run_event_correlator_bundle(
+                    case_id,
+                    logs=[],
+                    sensitive_files=sensitive_files,
+                    groundtruth=groundtruth,
+                    frame_segments=frame_segments,
+                )
+                final_positive = len(correlation_bundle.get("upload_candidates", [])) > 0
             else:
                 final_positive = True
         elif deterministic_positive:
@@ -737,6 +911,7 @@ def run_benchmark(
                 "vlm_decision": fallback_meta.get("decision"),
                 "vlm_reasons": fallback_meta.get("reasons", []),
                 "live_vlm_verdict": vlm_verdict,
+                "correlation_bundle": correlation_bundle,
             }
         )
 
@@ -773,6 +948,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Benchmark downloaded NAS samples with optional live VLM verification.")
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     parser.add_argument("--stage", action="append", help="Limit to a stage directory, e.g. --stage stage1")
+    parser.add_argument("--case", action="append", help="Limit to a case path/name, e.g. --case stage1/2-ai-poe-1")
     parser.add_argument("--json", action="store_true", help="Print JSON instead of a human report.")
     parser.add_argument("--json-output", type=Path, help="Write full JSON report to this path.")
     parser.add_argument("--use-vlm", action="store_true", help="Call a live VLM to verify triage-only cases.")
@@ -783,6 +959,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     report = run_benchmark(
         args.data_root,
         args.stage,
+        case_filters=args.case,
         use_vlm=args.use_vlm,
         max_vlm_cases=args.max_vlm_cases,
         max_vlm_frames=args.max_vlm_frames,

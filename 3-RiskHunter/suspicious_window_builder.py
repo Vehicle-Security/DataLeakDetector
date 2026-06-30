@@ -11,7 +11,13 @@ import os
 from datetime import datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional
 
-from log_first_detector import file_hint_from_log, flatten_log_text, is_sensitive_name, normalize_path
+from log_first_detector import (
+    file_hint_from_log,
+    flatten_log_text,
+    is_sensitive_name,
+    is_system_noise_path,
+    normalize_path,
+)
 
 
 AI_CONTEXT_TOKENS = (
@@ -91,7 +97,6 @@ EXFIL_REVIEW_TOKENS = (
 HIDDEN_REVIEW_EVENT_TYPES = {
     "created",
     "modified",
-    "opened",
     "renamed",
     "moved",
     "copied",
@@ -157,11 +162,13 @@ def _is_whitelisted(log: Dict[str, Any], whitelist_apps: Iterable[str]) -> bool:
 
 
 def _is_sensitive_anchor(log: Dict[str, Any]) -> bool:
+    hint = file_hint_from_log(log)
+    path = normalize_path(log.get("file_path", "") or hint)
+    if path and is_system_noise_path(path):
+        return False
     upload_detection = log.get("upload_detection")
     if isinstance(upload_detection, dict) and upload_detection.get("sensitivity"):
         return True
-    hint = file_hint_from_log(log)
-    path = normalize_path(log.get("file_path", "") or hint)
     name = log.get("file_name") or path
     title = log.get("window_info", {}).get("window_title", "")
     content = log.get("content_preview", "")
