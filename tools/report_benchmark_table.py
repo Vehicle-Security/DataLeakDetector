@@ -29,20 +29,59 @@ CATEGORY_LABELS = {
     "bluetooth": "Bluetooth",
     "stegoimage": "Steganography",
     "annotation": "Annotation",
+    "e2e": "E2E",
+    "u1": "Steganography",
+    "u2": "Annotation",
+    "u3": "Virtual Machine",
+    "u4": "Bluetooth",
+    "u5": "Cloud Drive",
+    "baidu": "Cloud Drive",
+    "weiyun": "Cloud Drive",
+    "ali": "Cloud Drive",
+    "microsoft": "Meeting",
+    "tech": "Technical Forum",
+    "sensitiveleak": "Bluetooth",
+    "openeuler": "Virtual Machine",
 }
 
 
+def _representative_name(case_id: str) -> str:
+    parts = [
+        part
+        for part in case_id.replace("\\", "/").split("/")
+        if part and part.lower() not in {"logs", "video"}
+    ]
+    if parts and parts[0].lower().startswith("stage"):
+        parts = parts[1:]
+    for part in parts:
+        lowered = part.lower()
+        if lowered.startswith("session_"):
+            continue
+        return lowered
+    return parts[-1].lower() if parts else ""
+
+
+def _stage(case_id: str) -> str:
+    first = case_id.replace("\\", "/").split("/", 1)[0].lower()
+    return first if first.startswith("stage") else ""
+
+
 def _case_parts(case_id: str) -> list[str]:
-    name = case_id.replace("\\", "/").split("/")[-1].lower()
+    name = _representative_name(case_id)
     return [part for part in re.split(r"[-_\s]+", name) if part]
 
 
 def infer_category(case_id: str) -> str:
     parts = _case_parts(case_id)
+    stage = _stage(case_id)
     if len(parts) >= 3 and parts[1] == "normal":
         token = parts[2]
+    elif parts and parts[0] == "e2e":
+        token = "e2e"
+    elif parts and re.fullmatch(r"\d+", parts[0]) and stage == "stage4":
+        token = "e2e"
     elif len(parts) >= 2:
-        token = parts[1]
+        token = parts[0] if parts[0] in {"u1", "u2", "u3", "u4", "u5"} else parts[1]
     elif parts:
         token = parts[0]
     else:
@@ -52,8 +91,15 @@ def infer_category(case_id: str) -> str:
 
 def infer_app(case_id: str) -> str:
     parts = _case_parts(case_id)
+    stage = _stage(case_id)
     if len(parts) >= 4 and parts[1] == "normal":
         return _clean_app(parts[3:])
+    if parts and parts[0] == "e2e":
+        return "e2e"
+    if parts and re.fullmatch(r"\d+", parts[0]) and stage == "stage4":
+        return "e2e"
+    if len(parts) >= 2 and parts[0] in {"u1", "u2", "u3", "u4", "u5"}:
+        return _clean_app(parts[1:])
     if len(parts) >= 3:
         return _clean_app(parts[2:])
     return "unknown"
