@@ -195,6 +195,9 @@ PRELIMINARY_OCR_TOKENS = (
 _OCR_READER: Any = None
 _OCR_READER_FAILED = False
 _OCR_READER_LOCK = Lock()
+_RAPID_OCR_READER: Any = None
+_RAPID_OCR_READER_FAILED = False
+_RAPID_OCR_READER_LOCK = Lock()
 
 
 @dataclass
@@ -707,8 +710,64 @@ def _ocr_reader() -> Any:
     return _OCR_READER
 
 
+def _rapid_ocr_reader() -> Any:
+    global _RAPID_OCR_READER, _RAPID_OCR_READER_FAILED
+    if _RAPID_OCR_READER or _RAPID_OCR_READER_FAILED:
+        return _RAPID_OCR_READER
+    with _RAPID_OCR_READER_LOCK:
+        if _RAPID_OCR_READER or _RAPID_OCR_READER_FAILED:
+            return _RAPID_OCR_READER
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+
+            _RAPID_OCR_READER = RapidOCR()
+        except Exception:
+            _RAPID_OCR_READER_FAILED = True
+            _RAPID_OCR_READER = None
+    return _RAPID_OCR_READER
+
+
+def _ocr_engine_name() -> str:
+    value = os.getenv("DLD_VLM_OCR_ENGINE", "auto").strip().lower()
+    if value in {"0", "false", "no", "off", "none", "disabled"}:
+        return "none"
+    if value in {"easyocr", "easy"}:
+        return "easyocr"
+    if value in {"rapidocr", "rapid", "onnxruntime", "onnx"}:
+        return "rapidocr"
+    if value == "auto":
+        try:
+            import torch
+
+            return "easyocr" if torch.cuda.is_available() else "none"
+        except Exception:
+            return "none"
+    return "auto"
+
+
+def _rapid_ocr_frame_text(frame: Any) -> str:
+    reader = _rapid_ocr_reader()
+    if not reader:
+        return ""
+    try:
+        result = reader(frame)
+    except Exception:
+        return ""
+    rows = result[0] if isinstance(result, tuple) else result
+    texts: List[str] = []
+    for row in rows or []:
+        if isinstance(row, (list, tuple)) and len(row) >= 2:
+            texts.append(str(row[1]).strip())
+    return " ".join(text for text in texts if text)
+
+
 def _ocr_frame_text(frame: Any) -> str:
     if not _ocr_prefilter_enabled():
+        return ""
+    engine = _ocr_engine_name()
+    if engine == "rapidocr":
+        return _rapid_ocr_frame_text(frame)
+    if engine != "easyocr":
         return ""
     reader = _ocr_reader()
     if not reader:
@@ -745,13 +804,8 @@ def _ocr_prefilter_enabled() -> bool:
     if value in {"0", "false", "no", "off"}:
         return False
     if value in {"1", "true", "yes", "on"}:
-        return True
-    try:
-        import torch
-
-        return bool(torch.cuda.is_available())
-    except Exception:
-        return False
+        return _ocr_engine_name() != "none"
+    return _ocr_engine_name() != "none"
 
 
 def _adaptive_vlm_frame_budget(
@@ -1027,6 +1081,7 @@ def _annotate_and_limit_image_frames(
     if not selected:
         return [], {
             "ocr_enabled": ocr_enabled,
+            "ocr_engine": _ocr_engine_name(),
             "image_frames": 0,
             "text_only_frames": 0,
         }
@@ -1121,8 +1176,11 @@ def _annotate_and_limit_image_frames(
 
     return selected, {
         "ocr_enabled": ocr_enabled,
+        "ocr_engine": _ocr_engine_name(),
         "ocr_reader_loaded": bool(_OCR_READER),
         "ocr_reader_failed": bool(_OCR_READER_FAILED),
+        "rapid_ocr_reader_loaded": bool(_RAPID_OCR_READER),
+        "rapid_ocr_reader_failed": bool(_RAPID_OCR_READER_FAILED),
         "max_image_frames": max_image_frames,
         "min_image_frames": min_image_frames,
         "max_ocr_frames": max_ocr_frames,
