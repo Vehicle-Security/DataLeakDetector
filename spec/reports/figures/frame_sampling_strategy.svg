@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1360" viewBox="0 0 2200 1360">
+  <defs>
+    <style>
+      .title { font: 700 54px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
+      .subtitle { font: 28px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #52616f; }
+      .lane-title { font: 700 30px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
+      .card-title { font: 700 25px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
+      .body { font: 22px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #203246; }
+      .small { font: 19px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #52616f; }
+      .mono { font: 700 20px Consolas, "Microsoft YaHei", monospace; fill: #334155; }
+      .lane { stroke: #cbd5e1; stroke-width: 2; rx: 30; }
+      .card { fill: #ffffff; stroke: #8ea3ba; stroke-width: 2.6; rx: 18; }
+      .focus { fill: #fff7d6; stroke: #f59e0b; stroke-width: 3; rx: 20; }
+      .output { fill: #dcfce7; stroke: #22c55e; stroke-width: 3; rx: 20; }
+      .audit { fill: #ede9fe; stroke: #a78bfa; stroke-width: 3; rx: 20; }
+      .risk { fill: #fee2e2; stroke: #f87171; stroke-width: 3; rx: 20; }
+      .edge { stroke: #4b5f76; stroke-width: 4.8; fill: none; }
+      .dash { stroke: #64748b; stroke-width: 3.6; fill: none; stroke-dasharray: 12 10; }
+      .tick { stroke: #475569; stroke-width: 3; }
+      .frame { fill: #f8fafc; stroke: #94a3b8; stroke-width: 2; rx: 10; }
+      .selected { fill: #dcfce7; stroke: #16a34a; stroke-width: 3; rx: 10; }
+      .candidate { fill: #fef3c7; stroke: #f59e0b; stroke-width: 2.5; rx: 10; }
+      .label { font: 700 18px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #334155; }
+      .axis { stroke: #334155; stroke-width: 4; fill: none; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5f76"/>
+    </marker>
+    <marker id="arrow-muted" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="9" stdDeviation="9" flood-color="#1f2937" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="2200" height="1360" fill="#ffffff"/>
+  <text class="title" x="70" y="82">代表帧抽样策略</text>
+  <text class="subtitle" x="74" y="126">在日志限定的复核窗口内，只挑少量高价值帧给 VLM，降低成本并保留完成态证据</text>
+
+  <rect class="lane" x="60" y="180" width="480" height="940" fill="#eff6ff"/>
+  <rect class="lane" x="590" y="180" width="690" height="940" fill="#fff7d6"/>
+  <rect class="lane" x="1330" y="180" width="805" height="940" fill="#ecfdf3"/>
+  <text class="lane-title" x="100" y="230">输入与候选生成</text>
+  <text class="lane-title" x="630" y="230">轻量视觉评分</text>
+  <text class="lane-title" x="1370" y="230">代表帧、VLM 与审计</text>
+
+  <g filter="url(#soft-shadow)">
+    <rect class="card" x="105" y="295" width="380" height="140"/>
+    <text class="card-title" x="135" y="335">VLM review windows</text>
+    <text class="body" x="135" y="373">来自 fallback meta</text>
+    <text class="body" x="135" y="403">包含 anchor、sink 与 post buffer</text>
+
+    <rect class="card" x="105" y="520" width="380" height="150"/>
+    <text class="card-title" x="135" y="560">候选时间点</text>
+    <text class="body" x="135" y="598">按窗口长度分配预算</text>
+    <text class="mono" x="135" y="630">max(24, max_frames * 6)</text>
+
+    <rect class="card" x="105" y="755" width="380" height="150"/>
+    <text class="card-title" x="135" y="795">稀疏解码</text>
+    <text class="body" x="135" y="833">只 seek 候选帧</text>
+    <text class="body" x="135" y="865">不全量扫描视频</text>
+
+    <rect class="focus" x="635" y="295" width="285" height="150"/>
+    <text class="card-title" x="665" y="335">缩略图签名</text>
+    <text class="body" x="665" y="373">96 x 54 灰度图</text>
+    <text class="body" x="665" y="405">低成本比较画面变化</text>
+
+    <rect class="focus" x="950" y="295" width="285" height="150"/>
+    <text class="card-title" x="980" y="335">scene_score</text>
+    <text class="body" x="980" y="373">mean(absdiff) / 255</text>
+    <text class="body" x="980" y="405">越高越可能发生状态切换</text>
+
+    <rect class="card" x="650" y="540" width="560" height="350" fill="#ffffff"/>
+    <text class="card-title" x="685" y="584">候选帧时间轴</text>
+    <line class="axis" x1="705" y1="725" x2="1165" y2="725"/>
+    <line class="tick" x1="735" y1="705" x2="735" y2="745"/>
+    <line class="tick" x1="885" y1="705" x2="885" y2="745"/>
+    <line class="tick" x1="1035" y1="705" x2="1035" y2="745"/>
+    <line class="tick" x1="1150" y1="705" x2="1150" y2="745"/>
+    <text class="small" x="710" y="780">start</text>
+    <text class="small" x="860" y="780">mid</text>
+    <text class="small" x="1010" y="780">scene</text>
+    <text class="small" x="1128" y="780">end</text>
+    <path d="M710 665 C750 610 790 700 830 635 C875 560 935 690 985 618 C1040 540 1095 612 1160 575" fill="none" stroke="#f59e0b" stroke-width="5"/>
+    <circle cx="735" cy="653" r="11" fill="#16a34a"/>
+    <circle cx="885" cy="634" r="11" fill="#16a34a"/>
+    <circle cx="1035" cy="548" r="13" fill="#dc2626"/>
+    <circle cx="1150" cy="584" r="11" fill="#16a34a"/>
+    <text class="body" x="685" y="835">固定上下文帧保底，再补入场景变化最高的候选帧。</text>
+
+    <rect class="output" x="1390" y="265" width="660" height="190"/>
+    <text class="card-title" x="1425" y="307">代表帧集合</text>
+    <rect class="selected" x="1425" y="335" width="120" height="75"/>
+    <rect class="selected" x="1570" y="335" width="120" height="75"/>
+    <rect class="selected" x="1715" y="335" width="120" height="75"/>
+    <rect class="candidate" x="1860" y="335" width="120" height="75"/>
+    <text class="small" x="1445" y="430">window_start</text>
+    <text class="small" x="1596" y="430">window_mid</text>
+    <text class="small" x="1736" y="430">window_end</text>
+    <text class="small" x="1870" y="430">scene_change</text>
+
+    <rect class="output" x="1390" y="535" width="310" height="150"/>
+    <text class="card-title" x="1420" y="575">JPEG/base64</text>
+    <text class="body" x="1420" y="613">max_edge + quality</text>
+    <text class="body" x="1420" y="645">控制请求体大小</text>
+
+    <rect class="audit" x="1740" y="535" width="310" height="150"/>
+    <text class="card-title" x="1770" y="575">VLM payload</text>
+    <text class="body" x="1770" y="613">时间、帧号、选择原因</text>
+    <text class="body" x="1770" y="645">scene_score 随图发送</text>
+
+    <rect class="audit" x="1390" y="765" width="310" height="150"/>
+    <text class="card-title" x="1420" y="805">JSON 审计字段</text>
+    <text class="body" x="1420" y="843">frame_selection[]</text>
+    <text class="body" x="1420" y="875">可复查每一帧为何入选</text>
+
+    <rect class="risk" x="1740" y="765" width="310" height="150"/>
+    <text class="card-title" x="1770" y="805">失败样例回看</text>
+    <text class="body" x="1770" y="843">短暂 UI 是否漏选</text>
+    <text class="body" x="1770" y="875">是否需要增大候选预算</text>
+  </g>
+
+  <path class="edge" marker-end="url(#arrow)" d="M295 435 L295 520"/>
+  <path class="edge" marker-end="url(#arrow)" d="M295 670 L295 755"/>
+  <path class="edge" marker-end="url(#arrow)" d="M485 830 C555 830 565 370 635 370"/>
+  <path class="edge" marker-end="url(#arrow)" d="M920 370 L950 370"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1092 445 C1092 500 1060 516 1010 540"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1210 715 C1300 715 1300 360 1390 360"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1720 455 C1720 500 1545 500 1545 535"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1700 610 L1740 610"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1545 685 L1545 765"/>
+  <path class="edge" marker-end="url(#arrow)" d="M1895 685 L1895 765"/>
+
+  <path class="dash" marker-end="url(#arrow-muted)" d="M2050 840 C2130 840 2130 1150 1040 1150 C450 1150 450 905 485 875"/>
+  <text class="small" x="920" y="1132">误报 / 漏报排查后，可调候选帧数、最小帧间隔、review window 和完成态 prompt</text>
+
+  <rect class="card" x="105" y="1000" width="500" height="145" fill="#f8fafc"/>
+  <text class="card-title" x="135" y="1042">为什么不均匀抽帧？</text>
+  <text class="body" x="135" y="1080">完成态 UI 常常很短，均匀点容易落在编辑、等待</text>
+  <text class="body" x="135" y="1112">或静止页面，错过成功提示和远端列表刷新。</text>
+
+  <rect class="card" x="675" y="1000" width="500" height="145" fill="#f8fafc"/>
+  <text class="card-title" x="705" y="1042">为什么不用重模型？</text>
+  <text class="body" x="705" y="1080">日志已经限定可疑窗口，OpenCV 缩略图差异足够</text>
+  <text class="body" x="705" y="1112">近似 scene change，成本更可控。</text>
+
+  <rect class="card" x="1245" y="1000" width="500" height="145" fill="#f8fafc"/>
+  <text class="card-title" x="1275" y="1042">如何调参？</text>
+  <text class="body" x="1275" y="1080">增大 DLD_VLM_REVIEW_CANDIDATE_FRAMES 可提高</text>
+  <text class="body" x="1275" y="1112">短暂状态命中率，但会增加解码与请求体成本。</text>
+
+  <text class="small" x="70" y="1260">对应 frame_sampling_design.md：抽帧策略图。主线是 fallback meta -> 候选帧 -> 缩略图差异 -> 代表帧 -> VLM payload -> JSON 审计。</text>
+</svg>

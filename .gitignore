@@ -12,7 +12,6 @@ __pycache__/
 # 忽略文档
 **/doc/
 **/docs/
-**/reports/
 # 忽略输入输出
 **/gradio_temp/
 **/inputs/

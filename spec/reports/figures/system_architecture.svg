@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1360" viewBox="0 0 2200 1360">
+  <defs>
+    <style>
+      .bg { fill: #ffffff; }
+      .title { font: 700 54px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
+      .subtitle { font: 28px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #52616f; }
+      .lane-title { font: 700 32px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
+      .card-title { font: 700 26px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
+      .body { font: 23px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #203246; }
+      .small { font: 20px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #52616f; }
+      .tiny { font: 18px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #52616f; }
+      .lane { stroke: #cbd5e1; stroke-width: 2.5; rx: 30; }
+      .card { fill: #ffffff; stroke: #8ea3ba; stroke-width: 2.8; rx: 18; }
+      .chip { stroke-width: 2; rx: 16; }
+      .line { stroke: #4b5f76; stroke-width: 5; fill: none; }
+      .dash { stroke: #6b7280; stroke-width: 4; fill: none; stroke-dasharray: 12 10; }
+      .metric { font: 700 24px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #0f5132; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5f76"/>
+    </marker>
+    <marker id="arrow-muted" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280"/>
+    </marker>
+    <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#1f2937" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="2200" height="1360"/>
+  <text class="title" x="70" y="82">DataLeakDetector 总体架构</text>
+  <text class="subtitle" x="74" y="126">日志先行缩小搜索空间，视觉模型确认完成态，符号推理输出可审计的泄露路径</text>
+
+  <rect class="lane" x="55" y="170" width="370" height="1010" fill="#eff6ff"/>
+  <rect class="lane" x="465" y="170" width="370" height="1010" fill="#e0f7ff"/>
+  <rect class="lane" x="875" y="170" width="630" height="1010" fill="#fff7d6"/>
+  <rect class="lane" x="1545" y="170" width="590" height="1010" fill="#ecfdf3"/>
+
+  <text class="lane-title" x="90" y="220">证据输入层</text>
+  <text class="lane-title" x="500" y="220">稳定入口层</text>
+  <text class="lane-title" x="910" y="220">三阶段分析层</text>
+  <text class="lane-title" x="1580" y="220">推理与报告层</text>
+
+  <g filter="url(#soft-shadow)">
+    <rect class="card" x="95" y="275" width="290" height="145"/>
+    <text class="card-title" x="122" y="318">系统日志</text>
+    <text class="body" x="122" y="356">文件 / 窗口 / 剪贴板</text>
+    <text class="body" x="122" y="388">网络 / 进程事件</text>
+
+    <rect class="card" x="95" y="500" width="290" height="145"/>
+    <text class="card-title" x="122" y="543">屏幕录制</text>
+    <text class="body" x="122" y="581">mp4 / mov</text>
+    <text class="body" x="122" y="613">关键帧与页面状态</text>
+
+    <rect class="card" x="95" y="725" width="290" height="155"/>
+    <text class="card-title" x="122" y="768">策略配置</text>
+    <text class="body" x="122" y="806">敏感文件 / 黑白名单</text>
+    <text class="body" x="122" y="838">外部应用类别</text>
+
+    <rect class="card" x="505" y="305" width="290" height="170"/>
+    <text class="card-title" x="532" y="348">main/run_e2e.py</text>
+    <text class="body" x="532" y="386">统一编排入口</text>
+    <text class="body" x="532" y="418">串联三阶段流水线</text>
+
+    <rect class="card" x="505" y="665" width="290" height="170"/>
+    <text class="card-title" x="532" y="708">data_leak_detector</text>
+    <text class="body" x="532" y="746">稳定导入适配层</text>
+    <text class="body" x="532" y="778">隔离历史目录编号</text>
+
+    <rect class="card" x="930" y="260" width="360" height="155"/>
+    <text class="card-title" x="960" y="303">01 FrameAnalyzer</text>
+    <text class="body" x="960" y="341">LogFirstDetector</text>
+    <text class="body" x="960" y="373">VLM fallback gate</text>
+
+    <rect class="card" x="930" y="505" width="360" height="155"/>
+    <text class="card-title" x="960" y="548">02 EventCorrelator</text>
+    <text class="body" x="960" y="586">前台应用识别</text>
+    <text class="body" x="960" y="618">敏感窗口 + lineage</text>
+
+    <rect class="card" x="930" y="750" width="360" height="155"/>
+    <text class="card-title" x="960" y="793">03 LeakReasoner</text>
+    <text class="body" x="960" y="831">Datalog facts</text>
+    <text class="body" x="960" y="863">Open / Transfer / Leak</text>
+
+    <rect class="card" x="1350" y="335" width="120" height="490" fill="#fffdf3"/>
+    <text class="card-title" transform="translate(1420 375) rotate(90)">证据包</text>
+    <text class="small" transform="translate(1385 455) rotate(90)">候选事件 · 对象绑定 · 引用来源</text>
+
+    <rect class="card" x="1595" y="285" width="430" height="155"/>
+    <text class="card-title" x="1625" y="328">泄露路径报告</text>
+    <text class="body" x="1625" y="366">源文件 -> 派生物 -> 外部汇</text>
+    <text class="body" x="1625" y="398">证据链与可解释结论</text>
+
+    <rect class="card" x="1595" y="555" width="430" height="155"/>
+    <text class="card-title" x="1625" y="598">NAS 全量评测</text>
+    <text class="body" x="1625" y="636">triage / deterministic / final</text>
+    <text class="body" x="1625" y="668">逐例 TP / FP / TN / FN 日志</text>
+
+    <rect class="card" x="1595" y="825" width="430" height="155"/>
+    <text class="card-title" x="1625" y="868">报告产物</text>
+    <text class="body" x="1625" y="906">spec/output JSON 与日志</text>
+    <text class="body" x="1625" y="938">Typst 文档与矢量插图</text>
+  </g>
+
+  <path class="line" marker-end="url(#arrow)" d="M385 348 C455 348 445 390 505 390"/>
+  <text class="small" x="412" y="331">日志</text>
+  <path class="line" marker-end="url(#arrow)" d="M385 574 C565 574 720 330 930 337"/>
+  <text class="small" x="522" y="546">录屏</text>
+  <path class="line" marker-end="url(#arrow)" d="M385 803 C445 803 445 750 505 750"/>
+  <text class="small" x="408" y="786">策略</text>
+  <path class="line" marker-end="url(#arrow)" d="M795 390 C845 390 870 337 930 337"/>
+  <text class="small" x="830" y="363">编排</text>
+  <path class="line" marker-end="url(#arrow)" d="M795 750 C850 750 875 582 930 582"/>
+  <text class="small" x="814" y="710">统一导入</text>
+  <path class="line" marker-end="url(#arrow)" d="M1290 337 C1312 337 1328 395 1350 420"/>
+  <path class="line" marker-end="url(#arrow)" d="M1290 582 C1318 582 1328 575 1350 575"/>
+  <path class="line" marker-end="url(#arrow)" d="M1290 827 C1328 827 1325 710 1350 710"/>
+  <path class="line" marker-end="url(#arrow)" d="M1470 575 C1520 575 1535 362 1595 362"/>
+  <path class="line" marker-end="url(#arrow)" d="M1810 440 L1810 555"/>
+  <path class="line" marker-end="url(#arrow)" d="M1810 710 L1810 825"/>
+
+  <path class="dash" marker-end="url(#arrow-muted)" d="M2025 633 C2115 633 2115 225 1110 225 C1000 225 1000 260 1110 260"/>
+  <text class="small" x="1510" y="214">失败样例回流：调规则、prompt 与后处理</text>
+
+  <rect class="card" x="95" y="990" width="470" height="145" fill="#f8fafc"/>
+  <text class="card-title" x="122" y="1033">图例</text>
+  <circle cx="128" cy="1073" r="10" fill="#eff6ff" stroke="#8ea3ba"/>
+  <text class="small" x="150" y="1080">蓝色：原始证据与稳定入口</text>
+  <circle cx="128" cy="1110" r="10" fill="#fff7d6" stroke="#8ea3ba"/>
+  <text class="small" x="150" y="1117">黄色：日志与视觉分析</text>
+
+  <rect class="chip" x="680" y="1010" width="250" height="82" fill="#dcfce7" stroke="#86efac"/>
+  <text class="metric" x="708" y="1042">Triage Recall 100%</text>
+  <text class="tiny" x="708" y="1072">先保证风险样例不漏召</text>
+  <rect class="chip" x="970" y="1010" width="250" height="82" fill="#fee2e2" stroke="#fca5a5"/>
+  <text class="metric" x="998" y="1042">Final Precision 93.3%</text>
+  <text class="tiny" x="998" y="1072">VLM 复核后压低误报</text>
+  <rect class="chip" x="1260" y="1010" width="250" height="82" fill="#ede9fe" stroke="#c4b5fd"/>
+  <text class="metric" x="1288" y="1042">Final Recall 48.3%</text>
+  <text class="tiny" x="1288" y="1072">主要改进点：完成态判断</text>
+
+  <text class="tiny" x="70" y="1260">对应 introduce.typ：总体架构图。重点展示重构后的 01/02/03 模块职责、入口适配、证据包、报告输出与评测回流。</text>
+</svg>
