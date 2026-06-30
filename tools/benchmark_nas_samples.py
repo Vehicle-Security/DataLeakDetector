@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import hashlib
 import importlib.util
 import json
 import os
@@ -264,6 +265,9 @@ class BenchmarkSummary:
     deterministic_hits: int = 0
     vlm_reviews: int = 0
     live_vlm_reviews: int = 0
+    vlm_remote_requests: int = 0
+    vlm_local_resolutions: int = 0
+    vlm_cache_hits: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -274,6 +278,9 @@ class BenchmarkSummary:
                 "deterministic_hits": self.deterministic_hits,
                 "vlm_reviews": self.vlm_reviews,
                 "live_vlm_reviews": self.live_vlm_reviews,
+                "vlm_remote_requests": self.vlm_remote_requests,
+                "vlm_local_resolutions": self.vlm_local_resolutions,
+                "vlm_cache_hits": self.vlm_cache_hits,
                 "skipped_cases": len(self.skipped),
             },
             "cases": self.cases,
@@ -311,23 +318,48 @@ def _read_text(path: Path) -> str:
 
 def _read_json_lenient(path: Path) -> Any:
     text = _read_text(path).strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
+    candidates = [text]
+
+    collapsed_quotes = re.sub(r'""([^"\r\n]*?)""', r'"\1"', text)
+    if collapsed_quotes != text:
+        candidates.append(collapsed_quotes)
+
+    expanded: List[str] = []
+    for candidate in candidates:
+        repaired = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', candidate)
+        repaired = re.sub(r",(\s*[}\]])", r"\1", repaired)
+        if repaired != candidate:
+            expanded.append(repaired)
+    candidates.extend(expanded)
+
+    last_error: Optional[json.JSONDecodeError] = None
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            last_error = exc
+
+    for candidate in candidates:
         decoder = json.JSONDecoder()
         items = []
         pos = 0
-        while pos < len(text):
-            while pos < len(text) and text[pos].isspace():
-                pos += 1
-            if pos >= len(text):
-                break
-            item, end = decoder.raw_decode(text[pos:])
-            items.append(item)
-            pos += end
-        if items:
-            return items
-        raise
+        try:
+            while pos < len(candidate):
+                while pos < len(candidate) and candidate[pos].isspace():
+                    pos += 1
+                if pos >= len(candidate):
+                    break
+                item, end = decoder.raw_decode(candidate[pos:])
+                items.append(item)
+                pos += end
+            if items:
+                return items
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            pos += 1
+    if last_error:
+        raise last_error
+    raise json.JSONDecodeError("empty JSON", text, 0)
 
 
 def _choose_log_file(case_dir: Path) -> Optional[Path]:
@@ -820,6 +852,354 @@ def _warm_ocr_reader() -> None:
         _ocr_reader()
     elif engine == "rapidocr":
         _rapid_ocr_reader()
+
+
+def _compact_log_text_for_gate(log: Dict[str, Any]) -> str:
+    window_info = log.get("window_info")
+    process_info = log.get("process_info")
+    return " ".join(
+        str(part or "")
+        for part in (
+            log.get("event_type", ""),
+            log.get("app_name", ""),
+            log.get("file_path", ""),
+            log.get("file_name", ""),
+            log.get("content_preview", ""),
+            process_info.get("process_name", "") if isinstance(process_info, dict) else "",
+            window_info.get("window_title", "") if isinstance(window_info, dict) else "",
+        )
+    ).lower()
+
+
+def _contains_gate_token(text: str, tokens: Iterable[str]) -> bool:
+    padded = f" {text.lower()} "
+    return any(token in padded for token in tokens)
+
+
+def _vlm_gate_features(
+    logs: List[Dict[str, Any]],
+    detection: Dict[str, Any],
+    fallback_meta: Dict[str, Any],
+) -> Dict[str, Any]:
+    event_types = {
+        str(log.get("event_type", "") or "").lower()
+        for log in logs
+    }
+    candidate_events = fallback_meta.get("candidate_events", []) or []
+    for event in candidate_events:
+        event_types.add(str(event.get("event_type", "") or "").lower())
+
+    text_parts = [_compact_log_text_for_gate(log) for log in logs]
+    for event in candidate_events[:48]:
+        text_parts.extend(
+            str(event.get(key, "") or "").lower()
+            for key in ("event_type", "app_name", "file_name", "content_preview", "window_title")
+        )
+    for record in detection.get("operation_records", [])[:64]:
+        text_parts.extend(
+            str(record.get(key, "") or "").lower()
+            for key in ("operation", "app_name", "description", "sensitive_file_path")
+        )
+    signal_text = " ".join(text_parts)
+
+    explicit_transfer_events = {
+        "data_upload",
+        "file_send",
+        "file_share",
+        "screen_share_start",
+        "screen_recording_started",
+    }
+    direct_visual_events = {
+        "screenshot_capture",
+        "clipboard_image",
+    }
+    selection_events = {
+        "file_selected",
+        "clipboard_text",
+        "clipboard_copy",
+        "clipboard_image",
+    }
+
+    features = {
+        "explicit_transfer_event": bool(event_types & explicit_transfer_events),
+        "direct_visual_capture_event": bool(event_types & direct_visual_events),
+        "selection_or_clipboard_event": bool(event_types & selection_events),
+        "completion_text": _contains_gate_token(signal_text, COMPLETION_OCR_TOKENS),
+        "preliminary_text": _contains_gate_token(signal_text, PRELIMINARY_OCR_TOKENS),
+        "screenshot_context": _contains_gate_token(
+            signal_text,
+            ("screenshot", "screen capture", "snipping", "snipaste", "\u622a\u56fe", "\u622a\u5c4f"),
+        ),
+        "export_context": _contains_gate_token(signal_text, ("export", "\u5bfc\u51fa")),
+        "vm_context": _contains_gate_token(
+            signal_text,
+            ("vmware", "virtualbox", "hyper-v", "virtual machine", "ubuntu - vmware", "openeuler", "\u865a\u62df\u673a"),
+        ),
+        "remote_context": _contains_gate_token(
+            signal_text,
+            ("remote desktop", "mstsc", "anydesk", "todesk", "sunlogin", "\u8fdc\u7a0b\u684c\u9762"),
+        ),
+        "external_cloud_or_mail_context": _contains_gate_token(
+            signal_text,
+            (
+                "gmail",
+                "outlook",
+                "proton",
+                "qqmail",
+                "mail",
+                "email",
+                "dropbox",
+                "onedrive",
+                "google drive",
+                "baidu",
+                "weiyun",
+                "quark",
+                "\u90ae\u7bb1",
+                "\u9644\u4ef6",
+                "\u4e91\u76d8",
+            ),
+        ),
+        "git_context": _contains_gate_token(signal_text, ("github", "gitlab", "gitee", "bitbucket", "commit", "merge")),
+        "archive_or_convert_context": _contains_gate_token(
+            signal_text,
+            ("zip", "compress", "archive", "convert", "pdf", "\u538b\u7f29", "\u8f6c\u6362"),
+        ),
+        "candidate_events": len(candidate_events),
+        "event_types": sorted(item for item in event_types if item)[:64],
+    }
+    return features
+
+
+def _local_vlm_gate_decision(
+    *,
+    mode: str,
+    logs: List[Dict[str, Any]],
+    detection: Dict[str, Any],
+    fallback_meta: Dict[str, Any],
+) -> Dict[str, Any]:
+    normalized_mode = str(mode or "all").strip().lower()
+    if normalized_mode not in {"all", "strict", "adaptive", "aggressive"}:
+        normalized_mode = "all"
+
+    features = _vlm_gate_features(logs, detection, fallback_meta)
+    decision = {
+        "mode": normalized_mode,
+        "action": "queue_remote_vlm",
+        "local_verdict": None,
+        "reason": "remote_vlm_required",
+        "features": features,
+    }
+    if normalized_mode == "all":
+        decision["reason"] = "gate_disabled"
+        return decision
+
+    positive_reasons: List[str] = []
+    if features["explicit_transfer_event"]:
+        positive_reasons.append("explicit_transfer_event")
+    if features["screenshot_context"]:
+        positive_reasons.append("screenshot_context")
+    if features["export_context"]:
+        positive_reasons.append("export_context")
+
+    if normalized_mode in {"adaptive", "aggressive"}:
+        if (
+            features["vm_context"]
+            and not features["preliminary_text"]
+            and not features["external_cloud_or_mail_context"]
+        ):
+            positive_reasons.append("vm_context")
+
+    if normalized_mode == "aggressive":
+        if features["git_context"] and features["completion_text"]:
+            positive_reasons.append("git_context_with_completion_text")
+        if features["archive_or_convert_context"] and features["completion_text"]:
+            positive_reasons.append("archive_or_convert_with_completion_text")
+
+    if positive_reasons:
+        decision["action"] = "local_positive"
+        decision["local_verdict"] = True
+        decision["reason"] = ",".join(sorted(set(positive_reasons)))
+    return decision
+
+
+def _local_ocr_vlm_verdict(
+    frame_records: List[Dict[str, Any]],
+    max_frames: int,
+    frame_plan: Dict[str, Any],
+    enabled: bool,
+) -> Optional[Dict[str, Any]]:
+    if not enabled:
+        return None
+    value = os.getenv("DLD_VLM_LOCAL_OCR_GATE", "1").strip().lower()
+    if value in {"0", "false", "no", "off"}:
+        return None
+
+    completion_frames = [
+        int(item.get("index", 0) or 0)
+        for item in frame_records
+        if "completion_keyword" in (item.get("ocr_flags") or [])
+    ]
+    sensitive_frames = [
+        int(item.get("index", 0) or 0)
+        for item in frame_records
+        if "sensitive_name_visible" in (item.get("ocr_flags") or [])
+    ]
+    evidence_frames = sorted(set(completion_frames) & set(sensitive_frames))
+    if not evidence_frames:
+        return None
+
+    return {
+        "status": "local_ocr_positive",
+        "is_violation": True,
+        "confidence": 0.88,
+        "completed_action": "local_ocr",
+        "evidence_frames": evidence_frames,
+        "reason": "local_ocr_completion_keyword_and_sensitive_name_visible",
+        "frames_sent": 0,
+        "frame_context_count": len(frame_records),
+        "max_frames_requested": max_frames,
+        "frame_plan": frame_plan,
+        "model": "local_ocr_gate",
+        "frame_selection": [
+            {
+                "index": image["index"],
+                "timestamp": image["timestamp"],
+                "frame_index": image["frame_index"],
+                "scene_score": image.get("scene_score"),
+                "selection_reason": image.get("selection_reason"),
+                "image_sent": bool(image.get("image_sent")),
+                "ocr_text": image.get("ocr_text", ""),
+                "ocr_flags": image.get("ocr_flags", []),
+                "ocr_ran": bool(image.get("ocr_ran")),
+                "ocr_duplicate": bool(image.get("ocr_duplicate")),
+                "image_priority": image.get("image_priority", 0.0),
+                "image_decision_reasons": image.get("image_decision_reasons", []),
+            }
+            for image in frame_records
+        ],
+    }
+
+
+VLM_REVIEW_CACHE_VERSION = "v1"
+
+
+def _bool_env(name: str, default: bool = True) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _vlm_review_cache_dir() -> Path:
+    value = os.getenv("DLD_VLM_REVIEW_CACHE_DIR", "").strip()
+    return Path(value) if value else REPO_ROOT / "spec" / "output" / "cache" / "vlm_reviews"
+
+
+def _path_fingerprint(path: Optional[Path]) -> Dict[str, Any]:
+    if not path:
+        return {"path": "", "exists": False}
+    try:
+        stat = path.stat()
+        return {
+            "path": str(path.resolve()),
+            "exists": True,
+            "size": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
+        }
+    except OSError:
+        return {"path": str(path), "exists": False}
+
+
+def _stable_digest(payload: Dict[str, Any], length: int = 24) -> str:
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:length]
+
+
+def _vlm_review_cache_path(
+    *,
+    case_dir: Path,
+    video_path: Optional[Path],
+    rec_start: Optional[datetime],
+    fallback_meta: Dict[str, Any],
+    logs: List[Dict[str, Any]],
+    sensitive_files: List[str],
+    max_frames: int,
+    model: str,
+    base_url: str,
+    local_ocr_gate: bool,
+) -> Path:
+    review_logs = _review_log_context(logs, _windows_from_fallback(fallback_meta, logs))
+    cache_payload = {
+        "cache_version": VLM_REVIEW_CACHE_VERSION,
+        "case": str(case_dir.resolve()),
+        "video": _path_fingerprint(video_path),
+        "recording_start": rec_start.strftime("%Y-%m-%d %H:%M:%S") if rec_start else "",
+        "fallback": {
+            "reasons": fallback_meta.get("reasons", []),
+            "candidate_events": fallback_meta.get("candidate_events", [])[:24],
+            "analysis_windows": fallback_meta.get("analysis_windows", []),
+        },
+        "review_logs": review_logs,
+        "sensitive_files": sorted(str(item) for item in sensitive_files),
+        "max_frames": int(max_frames),
+        "model": model,
+        "base_url": base_url,
+        "local_ocr_gate": bool(local_ocr_gate),
+        "params": {
+            "candidate_frames": os.getenv("DLD_VLM_REVIEW_CANDIDATE_FRAMES", ""),
+            "min_frame_gap": os.getenv("DLD_VLM_REVIEW_MIN_FRAME_GAP", ""),
+            "image_max_edge": os.getenv("DLD_VLM_REVIEW_IMAGE_MAX_EDGE", ""),
+            "jpeg_quality": os.getenv("DLD_VLM_REVIEW_JPEG_QUALITY", ""),
+            "max_image_frames": os.getenv("DLD_VLM_REVIEW_MAX_IMAGE_FRAMES", ""),
+            "min_image_frames": os.getenv("DLD_VLM_REVIEW_MIN_IMAGE_FRAMES", ""),
+            "max_ocr_frames": os.getenv("DLD_VLM_REVIEW_MAX_OCR_FRAMES", ""),
+            "image_scene_threshold": os.getenv("DLD_VLM_REVIEW_IMAGE_SCENE_THRESHOLD", ""),
+            "local_ocr_gate_env": os.getenv("DLD_VLM_LOCAL_OCR_GATE", ""),
+            "ocr_prefilter": os.getenv("DLD_VLM_ENABLE_OCR_PREFILTER", ""),
+            "ocr_engine": _ocr_engine_name(),
+        },
+    }
+    return _vlm_review_cache_dir() / f"{_stable_digest(cache_payload)}.json"
+
+
+def _read_vlm_review_cache(cache_path: Path) -> Optional[Dict[str, Any]]:
+    if not _bool_env("DLD_VLM_REVIEW_CACHE", True):
+        return None
+    try:
+        if not cache_path.exists():
+            return None
+        with cache_path.open("r", encoding="utf-8") as fh:
+            cached = json.load(fh)
+        verdict = cached.get("verdict") if isinstance(cached, dict) else None
+        if not isinstance(verdict, dict):
+            return None
+        result = dict(verdict)
+        result["cache_hit"] = True
+        result["cache_path"] = str(cache_path)
+        return result
+    except Exception as exc:
+        _progress(f"[VLM CACHE] read_failed path={cache_path} error={type(exc).__name__}:{exc}")
+        return None
+
+
+def _write_vlm_review_cache(cache_path: Path, verdict: Dict[str, Any]) -> None:
+    if not _bool_env("DLD_VLM_REVIEW_CACHE", True):
+        return
+    if str(verdict.get("reason", "")) == "missing_vlm_api_key":
+        return
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "cache_version": VLM_REVIEW_CACHE_VERSION,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "verdict": verdict,
+        }
+        tmp_path = cache_path.with_suffix(".tmp")
+        with tmp_path.open("w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+        tmp_path.replace(cache_path)
+    except Exception as exc:
+        _progress(f"[VLM CACHE] write_failed path={cache_path} error={type(exc).__name__}:{exc}")
 
 
 def _adaptive_vlm_frame_budget(
@@ -1333,6 +1713,7 @@ def _live_vlm_review_case(
     sensitive_files: List[str],
     fallback_meta: Dict[str, Any],
     max_frames: int,
+    local_ocr_gate: bool = False,
 ) -> Dict[str, Any]:
     video_path = _choose_video_file(case_dir)
     rec_start = _recording_start(groundtruth, logs)
@@ -1343,6 +1724,31 @@ def _live_vlm_review_case(
             "is_violation": True,
             "max_frames_requested": max_frames,
         }
+
+    api_key = _first_env("OPENAI_API_KEY", "DASHSCOPE_API_KEY", "QWEN_API_KEY", "VL_API_KEY")
+    base_url = _first_env("OPENAI_BASE_URL", "DASHSCOPE_BASE_URL", "QWEN_BASE_URL", "VL_BASE_URL")
+    model = _first_env("VL_MODEL_NAME", "OPENAI_MODEL", "QWEN_VL_MODEL", "QWEN_MODEL") or "qwen3.7-plus"
+    cache_path = _vlm_review_cache_path(
+        case_dir=case_dir,
+        video_path=video_path,
+        rec_start=rec_start,
+        fallback_meta=fallback_meta,
+        logs=logs,
+        sensitive_files=sensitive_files,
+        max_frames=max_frames,
+        model=model,
+        base_url=base_url,
+        local_ocr_gate=local_ocr_gate,
+    )
+    cached = _read_vlm_review_cache(cache_path)
+    if cached:
+        _progress(f"[VLM CACHE HIT] case={case_dir.name} status={cached.get('status', 'unknown')} path={cache_path}")
+        return cached
+
+    def remember(verdict: Dict[str, Any]) -> Dict[str, Any]:
+        if str(verdict.get("status", "")) in {"success", "local_ocr_positive", "skipped"}:
+            _write_vlm_review_cache(cache_path, verdict)
+        return verdict
 
     windows = _windows_from_fallback(fallback_meta, logs)
     frame_records, frame_plan = _extract_representative_frame_images(
@@ -1358,17 +1764,18 @@ def _live_vlm_review_case(
     )
     image_records = [item for item in frame_records if item.get("image_sent")]
     if not frame_records:
-        return {
+        return remember({
             "status": "skipped",
             "reason": "no_frames_extracted",
             "is_violation": True,
             "max_frames_requested": max_frames,
             "frame_plan": frame_plan,
-        }
+        })
 
-    api_key = _first_env("OPENAI_API_KEY", "DASHSCOPE_API_KEY", "QWEN_API_KEY", "VL_API_KEY")
-    base_url = _first_env("OPENAI_BASE_URL", "DASHSCOPE_BASE_URL", "QWEN_BASE_URL", "VL_BASE_URL")
-    model = _first_env("VL_MODEL_NAME", "OPENAI_MODEL", "QWEN_VL_MODEL", "QWEN_MODEL") or "qwen3.7-plus"
+    local_ocr_verdict = _local_ocr_vlm_verdict(frame_records, max_frames, frame_plan, enabled=local_ocr_gate)
+    if local_ocr_verdict:
+        return remember(local_ocr_verdict)
+
     if not api_key:
         return {
             "status": "skipped",
@@ -1482,7 +1889,7 @@ def _live_vlm_review_case(
     ]
     verdict["model"] = model
     _postprocess_vlm_verdict(verdict)
-    return verdict
+    return remember(verdict)
 
 
 def _postprocess_vlm_verdict(verdict: Dict[str, Any]) -> None:
@@ -1614,6 +2021,7 @@ def run_benchmark(
     max_vlm_cases: int = 0,
     max_vlm_frames: int = 12,
     vlm_workers: int = 1,
+    vlm_gate_mode: str = "all",
 ) -> Dict[str, Any]:
     from data_leak_detector.legacy_paths import RISK_HUNTER_IMPL
 
@@ -1644,6 +2052,7 @@ def run_benchmark(
     total_cases = len(case_dirs)
     case_records: List[Dict[str, Any]] = []
     pending_vlm_records: List[Dict[str, Any]] = []
+    local_vlm_resolutions = 0
     live_limit = str(max_vlm_cases) if max_vlm_cases > 0 else "all"
 
     for case_index, (case_dir, case_id) in enumerate(case_dirs, 1):
@@ -1681,25 +2090,58 @@ def run_benchmark(
 
         adaptive_frames = 0
         frame_budget_meta: Dict[str, Any] = {}
+        vlm_gate = {
+            "mode": str(vlm_gate_mode or "all").strip().lower(),
+            "action": "not_applicable",
+            "reason": "vlm_not_requested",
+        }
+        local_vlm_verdict: Optional[Dict[str, Any]] = None
         if (
             use_vlm
             and should_run_vlm
             and not deterministic_positive
-            and (max_vlm_cases <= 0 or len(pending_vlm_records) < max_vlm_cases)
         ):
-            adaptive_frames, frame_budget_meta = _adaptive_vlm_frame_budget(
-                fallback_meta,
-                logs,
-                max_frames=max_vlm_frames,
+            vlm_gate = _local_vlm_gate_decision(
+                mode=vlm_gate_mode,
+                logs=logs,
+                detection=detection,
+                fallback_meta=fallback_meta,
             )
-            next_live_idx = len(pending_vlm_records) + 1
-            _progress(
-                f"[VLM {next_live_idx}/{live_limit} QUEUED] "
-                f"case={case_id} progress={case_index}/{total_cases} "
-                f"expected={int(expected)} reasons={','.join(fallback_meta.get('reasons', []))} "
-                f"frames={adaptive_frames}/{max_vlm_frames} "
-                f"complexity={','.join(frame_budget_meta.get('complexity_reasons', [])) or 'base'}"
-            )
+            if vlm_gate.get("action") == "local_positive":
+                local_vlm_resolutions += 1
+                local_vlm_verdict = {
+                    "status": "local_positive",
+                    "is_violation": True,
+                    "confidence": 0.92 if vlm_gate.get("mode") == "strict" else 0.86,
+                    "completed_action": "local_gate",
+                    "reason": vlm_gate.get("reason", "local_feature_gate_positive"),
+                    "frames_sent": 0,
+                    "frame_context_count": 0,
+                    "max_frames_requested": 0,
+                    "model": "local_vlm_gate",
+                }
+                _progress(
+                    f"[VLM LOCAL] case={case_id} progress={case_index}/{total_cases} "
+                    f"gate={vlm_gate.get('mode')} reason={vlm_gate.get('reason')}"
+                )
+            elif max_vlm_cases <= 0 or len(pending_vlm_records) < max_vlm_cases:
+                adaptive_frames, frame_budget_meta = _adaptive_vlm_frame_budget(
+                    fallback_meta,
+                    logs,
+                    max_frames=max_vlm_frames,
+                )
+                next_live_idx = len(pending_vlm_records) + 1
+                _progress(
+                    f"[VLM {next_live_idx}/{live_limit} QUEUED] "
+                    f"case={case_id} progress={case_index}/{total_cases} "
+                    f"expected={int(expected)} gate={vlm_gate.get('mode')} "
+                    f"reasons={','.join(fallback_meta.get('reasons', []))} "
+                    f"frames={adaptive_frames}/{max_vlm_frames} "
+                    f"complexity={','.join(frame_budget_meta.get('complexity_reasons', [])) or 'base'}"
+                )
+            else:
+                vlm_gate["action"] = "remote_limit_reached"
+                vlm_gate["reason"] = "max_vlm_cases_limit_reached"
         record = {
             "case_index": case_index,
             "total_cases": total_cases,
@@ -1718,16 +2160,22 @@ def run_benchmark(
             "adaptive_vlm_frames": adaptive_frames,
             "vlm_frame_budget": frame_budget_meta,
             "vlm_live_queued": adaptive_frames > 0,
-            "live_vlm_verdict": None,
+            "vlm_gate": vlm_gate,
+            "live_vlm_verdict": local_vlm_verdict,
         }
         case_records.append(record)
         if adaptive_frames > 0:
             pending_vlm_records.append(record)
 
-    result.live_vlm_reviews = len(pending_vlm_records)
+    result.live_vlm_reviews = local_vlm_resolutions + len(pending_vlm_records)
+    result.vlm_local_resolutions = local_vlm_resolutions
+    result.vlm_remote_requests = len(pending_vlm_records)
     workers = max(1, int(vlm_workers))
     if pending_vlm_records:
-        _progress(f"[VLM] running {len(pending_vlm_records)} live reviews with workers={workers}")
+        _progress(
+            f"[VLM] running {len(pending_vlm_records)} remote reviews with workers={workers} "
+            f"local_resolved={local_vlm_resolutions}"
+        )
         if _ocr_prefilter_enabled():
             _progress(f"[VLM] warming OCR engine={_ocr_engine_name()}")
             _warm_ocr_reader()
@@ -1742,6 +2190,7 @@ def run_benchmark(
                     sensitive_files=record["sensitive_files"],
                     fallback_meta=record["fallback_meta"],
                     max_frames=record["adaptive_vlm_frames"],
+                    local_ocr_gate=str(vlm_gate_mode or "all").strip().lower() != "all",
                 )
                 future_to_record[future] = record
 
@@ -1765,6 +2214,34 @@ def run_benchmark(
                     f"context_frames={verdict.get('frame_context_count', 0)}/{record['adaptive_vlm_frames']} "
                     f"reason={verdict.get('reason', '')}"
                 )
+
+    local_statuses = {"local_positive", "local_ocr_positive"}
+    local_vlm_resolutions = sum(
+        1
+        for record in case_records
+        if isinstance(record.get("live_vlm_verdict"), dict)
+        and str(record["live_vlm_verdict"].get("status", "")) in local_statuses
+        and not bool(record["live_vlm_verdict"].get("cache_hit"))
+    )
+    cache_hits = sum(
+        1
+        for record in case_records
+        if isinstance(record.get("live_vlm_verdict"), dict)
+        and bool(record["live_vlm_verdict"].get("cache_hit"))
+    )
+    remote_vlm_requests = sum(
+        1
+        for record in case_records
+        if isinstance(record.get("live_vlm_verdict"), dict)
+        and record.get("vlm_live_queued")
+        and str(record["live_vlm_verdict"].get("status", "")) not in local_statuses
+        and str(record["live_vlm_verdict"].get("reason", "")) != "missing_vlm_api_key"
+        and not bool(record["live_vlm_verdict"].get("cache_hit"))
+    )
+    result.vlm_local_resolutions = local_vlm_resolutions
+    result.vlm_cache_hits = cache_hits
+    result.vlm_remote_requests = remote_vlm_requests
+    result.live_vlm_reviews = local_vlm_resolutions + cache_hits + remote_vlm_requests
 
     for record in case_records:
         case_index = record["case_index"]
@@ -1857,6 +2334,7 @@ def run_benchmark(
                 "vlm_decision": fallback_meta.get("decision"),
                 "vlm_reasons": fallback_meta.get("reasons", []),
                 "vlm_live_queued": record["vlm_live_queued"],
+                "vlm_gate": record["vlm_gate"],
                 "adaptive_vlm_frames": record["adaptive_vlm_frames"],
                 "vlm_frame_budget": record["vlm_frame_budget"],
                 "live_vlm_verdict": vlm_verdict,
@@ -1881,6 +2359,9 @@ def _print_report(report: Dict[str, Any]) -> None:
         f"deterministic_hits={report['summary']['deterministic_hits']} "
         f"vlm_reviews={report['summary']['vlm_reviews']} "
         f"live_vlm_reviews={report['summary']['live_vlm_reviews']} "
+        f"remote_vlm_requests={report['summary'].get('vlm_remote_requests', 0)} "
+        f"local_vlm_resolutions={report['summary'].get('vlm_local_resolutions', 0)} "
+        f"vlm_cache_hits={report['summary'].get('vlm_cache_hits', 0)} "
         f"skipped={report['summary']['skipped_cases']}"
     )
     failures = [case for case in report["cases"] if case["final_bucket"] in {"fp", "fn"}]
@@ -1914,6 +2395,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         default=_int_env("DLD_VLM_WORKERS", 1, minimum=1),
         help="Number of concurrent live VLM requests.",
     )
+    parser.add_argument(
+        "--vlm-gate-mode",
+        choices=("all", "strict", "adaptive", "aggressive"),
+        default=os.getenv("DLD_VLM_GATE_MODE", "all").strip().lower(),
+        help=(
+            "Feature-based local gate before remote VLM: all keeps previous behavior; "
+            "strict/adaptive/aggressive skip remote calls for increasingly broad high-confidence local positives."
+        ),
+    )
     args = parser.parse_args(argv)
 
     report = run_benchmark(
@@ -1924,6 +2414,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         max_vlm_cases=args.max_vlm_cases,
         max_vlm_frames=args.max_vlm_frames,
         vlm_workers=args.vlm_workers,
+        vlm_gate_mode=args.vlm_gate_mode,
     )
     if args.json_output:
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
