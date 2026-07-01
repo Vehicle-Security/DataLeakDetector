@@ -3373,6 +3373,8 @@ def run_benchmark(
     root: Path,
     stages: Optional[List[str]] = None,
     case_filters: Optional[List[str]] = None,
+    case_offset: int = 0,
+    case_limit: int = 0,
     use_vlm: bool = False,
     max_vlm_cases: int = 0,
     max_vlm_frames: int = 12,
@@ -3405,6 +3407,18 @@ def run_benchmark(
                 continue
         case_dirs.append((case_dir, case_id))
 
+    discovered_cases = len(case_dirs)
+    selected_offset = max(0, int(case_offset))
+    selected_limit = max(0, int(case_limit))
+    selected_start = min(selected_offset, discovered_cases)
+    selected_end = discovered_cases if selected_limit <= 0 else min(discovered_cases, selected_start + selected_limit)
+    if selected_start > 0 or selected_end < discovered_cases:
+        _progress(
+            f"[SELECTION] cases={selected_start + 1 if selected_start < selected_end else 0}-"
+            f"{selected_end} of {discovered_cases} "
+            f"offset={selected_offset} limit={selected_limit or 'all'}"
+        )
+    case_dirs = case_dirs[selected_start:selected_end]
     total_cases = len(case_dirs)
     case_records: List[Dict[str, Any]] = []
     pending_vlm_records: List[Dict[str, Any]] = []
@@ -3743,7 +3757,16 @@ def run_benchmark(
             }
         )
 
-    return result.to_dict()
+    report = result.to_dict()
+    report["case_selection"] = {
+        "total_discovered_cases": discovered_cases,
+        "selected_cases": total_cases,
+        "case_offset": selected_offset,
+        "case_limit": selected_limit,
+        "selected_start": selected_start + 1 if total_cases else None,
+        "selected_end": selected_end if total_cases else None,
+    }
+    return report
 
 
 def _print_report(report: Dict[str, Any]) -> None:
@@ -3789,6 +3812,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     parser.add_argument("--stage", action="append", help="Limit to a stage directory, e.g. --stage stage1")
     parser.add_argument("--case", action="append", help="Limit to a case path/name, e.g. --case stage1/2-ai-poe-1")
+    parser.add_argument(
+        "--case-offset",
+        type=int,
+        default=0,
+        help="Skip this many discovered cases after --stage/--case filtering; useful for batching VLM runs.",
+    )
+    parser.add_argument(
+        "--case-limit",
+        type=int,
+        default=0,
+        help="Run at most this many discovered cases after --case-offset; 0 means no limit.",
+    )
     parser.add_argument("--json", action="store_true", help="Print JSON instead of a human report.")
     parser.add_argument("--json-output", type=Path, help="Write full JSON report to this path.")
     parser.add_argument("--use-vlm", action="store_true", help="Call a live VLM to verify triage-only cases.")
@@ -3832,6 +3867,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             args.data_root,
             args.stage,
             case_filters=args.case,
+            case_offset=args.case_offset,
+            case_limit=args.case_limit,
             use_vlm=args.use_vlm,
             max_vlm_cases=args.max_vlm_cases,
             max_vlm_frames=args.max_vlm_frames,
