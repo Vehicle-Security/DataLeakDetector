@@ -111,6 +111,95 @@ def import_modules():
 
 # ==================== 辅助函数 ====================
 
+def _repair_unclosed_simple_string_values(text: str) -> str:
+    # Repair narrow NAS log corruption like `"category": "xxx,` before newline.
+    return re.sub(r'(:\s*"[^"\r\n]*?)(,)(\s*\r?\n\s*")', r'\1"\2\3', text)
+
+
+def _recover_json_array_objects(text: str) -> List[Any]:
+    decoder = json.JSONDecoder(strict=False)
+    items: List[Any] = []
+    depth = 0
+    start: Optional[int] = None
+    in_string = False
+    escape = False
+    for index, char in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+        elif char == "}":
+            if depth <= 0:
+                continue
+            depth -= 1
+            if depth == 0 and start is not None:
+                raw = text[start:index + 1]
+                repairs = [
+                    raw,
+                    re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', raw),
+                    re.sub(r'""([^"\r\n]*?)""', r'"\1"', raw),
+                    _repair_unclosed_simple_string_values(raw),
+                ]
+                for candidate in repairs:
+                    candidate = re.sub(r",(\s*[}\]])", r"\1", candidate)
+                    candidate = _repair_unclosed_simple_string_values(candidate)
+                    try:
+                        item = decoder.decode(candidate)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(item, dict):
+                        items.append(item)
+                    break
+                start = None
+    return items
+
+
+def _load_json_lenient(content: str) -> Any:
+    text = content.strip()
+    candidates = [text]
+    collapsed_quotes = re.sub(r'""([^"\r\n]*?)""', r'"\1"', text)
+    if collapsed_quotes != text:
+        candidates.append(collapsed_quotes)
+    repaired_unclosed = _repair_unclosed_simple_string_values(text)
+    if repaired_unclosed != text:
+        candidates.append(repaired_unclosed)
+
+    expanded: List[str] = []
+    for candidate in candidates:
+        repaired = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', candidate)
+        repaired = re.sub(r",(\s*[}\]])", r"\1", repaired)
+        repaired = _repair_unclosed_simple_string_values(repaired)
+        if repaired != candidate:
+            expanded.append(repaired)
+    candidates.extend(expanded)
+
+    last_error: Optional[json.JSONDecodeError] = None
+    for candidate in candidates:
+        try:
+            return json.loads(candidate, strict=False)
+        except json.JSONDecodeError as exc:
+            last_error = exc
+
+    if text.startswith("["):
+        recovered = _recover_json_array_objects(text)
+        if recovered:
+            return recovered
+    if last_error:
+        raise last_error
+    raise json.JSONDecodeError("empty JSON", text, 0)
+
+
 def load_logs(log_file: str) -> List[Dict]:
     """加载日志文件，支持 JSON Lines 和 JSON Array 格式"""
     with open(log_file, 'r', encoding='utf-8') as f:
@@ -118,7 +207,8 @@ def load_logs(log_file: str) -> List[Dict]:
 
     # 尝试 JSON Array 格式
     if content.startswith('['):
-        return json.loads(content)
+        parsed = _load_json_lenient(content)
+        return [item for item in parsed if isinstance(item, dict)] if isinstance(parsed, list) else []
 
     # JSON Lines 格式（每行一个 JSON 对象）
     logs = []
@@ -126,9 +216,11 @@ def load_logs(log_file: str) -> List[Dict]:
         line = line.strip()
         if line:
             try:
-                logs.append(json.loads(line))
+                item = _load_json_lenient(line)
             except json.JSONDecodeError:
                 continue
+            if isinstance(item, dict):
+                logs.append(item)
     return logs
 
 

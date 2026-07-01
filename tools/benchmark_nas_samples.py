@@ -29,6 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 MAIN_DIR = REPO_ROOT / "main"
 DEFAULT_DATA_ROOT = REPO_ROOT / "spec" / "data" / "nas_samples"
 LOG_FILE_PRIORITY = ("keyevents.json", "logs.json")
+_PROGRESS_LOG_HANDLE: Optional[Any] = None
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -385,6 +386,8 @@ class BenchmarkSummary:
 
 def _progress(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
+    if _PROGRESS_LOG_HANDLE is not None:
+        print(message, file=_PROGRESS_LOG_HANDLE, flush=True)
 
 
 def _int_env(name: str, default: int, minimum: int = 1) -> int:
@@ -411,6 +414,13 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def _repair_unclosed_simple_string_values(text: str) -> str:
+    # Some NAS logs contain mojibake values like `"category": "xxx,` where the
+    # closing quote was lost before a comma/newline. Repair only this narrow
+    # object-field shape so we do not invent structure in severely truncated JSON.
+    return re.sub(r'(:\s*"[^"\r\n]*?)(,)(\s*\r?\n\s*")', r'\1"\2\3', text)
+
+
 def _read_json_lenient(path: Path) -> Any:
     text = _read_text(path).strip()
     candidates = [text]
@@ -419,10 +429,15 @@ def _read_json_lenient(path: Path) -> Any:
     if collapsed_quotes != text:
         candidates.append(collapsed_quotes)
 
+    repaired_unclosed = _repair_unclosed_simple_string_values(text)
+    if repaired_unclosed != text:
+        candidates.append(repaired_unclosed)
+
     expanded: List[str] = []
     for candidate in candidates:
         repaired = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', candidate)
         repaired = re.sub(r",(\s*[}\]])", r"\1", repaired)
+        repaired = _repair_unclosed_simple_string_values(repaired)
         if repaired != candidate:
             expanded.append(repaired)
     candidates.extend(expanded)
@@ -452,9 +467,60 @@ def _read_json_lenient(path: Path) -> Any:
         except json.JSONDecodeError as exc:
             last_error = exc
             pos += 1
+    if text.startswith("["):
+        recovered = _recover_json_array_objects(text)
+        if recovered:
+            return recovered
     if last_error:
         raise last_error
     raise json.JSONDecodeError("empty JSON", text, 0)
+
+
+def _recover_json_array_objects(text: str) -> List[Any]:
+    decoder = json.JSONDecoder(strict=False)
+    items: List[Any] = []
+    depth = 0
+    start: Optional[int] = None
+    in_string = False
+    escape = False
+    for index, char in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+        elif char == "}":
+            if depth <= 0:
+                continue
+            depth -= 1
+            if depth == 0 and start is not None:
+                raw = text[start:index + 1]
+                repairs = [
+                    raw,
+                    re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', raw),
+                    re.sub(r'""([^"\r\n]*?)""', r'"\1"', raw),
+                    _repair_unclosed_simple_string_values(raw),
+                ]
+                for candidate in repairs:
+                    candidate = re.sub(r",(\s*[}\]])", r"\1", candidate)
+                    candidate = _repair_unclosed_simple_string_values(candidate)
+                    try:
+                        items.append(decoder.decode(candidate))
+                        break
+                    except json.JSONDecodeError:
+                        continue
+                start = None
+    return items
 
 
 def _choose_log_file(case_dir: Path) -> Optional[Path]:
@@ -467,6 +533,26 @@ def _choose_log_file(case_dir: Path) -> Optional[Path]:
             return candidate
     files = sorted(logs_dir.glob("*.json"), key=lambda item: item.stat().st_size)
     return files[0] if files else None
+
+
+def _candidate_log_files(case_dir: Path) -> List[Path]:
+    logs_dir = case_dir / "logs"
+    if not logs_dir.exists():
+        return []
+    result: List[Path] = []
+    seen: set[Path] = set()
+    for name in LOG_FILE_PRIORITY:
+        candidate = logs_dir / name
+        if candidate.exists():
+            result.append(candidate)
+            seen.add(candidate.resolve())
+    for candidate in sorted(logs_dir.glob("*.json"), key=lambda item: item.stat().st_size, reverse=True):
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        result.append(candidate)
+    return result
 
 
 def _log_key(log: Dict[str, Any]) -> tuple:
@@ -496,12 +582,30 @@ def _is_extra_log_relevant(log: Dict[str, Any], log_first: Any) -> bool:
 
 
 def _load_case_logs(case_dir: Path, log_first: Any) -> tuple[List[Dict[str, Any]], str]:
-    primary = _choose_log_file(case_dir)
-    if not primary:
+    candidates = _candidate_log_files(case_dir)
+    if not candidates:
         return [], ""
-    logs = _read_json_lenient(primary)
-    if not isinstance(logs, list):
-        raise ValueError("primary log file is not a JSON array")
+    errors: List[str] = []
+    primary = candidates[0]
+    logs: Any = []
+    for candidate in candidates:
+        try:
+            parsed = _read_json_lenient(candidate)
+        except Exception as exc:
+            errors.append(f"{candidate.name}:{type(exc).__name__}")
+            continue
+        if not isinstance(parsed, list):
+            errors.append(f"{candidate.name}:not_array")
+            continue
+        dict_rows = [item for item in parsed if isinstance(item, dict)]
+        if not dict_rows:
+            errors.append(f"{candidate.name}:empty")
+            continue
+        primary = candidate
+        logs = dict_rows
+        break
+    else:
+        raise ValueError(f"no readable log JSON arrays ({', '.join(errors)})")
 
     source_name = primary.name
     full_log = case_dir / "logs" / "logs.json"
@@ -3593,6 +3697,7 @@ def _print_report(report: Dict[str, Any]) -> None:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    global _PROGRESS_LOG_HANDLE
     parser = argparse.ArgumentParser(description="Benchmark downloaded NAS samples with optional live VLM verification.")
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     parser.add_argument("--stage", action="append", help="Limit to a stage directory, e.g. --stage stage1")
@@ -3624,19 +3729,44 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    report = run_benchmark(
-        args.data_root,
-        args.stage,
-        case_filters=args.case,
-        use_vlm=args.use_vlm,
-        max_vlm_cases=args.max_vlm_cases,
-        max_vlm_frames=args.max_vlm_frames,
-        vlm_workers=args.vlm_workers,
-        vlm_gate_mode=args.vlm_gate_mode,
-    )
+    log_path: Optional[Path] = None
+    if args.json_output:
+        log_path = args.json_output.with_suffix(".log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    log_handle = None
+    try:
+        if log_path:
+            log_handle = log_path.open("w", encoding="utf-8")
+            _PROGRESS_LOG_HANDLE = log_handle
+            _progress(f"[OUTPUT] progress_log={log_path}")
+
+        report = run_benchmark(
+            args.data_root,
+            args.stage,
+            case_filters=args.case,
+            use_vlm=args.use_vlm,
+            max_vlm_cases=args.max_vlm_cases,
+            max_vlm_frames=args.max_vlm_frames,
+            vlm_workers=args.vlm_workers,
+            vlm_gate_mode=args.vlm_gate_mode,
+        )
+    finally:
+        _PROGRESS_LOG_HANDLE = None
+        if log_handle is not None:
+            log_handle.close()
+
     if args.json_output:
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
         args.json_output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            from analyze_benchmark_errors import build_error_payload
+
+            errors_path = args.json_output.with_name(f"{args.json_output.stem}_errors.json")
+            errors_payload = build_error_payload(report, metric="final")
+            errors_path.write_text(json.dumps(errors_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as exc:
+            _progress(f"[OUTPUT] failed_to_write_errors error={type(exc).__name__}:{exc}")
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
