@@ -1269,7 +1269,7 @@ def _local_vlm_gate_decision(
     return decision
 
 
-VLM_REVIEW_CACHE_VERSION = "v4-segment"
+VLM_REVIEW_CACHE_VERSION = "v5-audit-actions"
 
 
 def _bool_env(name: str, default: bool = True) -> bool:
@@ -2009,6 +2009,11 @@ Strict completion rules:
 - Cloud/Git/community upload is completed only after success, remote listing, commit/publish success, or a generated remote attachment link.
 - AI/chat input containing sensitive content is content_exposed even before a final submit if the content is visible in the external service.
 - A draft, file picker, highlighted send button, selected file, or upload page alone is not completed, but may be selected_or_attached or in_progress.
+- For observed_actions, emit one separate structured action for every sensitive-object interaction you can see or infer from the provided logs.
+- If a sensitive file is attached to an email/chat/cloud/community/AI sink, use attach_file or upload_start with source_file set to the exact sensitive file path/name even when the final verdict is not completed.
+- If sensitive content or a sensitive file is visible inside an external input/editor/chat, use paste_content, attach_file, or external_exposure with risk_level content_exposed.
+- Do not output action_type none for a segment that contains a visible sensitive attachment, upload widget, sent message, external editor content, screen share, screenshot, VM copy, or cloud sync evidence.
+- source_file must be the sensitive source path/name; derived_file is only for renamed/exported/copied artifacts. Leave derived_file empty instead of inventing an unrelated system/cache file.
 
 Output exactly one JSON object and no markdown:
 {{
@@ -2129,6 +2134,198 @@ def _infer_risk_level_from_verdict(verdict: Dict[str, Any]) -> str:
     if any(marker in reason for marker in exposed_markers) and not any(marker in reason for marker in negative_markers):
         return "content_exposed"
     return "preparation" if any(marker in reason for marker in EXTERNAL_SINK_TOKENS) else "none"
+
+
+def _has_negative_completion_context(text: str) -> bool:
+    lowered = str(text or "").lower()
+    negative_markers = (
+        "not sent",
+        "not clicked",
+        "not completed",
+        "not confirmed",
+        "not submitted",
+        "no upload",
+        "no send",
+        "no evidence",
+        "without sending",
+        "without upload",
+        "upload has not",
+        "has not been sent",
+        "has not been confirmed",
+        "not visible",
+        "not observed",
+        "preparation",
+        "draft",
+        "file picker",
+        "rather than completed",
+        "not fully",
+        "final publish/submit action has not",
+        "completed upload confirmed",
+        "\u672a\u53d1\u9001",
+        "\u672a\u4e0a\u4f20",
+        "\u672a\u5b8c\u6210",
+        "\u672a\u63d0\u4ea4",
+        "\u6ca1\u6709\u53d1\u9001",
+        "\u6ca1\u6709\u4e0a\u4f20",
+        "\u65e0\u8bc1\u636e",
+        "\u8349\u7a3f",
+        "\u9009\u62e9\u6587\u4ef6",
+        "\u672a\u786e\u8ba4",
+    )
+    return any(marker in lowered for marker in negative_markers)
+
+
+def _infer_action_type_from_text(text: str) -> str:
+    lowered = str(text or "").lower()
+    if any(token in lowered for token in ("screen share", "shared screen", "meeting", "zoom", "teams", "\u5171\u4eab\u5c4f\u5e55", "\u4f1a\u8bae")):
+        return "screen_share"
+    if any(token in lowered for token in ("screenshot", "screen capture", "\u622a\u56fe", "\u622a\u5c4f")):
+        return "screenshot"
+    if any(token in lowered for token in ("vmware", "virtualbox", "virtual machine", "vm copy", "\u865a\u62df\u673a")):
+        return "vm_copy"
+    if any(token in lowered for token in ("ai", "chatgpt", "deepseek", "kimi", "poe", "gemini", "doubao", "input field", "pasted into", "\u8f93\u5165\u6846", "\u7c98\u8d34")):
+        return "external_exposure"
+    if any(token in lowered for token in ("mail", "email", "gmail", "outlook", "proton", "qq mail", "message", "sent", "delivered", "\u90ae\u4ef6", "\u90ae\u7bb1", "\u53d1\u9001", "\u6295\u9012\u6210\u529f")):
+        return "send_message"
+    if any(token in lowered for token in ("publish", "commit", "csdn", "github", "gitlab", "gitee", "bitbucket", "\u53d1\u5e03", "\u63d0\u4ea4")):
+        return "publish_content"
+    if any(token in lowered for token in ("upload", "uploaded", "attachment", "attached", "cloud", "drive", "netdisk", "dropbox", "onedrive", "\u4e0a\u4f20", "\u9644\u4ef6", "\u4e91\u76d8", "\u7f51\u76d8")):
+        return "upload_complete"
+    return "external_exposure"
+
+
+def _completion_evidence_from_text(text: str) -> bool:
+    lowered = str(text or "").lower()
+    if not lowered:
+        return False
+    strong_completion_markers = (
+        "upload complete",
+        "upload completed",
+        "successfully uploaded",
+        "save successful",
+        "sent successfully",
+        "delivered successfully",
+        "delivered",
+        "sent message",
+        "message appears",
+        "directly exposed",
+        "content exposed",
+        "pasted into",
+        "visible in the input",
+        "remote listing",
+        "shareable link",
+        "commit successful",
+        "publish success",
+        "\u4e0a\u4f20\u5b8c\u6210",
+        "\u4e0a\u4f20\u6210\u529f",
+        "\u4fdd\u5b58\u6210\u529f",
+        "\u53d1\u9001\u6210\u529f",
+        "\u6295\u9012\u6210\u529f",
+        "\u5df2\u4f5c\u4e3a\u9644\u4ef6",
+        "\u53ef\u89c1\u4e3a\u9644\u4ef6",
+        "\u76f4\u63a5\u66b4\u9732",
+        "\u7c98\u8d34\u5230",
+        "\u5206\u4eab\u94fe\u63a5",
+        "\u63d0\u4ea4\u6210\u529f",
+        "\u53d1\u5e03\u6210\u529f",
+    )
+    if any(marker in lowered for marker in strong_completion_markers) and not _has_negative_completion_context(lowered):
+        return True
+    completion_markers = (
+        "uploaded",
+        "completed",
+        "success",
+        "delivered",
+        "sent",
+        "shared",
+        "committed",
+        "\u5df2\u4e0a\u4f20",
+        "\u5b8c\u6210",
+        "\u6210\u529f",
+        "\u5df2\u53d1\u9001",
+        "\u5df2\u5171\u4eab",
+    )
+    return not _has_negative_completion_context(lowered) and any(marker in lowered for marker in completion_markers)
+
+
+def _best_vlm_reason_action(
+    verdict: Dict[str, Any],
+    sensitive_files: List[str],
+    logs: Optional[List[Dict[str, Any]]] = None,
+) -> Optional[Dict[str, Any]]:
+    reason = str(verdict.get("reason", "") or "")
+    segments = [
+        part.strip(" ;")
+        for part in re.split(r"(?:^|;\s*)vlm_seg_\d+:", reason)
+        if part.strip(" ;")
+    ] or [reason]
+    completion_segments = [segment for segment in segments if _completion_evidence_from_text(segment)]
+    if not completion_segments:
+        return None
+    evidence_text = max(completion_segments, key=len)
+    frontend = _normalize_frontend_app(verdict.get("frontend_app"), logs)
+    frame_times = _frame_timestamps_by_index(verdict)
+    evidence_frames = [
+        int(item)
+        for item in verdict.get("evidence_frames", []) or []
+        if str(item).strip().isdigit()
+    ]
+    action_type = _infer_action_type_from_text(evidence_text)
+    risk_level = "content_exposed" if action_type == "external_exposure" else "completed"
+    return {
+        "action_id": "vlm_reason_completion",
+        "segment_id": str(verdict.get("segment_id") or ""),
+        "action_type": action_type,
+        "risk_level": risk_level,
+        "time": frame_times.get(evidence_frames[0], "") if evidence_frames else _verdict_timestamp({}, logs or []),
+        "app": frontend.get("name", ""),
+        "app_category": frontend.get("category", "unknown"),
+        "source_file": str(sensitive_files[0] if sensitive_files else ""),
+        "derived_file": "",
+        "evidence_frames": evidence_frames,
+        "confidence": round(max(_safe_float(verdict.get("confidence", 0.0)), 0.82), 4),
+        "description": _compact_text(evidence_text, 500),
+        "evidence_source": "remote_vlm_reason",
+    }
+
+
+def _local_positive_supports_leak(action: Dict[str, Any]) -> bool:
+    reason = str(action.get("description", "") or "").lower()
+    strong_reasons = (
+        "explicit_transfer_event",
+        "vm_context",
+        "export_context",
+        "git_context_with_completion_text",
+        "archive_or_convert_with_completion_text",
+    )
+    return any(marker in reason for marker in strong_reasons)
+
+
+def _content_exposure_action_supports_leak(action: Dict[str, Any]) -> bool:
+    action_type = _normalize_action_type(str(action.get("action_type", "") or ""))
+    risk_level = _normalize_risk_level(str(action.get("risk_level", "") or ""))
+    if risk_level != "content_exposed":
+        return False
+    text = " ".join(
+        str(action.get(key, "") or "").lower()
+        for key in ("app", "app_category", "description", "evidence_source")
+    )
+    external_markers = tuple(token.lower() for token in EXTERNAL_SINK_TOKENS) + (
+        "ai_service",
+        "community_publish",
+        "cloud_storage",
+        "messaging",
+        "email",
+        "sync",
+        "onedrive",
+        "sticky notes",
+        "\u4fbf\u7b3a",
+    )
+    if action_type == "attach_file":
+        return any(marker in text for marker in ("ai_service", "chat input", "input box", "submitted", "processed", "exploring user request", "\u8f93\u5165\u6846"))
+    if action_type in {"paste_content", "copy_content"}:
+        return any(marker in text for marker in external_markers)
+    return action_type == "external_exposure"
 
 
 def _postprocess_vlm_verdict(verdict: Dict[str, Any]) -> None:
@@ -2313,6 +2510,13 @@ def _normalize_observed_actions(
                 "evidence_source": "remote_vlm" if verdict.get("status") == "success" else str(verdict.get("status", "vlm")),
             }
         )
+    if (
+        not any(item.get("risk_level") in {"content_exposed", "completed"} for item in normalized)
+        or not any(_normalize_action_type(str(item.get("action_type", ""))) not in {"none", "unknown"} for item in normalized)
+    ):
+        reason_action = _best_vlm_reason_action(verdict, sensitive_files, logs)
+        if reason_action:
+            normalized.append(reason_action)
     return normalized
 
 
@@ -2895,6 +3099,13 @@ def _detection_actions(
             raw = event
         else:
             raw = {}
+        source_file = str(raw.get("original_file", "") or raw.get("file_path", "") or raw.get("file_name", "") or "")
+        uploaded_file = str(
+            raw.get("upload_content", "")
+            or raw.get("file_path", "")
+            or raw.get("file_name", "")
+            or source_file
+        )
         actions.append(
             {
                 "action_id": f"{case_id}:det_upload_{index}",
@@ -2903,8 +3114,8 @@ def _detection_actions(
                 "time": str(raw.get("timestamp", "") or raw.get("time", "") or ""),
                 "app": str(raw.get("app_name", "") or raw.get("process_name", "") or ""),
                 "app_category": "unknown",
-                "source_file": str(raw.get("file_path", "") or raw.get("file_name", "") or ""),
-                "derived_file": "",
+                "source_file": source_file,
+                "derived_file": uploaded_file if uploaded_file != source_file else "",
                 "evidence_frames": [],
                 "confidence": round(_safe_float(raw.get("confidence", 0.95), 0.95), 4),
                 "description": str(raw.get("description", "") or "deterministic upload event"),
@@ -3189,8 +3400,6 @@ def _audit_actions_to_datalog_facts(
         action_type = _normalize_action_type(str(action.get("action_type", "") or "unknown"))
         risk_level = _normalize_risk_level(str(action.get("risk_level", "") or ""))
         evidence_source = str(action.get("evidence_source", "") or "audit_action")
-        if evidence_source == "local_positive":
-            continue
         source_file = str(action.get("source_file", "") or "")
         derived_file = str(action.get("derived_file", "") or "")
         if derived_file and not _is_valid_sensitive_file_ref(derived_file):
@@ -3226,7 +3435,7 @@ def _audit_actions_to_datalog_facts(
                     )
             data = derived
 
-        if action_type in {
+        leak_action_types = {
             "upload_complete",
             "send_message",
             "publish_content",
@@ -3235,7 +3444,12 @@ def _audit_actions_to_datalog_facts(
             "screenshot",
             "screen_record",
             "vm_copy",
-        } or risk_level in {"content_exposed", "completed"}:
+        }
+        local_positive_leak_allowed = evidence_source != "local_positive" or _local_positive_supports_leak(action)
+        if local_positive_leak_allowed and (action_type in leak_action_types or (
+            action_type not in {"select_file", "attach_file", "upload_start", "open_file", "copy_content", "paste_content"}
+            and risk_level in {"content_exposed", "completed"}
+        ) or _content_exposure_action_supports_leak(action)):
             channel = action_type if action_type not in {"unknown", "none"} else "external_exposure"
             add("LeakFile", (f"{op_id}:leak", process, data, channel, timestamp), raw_action_id, evidence_source)
 
@@ -3665,12 +3879,8 @@ def run_benchmark(
         evidence_sources = _audit_evidence_sources(audit_actions)
         datalog_positive = bool(datalog_decision.get("risk_positive"))
         datalog_confirmed = bool(datalog_decision.get("confirmed_leak"))
-        vlm_fallback_positive = bool(vlm_verdict) and _vlm_final_positive(vlm_verdict)
-        final_positive = triage_positive or datalog_positive
+        final_positive = datalog_positive
         confirmed_leak = datalog_confirmed
-        if not triage_positive and not datalog_positive and vlm_fallback_positive:
-            final_positive = True
-            datalog_decision["reason"] = f"{datalog_decision.get('reason', '')};vlm_risk_fallback"
 
         triage_bucket = result.triage.add(expected, triage_positive)
         deterministic_bucket = result.deterministic.add(expected, deterministic_positive)
@@ -3736,7 +3946,7 @@ def run_benchmark(
                 "confirmed_leak": confirmed_leak,
                 "confirmed_bucket": confirmed_bucket,
                 "review_source": review_source,
-                "reasoning_source": "datalog" if datalog_positive else ("triage" if final_positive else "none"),
+                "reasoning_source": "datalog" if final_positive else "none",
                 "evidence_sources": evidence_sources,
                 "datalog_decision": datalog_decision,
                 "datalog_facts": datalog_decision.get("facts", []),

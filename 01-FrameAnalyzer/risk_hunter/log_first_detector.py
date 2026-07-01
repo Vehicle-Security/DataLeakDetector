@@ -8,14 +8,20 @@ an upload event. VLM analysis can still be used as a fallback by callers.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from upload_detector_state import UploadEvent
 from upload_detection_config import UploadDetectionConfig
 
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_SYSTEM_NOISE_PROFILE = REPO_ROOT / "spec" / "config" / "system_noise_profile.json"
+SYSTEM_NOISE_PROFILE_ENV = "DLD_SYSTEM_NOISE_PROFILE"
 
 SENSITIVE_KEYWORDS = [
     "\u85aa\u8d44",
@@ -120,28 +126,17 @@ EXPORT_EXTENSIONS = {".pdf", ".csv", ".xlsx", ".xls", ".docx", ".doc", ".png", "
 FILE_PATH_PATTERN = re.compile(
     r"([A-Za-z]:[\\/][^\"'\r\n]+?\.[A-Za-z0-9]{1,8}|/[^\"'\r\n]+?\.[A-Za-z0-9]{1,8})"
 )
-SYSTEM_NOISE_PATH_MARKERS = (
-    "/appdata/local/microsoft/edge/user data/",
-    "/appdata/local/google/chrome/user data/",
+GENERIC_SYSTEM_NOISE_PATH_MARKERS = (
     "/appdata/local/packages/microsoftwindows.client.cbs",
     "/appdata/local/microsoft/windows/",
     "/appdata/local/temp/",
-    "/appdata/local/lenovo/slbrowser/",
     "/appdata/locallow/microsoft/cryptneturlcache/",
     "/appdata/roaming/microsoft/windows/recent/",
-    "/appdata/roaming/tencent/",
-    "/appdata/roaming/qqex/",
-    "/appdata/roaming/qq/partitions/",
-    "/appdata/roaming/baidu/",
-    "/browserengine/users/",
-    "/nt_db/",
-    "/weblog/",
-    "/log/radium/",
     "/windows/system32/",
     "/program files/",
     "/program files (x86)/",
 )
-SYSTEM_NOISE_BASENAMES = {
+GENERIC_SYSTEM_NOISE_BASENAMES = {
     "cookies",
     "cookies-journal",
     "quotamanager",
@@ -155,6 +150,35 @@ SYSTEM_NOISE_BASENAMES = {
     "log",
     "log.old",
 }
+GENERIC_SYSTEM_NOISE_EXTENSIONS = {
+    ".aodl",
+    ".db",
+    ".db-journal",
+    ".sqlite",
+    ".sqlite3",
+    ".sqlite-wal",
+    ".sqlite-shm",
+    ".wal",
+    ".shm",
+    ".log",
+    ".xlog",
+    ".tmp",
+    ".temp",
+}
+GENERIC_SYSTEM_NOISE_EXTENSION_CONTEXTS = (
+    "/appdata/",
+    "/log/",
+    "/logs/",
+    "/cache/",
+)
+GENERIC_SYSTEM_NOISE_SIDECAR_SUFFIXES = (
+    "-journal",
+    ".db-wal",
+    ".db-shm",
+    ".sqlite-wal",
+    ".sqlite-shm",
+)
+_SYSTEM_NOISE_PROFILE_CACHE: Dict[str, Dict[str, tuple[str, ...]]] = {}
 
 
 def normalize_path(path: str) -> str:
@@ -195,6 +219,55 @@ def extension(path: str) -> str:
     return os.path.splitext(basename(path))[1].lower()
 
 
+def _normalize_profile_items(items: Any) -> tuple[str, ...]:
+    if not isinstance(items, list):
+        return ()
+    normalized = []
+    for item in items:
+        value = normalize_path(str(item or "")).strip().lower()
+        if value:
+            normalized.append(value)
+    return tuple(normalized)
+
+
+def _system_noise_profile_path() -> Path:
+    configured = os.getenv(SYSTEM_NOISE_PROFILE_ENV, "").strip()
+    if not configured:
+        return DEFAULT_SYSTEM_NOISE_PROFILE
+    path = Path(configured)
+    return path if path.is_absolute() else (REPO_ROOT / path)
+
+
+def _load_system_noise_profile() -> Dict[str, tuple[str, ...]]:
+    path = _system_noise_profile_path()
+    cache_key = str(path.resolve()) if path.exists() else str(path)
+    if cache_key in _SYSTEM_NOISE_PROFILE_CACHE:
+        return _SYSTEM_NOISE_PROFILE_CACHE[cache_key]
+
+    profile = {
+        "path_markers": (),
+        "basenames": (),
+        "extension_context_markers": (),
+    }
+    if path.exists():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                profile = {
+                    "path_markers": _normalize_profile_items(payload.get("path_markers")),
+                    "basenames": _normalize_profile_items(payload.get("basenames")),
+                    "extension_context_markers": _normalize_profile_items(payload.get("extension_context_markers")),
+                }
+        except Exception:
+            profile = {
+                "path_markers": (),
+                "basenames": (),
+                "extension_context_markers": (),
+            }
+    _SYSTEM_NOISE_PROFILE_CACHE[cache_key] = profile
+    return profile
+
+
 def flatten_log_text(log: Dict[str, Any]) -> str:
     parts = [
         log.get("event_type", ""),
@@ -221,9 +294,18 @@ def is_system_noise_path(path: str) -> bool:
     if not normalized:
         return False
     base = basename(normalized)
-    if base in SYSTEM_NOISE_BASENAMES:
+    profile = _load_system_noise_profile()
+    if base in GENERIC_SYSTEM_NOISE_BASENAMES or base in profile["basenames"]:
         return True
-    if any(marker in normalized for marker in SYSTEM_NOISE_PATH_MARKERS):
+    if any(base.endswith(suffix) for suffix in GENERIC_SYSTEM_NOISE_SIDECAR_SUFFIXES):
+        return True
+    if extension(normalized) in GENERIC_SYSTEM_NOISE_EXTENSIONS:
+        extension_contexts = GENERIC_SYSTEM_NOISE_EXTENSION_CONTEXTS + profile["extension_context_markers"]
+        if any(marker in normalized for marker in extension_contexts):
+            return True
+    if any(marker in normalized for marker in GENERIC_SYSTEM_NOISE_PATH_MARKERS):
+        return True
+    if any(marker in normalized for marker in profile["path_markers"]):
         return True
     return bool(re.search(r"/cache(_data)?/|/indexeddb/|/code cache/|/webstorage/|/network/", normalized))
 

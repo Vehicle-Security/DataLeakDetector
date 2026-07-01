@@ -1,0 +1,38 @@
+{
+  "description": "Deployment-specific file-system noise profile for log-first detection. Keep generic heuristics in code; put vendor or environment-specific cache/state paths here.",
+  "path_markers": [
+    "/appdata/local/microsoft/edge/user data/",
+    "/appdata/local/microsoft/onedrive/",
+    "/appdata/local/google/chrome/user data/",
+    "/appdata/local/lenovo/slbrowser/",
+    "/appdata/roaming/code/",
+    "/appdata/roaming/larkshell/",
+    "/appdata/roaming/tencent/",
+    "/appdata/roaming/qqex/",
+    "/appdata/roaming/qq/partitions/",
+    "/appdata/roaming/baidu/",
+    "/onedrive/logs/",
+    "/onedrive/listsync/",
+    "/tencent files/",
+    "/nt_qq/nt_data/log/",
+    "/browserengine/users/",
+    "/nt_db/",
+    "/weblog/",
+    "/log/radium/"
+  ],
+  "basenames": [
+    "microsoft.localcontent.db",
+    "microsoft.localcontent.db-journal",
+    "filesyncfscache.db",
+    "filesyncfscache.db-wal",
+    "filesyncfscache.db-shm",
+    "state.vscdb",
+    "state.vscdb-journal"
+  ],
+  "extension_context_markers": [
+    "/onedrive/logs/",
+    "/onedrive/listsync/",
+    "/tencent files/",
+    "/nt_qq/"
+  ]
+}
