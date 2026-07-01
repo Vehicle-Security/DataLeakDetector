@@ -270,6 +270,18 @@ POSITIVE_RISK_LEVELS = {
     "completed",
 }
 
+SEGMENT_SECONDS = 45
+SEGMENT_OVERLAP_SECONDS = 10
+FRAMES_PER_SEGMENT = 4
+CANDIDATE_FRAMES_PER_SEGMENT = 24
+MAX_SEGMENTS_PER_CASE = 6
+MAX_IMAGE_FRAMES_PER_SEGMENT = 4
+MAX_OCR_FRAMES_PER_SEGMENT = 3
+IMAGE_SCENE_THRESHOLD = 0.08
+MIN_FRAME_GAP = 12
+IMAGE_MAX_EDGE = 960
+JPEG_QUALITY = 65
+
 MONITOR_UI_TOKENS = (
     "localhost:5000",
     "localhost 5000",
@@ -896,14 +908,12 @@ def _prepare_review_segments(
     windows: List[Tuple[datetime, datetime]],
     fallback_meta: Dict[str, Any],
     logs: List[Dict[str, Any]],
+    max_segments: Optional[int] = None,
 ) -> Tuple[List[Tuple[datetime, datetime]], Dict[str, Any]]:
-    merge_gap = _int_env("DLD_VLM_WINDOW_MERGE_GAP_SECONDS", 8, minimum=0)
-    segment_seconds = _int_env("DLD_VLM_SEGMENT_SECONDS", 60, minimum=5)
-    overlap_seconds = min(
-        segment_seconds - 1,
-        _int_env("DLD_VLM_SEGMENT_OVERLAP_SECONDS", 8, minimum=0),
-    )
-    max_segments = _int_env("DLD_VLM_MAX_SEGMENTS_PER_CASE", 3, minimum=1)
+    merge_gap = 8
+    segment_seconds = SEGMENT_SECONDS
+    overlap_seconds = min(segment_seconds - 1, SEGMENT_OVERLAP_SECONDS)
+    max_segments = max(1, min(MAX_SEGMENTS_PER_CASE, int(max_segments or MAX_SEGMENTS_PER_CASE)))
 
     merged = _merge_review_windows(windows, merge_gap)
     split_segments: List[Tuple[datetime, datetime]] = []
@@ -1259,66 +1269,7 @@ def _local_vlm_gate_decision(
     return decision
 
 
-def _local_ocr_vlm_verdict(
-    frame_records: List[Dict[str, Any]],
-    max_frames: int,
-    frame_plan: Dict[str, Any],
-    enabled: bool,
-) -> Optional[Dict[str, Any]]:
-    if not enabled:
-        return None
-    value = os.getenv("DLD_VLM_LOCAL_OCR_GATE", "1").strip().lower()
-    if value in {"0", "false", "no", "off"}:
-        return None
-
-    completion_frames = [
-        int(item.get("index", 0) or 0)
-        for item in frame_records
-        if "completion_keyword" in (item.get("ocr_flags") or [])
-    ]
-    sensitive_frames = [
-        int(item.get("index", 0) or 0)
-        for item in frame_records
-        if "sensitive_name_visible" in (item.get("ocr_flags") or [])
-    ]
-    evidence_frames = sorted(set(completion_frames) & set(sensitive_frames))
-    if not evidence_frames:
-        return None
-
-    return {
-        "status": "local_ocr_positive",
-        "is_violation": True,
-        "risk_level": "completed",
-        "confidence": 0.88,
-        "completed_action": "local_ocr",
-        "evidence_frames": evidence_frames,
-        "reason": "local_ocr_completion_keyword_and_sensitive_name_visible",
-        "frames_sent": 0,
-        "frame_context_count": len(frame_records),
-        "max_frames_requested": max_frames,
-        "frame_plan": frame_plan,
-        "model": "local_ocr_gate",
-        "frame_selection": [
-            {
-                "index": image["index"],
-                "timestamp": image["timestamp"],
-                "frame_index": image["frame_index"],
-                "scene_score": image.get("scene_score"),
-                "selection_reason": image.get("selection_reason"),
-                "image_sent": bool(image.get("image_sent")),
-                "ocr_text": image.get("ocr_text", ""),
-                "ocr_flags": image.get("ocr_flags", []),
-                "ocr_ran": bool(image.get("ocr_ran")),
-                "ocr_duplicate": bool(image.get("ocr_duplicate")),
-                "image_priority": image.get("image_priority", 0.0),
-                "image_decision_reasons": image.get("image_decision_reasons", []),
-            }
-            for image in frame_records
-        ],
-    }
-
-
-VLM_REVIEW_CACHE_VERSION = "v3"
+VLM_REVIEW_CACHE_VERSION = "v4-segment"
 
 
 def _bool_env(name: str, default: bool = True) -> bool:
@@ -1364,7 +1315,6 @@ def _vlm_review_cache_path(
     max_frames: int,
     model: str,
     base_url: str,
-    local_ocr_gate: bool,
 ) -> Path:
     review_logs = _review_log_context(logs, _windows_from_fallback(fallback_meta, logs))
     cache_payload = {
@@ -1382,17 +1332,18 @@ def _vlm_review_cache_path(
         "max_frames": int(max_frames),
         "model": model,
         "base_url": base_url,
-        "local_ocr_gate": bool(local_ocr_gate),
         "params": {
-            "candidate_frames": os.getenv("DLD_VLM_REVIEW_CANDIDATE_FRAMES", ""),
-            "min_frame_gap": os.getenv("DLD_VLM_REVIEW_MIN_FRAME_GAP", ""),
-            "image_max_edge": os.getenv("DLD_VLM_REVIEW_IMAGE_MAX_EDGE", ""),
-            "jpeg_quality": os.getenv("DLD_VLM_REVIEW_JPEG_QUALITY", ""),
-            "max_image_frames": os.getenv("DLD_VLM_REVIEW_MAX_IMAGE_FRAMES", ""),
-            "min_image_frames": os.getenv("DLD_VLM_REVIEW_MIN_IMAGE_FRAMES", ""),
-            "max_ocr_frames": os.getenv("DLD_VLM_REVIEW_MAX_OCR_FRAMES", ""),
-            "image_scene_threshold": os.getenv("DLD_VLM_REVIEW_IMAGE_SCENE_THRESHOLD", ""),
-            "local_ocr_gate_env": os.getenv("DLD_VLM_LOCAL_OCR_GATE", ""),
+            "segment_seconds": SEGMENT_SECONDS,
+            "segment_overlap_seconds": SEGMENT_OVERLAP_SECONDS,
+            "frames_per_segment": FRAMES_PER_SEGMENT,
+            "candidate_frames_per_segment": CANDIDATE_FRAMES_PER_SEGMENT,
+            "max_segments_per_case": MAX_SEGMENTS_PER_CASE,
+            "max_image_frames_per_segment": MAX_IMAGE_FRAMES_PER_SEGMENT,
+            "max_ocr_frames_per_segment": MAX_OCR_FRAMES_PER_SEGMENT,
+            "min_frame_gap": MIN_FRAME_GAP,
+            "image_scene_threshold": IMAGE_SCENE_THRESHOLD,
+            "image_max_edge": IMAGE_MAX_EDGE,
+            "jpeg_quality": JPEG_QUALITY,
             "ocr_prefilter": os.getenv("DLD_VLM_ENABLE_OCR_PREFILTER", ""),
             "ocr_engine": _ocr_engine_name(),
         },
@@ -1423,7 +1374,7 @@ def _read_vlm_review_cache(cache_path: Path) -> Optional[Dict[str, Any]]:
 def _write_vlm_review_cache(cache_path: Path, verdict: Dict[str, Any]) -> None:
     if not _bool_env("DLD_VLM_REVIEW_CACHE", True):
         return
-    if str(verdict.get("reason", "")) == "missing_vlm_api_key":
+    if _vlm_missing_api_key(verdict):
         return
     try:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1440,19 +1391,29 @@ def _write_vlm_review_cache(cache_path: Path, verdict: Dict[str, Any]) -> None:
         _progress(f"[VLM CACHE] write_failed path={cache_path} error={type(exc).__name__}:{exc}")
 
 
+def _vlm_missing_api_key(verdict: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(verdict, dict):
+        return False
+    if str(verdict.get("reason", "")) == "missing_vlm_api_key":
+        return True
+    segment_verdicts = [item for item in verdict.get("segment_verdicts", []) or [] if isinstance(item, dict)]
+    return bool(segment_verdicts) and all(str(item.get("reason", "")) == "missing_vlm_api_key" for item in segment_verdicts)
+
+
 def _adaptive_vlm_frame_budget(
     fallback_meta: Dict[str, Any],
     logs: List[Dict[str, Any]],
     max_frames: int,
 ) -> Tuple[int, Dict[str, Any]]:
     cap = max(1, int(max_frames))
-    min_frames = min(cap, _int_env("DLD_VLM_REVIEW_MIN_FRAMES", min(4, cap), minimum=1))
-    base_frames = min(cap, max(min_frames, _int_env("DLD_VLM_REVIEW_BASE_FRAMES", 6, minimum=1)))
+    min_frames = min(cap, FRAMES_PER_SEGMENT)
+    base_frames = min(cap, max(min_frames, FRAMES_PER_SEGMENT * 2))
     frames = base_frames
     reasons: List[str] = []
 
     windows = _windows_from_fallback(fallback_meta, logs)
-    review_segments, segment_meta = _prepare_review_segments(windows, fallback_meta, logs)
+    max_segments = max(1, min(MAX_SEGMENTS_PER_CASE, max(1, cap // FRAMES_PER_SEGMENT)))
+    review_segments, segment_meta = _prepare_review_segments(windows, fallback_meta, logs, max_segments=max_segments)
     durations = [max(0.0, (end - start).total_seconds()) for start, end in review_segments]
     total_window_seconds = sum(durations)
     max_window_seconds = max(durations) if durations else 0.0
@@ -1465,21 +1426,17 @@ def _adaptive_vlm_frame_budget(
         reasons.append(reason)
 
     if len(review_segments) >= 2:
-        bump(2, "multiple_review_windows")
+        bump(FRAMES_PER_SEGMENT, "multiple_review_segments")
     if len(review_segments) >= 4:
-        bump(1, "many_review_windows")
+        bump(FRAMES_PER_SEGMENT, "many_review_segments")
     if total_window_seconds >= 120:
-        bump(2, "long_total_review_window")
+        bump(FRAMES_PER_SEGMENT, "long_total_review_window")
     elif total_window_seconds >= 60:
-        bump(1, "medium_total_review_window")
-    if max_window_seconds >= 90:
-        bump(1, "long_single_review_window")
+        bump(max(1, FRAMES_PER_SEGMENT // 2), "medium_total_review_window")
 
     candidate_events = fallback_meta.get("candidate_events", []) or []
     if len(candidate_events) >= 8:
-        bump(2, "many_candidate_events")
-    elif len(candidate_events) >= 4:
-        bump(1, "several_candidate_events")
+        bump(max(1, FRAMES_PER_SEGMENT // 2), "many_candidate_events")
 
     fallback_reasons = [str(item or "") for item in fallback_meta.get("reasons", []) or []]
     if len(fallback_reasons) >= 3:
@@ -1497,15 +1454,9 @@ def _adaptive_vlm_frame_budget(
     signal_text = " ".join(text_parts).lower()
 
     if any(token in signal_text for token in ("vm", "virtual", "remote desktop", "mstsc", "anydesk", "todesk", "sunlogin", "\u865a\u62df\u673a", "\u8fdc\u7a0b")):
-        bump(2, "remote_or_vm_context")
+        bump(max(1, FRAMES_PER_SEGMENT // 2), "remote_or_vm_context")
     if any(token in signal_text for token in ("meeting", "screen_share", "share screen", "zoom", "teams", "feishu", "lark", "\u4f1a\u8bae", "\u5c4f\u5e55\u5171\u4eab")):
-        bump(2, "meeting_or_screen_share_context")
-    if any(token in signal_text for token in ("clipboard", "paste", "copy", "screenshot", "\u526a\u8d34\u677f", "\u7c98\u8d34", "\u590d\u5236", "\u622a\u56fe")):
-        bump(1, "clipboard_or_screenshot_context")
-    if any(token in signal_text for token in ("upload", "drive", "mail", "attach", "send", "git", "\u4e0a\u4f20", "\u90ae\u7bb1", "\u9644\u4ef6", "\u53d1\u9001")):
-        bump(1, "external_transfer_context")
-    if any(token in signal_text for token in ("chatgpt", "claude", "gemini", "deepseek", "kimi", "poe", "ai_service", "\u5bf9\u8bdd", "\u8f93\u5165\u6846")):
-        bump(1, "ai_context")
+        bump(max(1, FRAMES_PER_SEGMENT // 2), "meeting_or_screen_share_context")
 
     return frames, {
         "adaptive": True,
@@ -1513,6 +1464,7 @@ def _adaptive_vlm_frame_budget(
         "base_frames": base_frames,
         "max_frames": cap,
         "selected_frames": frames,
+        "frames_per_segment": FRAMES_PER_SEGMENT,
         "window_count": len(windows),
         "segment_count": len(review_segments),
         "total_window_seconds": round(total_window_seconds, 3),
@@ -1667,7 +1619,7 @@ def _frame_time_candidates(
         windows,
         fallback_meta or {},
         logs or [],
-        max_points=min(budget, _int_env("DLD_VLM_REVIEW_MAX_ANCHOR_CANDIDATES", 36, minimum=0)),
+        max_points=min(budget, max(1, budget // 2)),
     )
 
     for idx, (start, end) in enumerate(windows):
@@ -1734,7 +1686,7 @@ def _select_representative_frames(candidates: List[Dict[str, Any]], max_frames: 
         copy["selection_reason"] = reason
         selected[key] = copy
 
-    anchor_limit = min(max_frames, _int_env("DLD_VLM_REVIEW_MAX_ANCHOR_FRAMES", max(2, max_frames // 3), minimum=1))
+    anchor_limit = min(max_frames, max(1, max_frames // 2))
     anchor_candidates = [
         item
         for item in candidates
@@ -1753,7 +1705,7 @@ def _select_representative_frames(candidates: List[Dict[str, Any]], max_frames: 
         key=lambda item: (float(item.get("scene_score", 0.0)), int(item.get("frame_index", 0))),
         reverse=True,
     )
-    min_gap = _int_env("DLD_VLM_REVIEW_MIN_FRAME_GAP", 12, minimum=1)
+    min_gap = MIN_FRAME_GAP
     for item in ranked:
         if len(selected) >= max_frames:
             break
@@ -1784,20 +1736,10 @@ def _annotate_and_limit_image_frames(
             "text_only_frames": 0,
         }
 
-    default_max_images = min(max_frames, 5 if ocr_enabled else 8)
-    max_image_frames = min(
-        max_frames,
-        _int_env("DLD_VLM_REVIEW_MAX_IMAGE_FRAMES", default_max_images, minimum=1),
-    )
-    min_image_frames = min(
-        max_image_frames,
-        _int_env("DLD_VLM_REVIEW_MIN_IMAGE_FRAMES", min(4, max_image_frames), minimum=1),
-    )
-    scene_threshold = float(os.getenv("DLD_VLM_REVIEW_IMAGE_SCENE_THRESHOLD", "0.08"))
-    max_ocr_frames = min(
-        len(selected),
-        _int_env("DLD_VLM_REVIEW_MAX_OCR_FRAMES", min(len(selected), 4), minimum=0),
-    )
+    max_image_frames = min(max_frames, MAX_IMAGE_FRAMES_PER_SEGMENT)
+    min_image_frames = min(max_image_frames, min(2, max_image_frames))
+    scene_threshold = IMAGE_SCENE_THRESHOLD
+    max_ocr_frames = min(len(selected), MAX_OCR_FRAMES_PER_SEGMENT if ocr_enabled else 0)
     ocr_ranked = sorted(
         selected,
         key=lambda item: (
@@ -1929,7 +1871,8 @@ def _encode_frame_image(
 def _extract_representative_frame_images(
     video_path: Path,
     recording_start: datetime,
-    windows: List[Tuple[datetime, datetime]],
+    segment: Tuple[datetime, datetime],
+    segment_id: str,
     fallback_meta: Dict[str, Any],
     logs: List[Dict[str, Any]],
     sensitive_files: List[str],
@@ -1939,18 +1882,15 @@ def _extract_representative_frame_images(
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     import cv2
 
-    review_segments, segment_meta = _prepare_review_segments(windows, fallback_meta, logs)
-    candidate_budget = max(
-        max_frames,
-        _int_env("DLD_VLM_REVIEW_CANDIDATE_FRAMES", max(24, max_frames * 6), minimum=1),
-    )
-    frame_times = _frame_time_candidates(review_segments, max_frames, candidate_budget, fallback_meta, logs)
+    windows = [segment]
+    candidate_budget = max(max_frames, CANDIDATE_FRAMES_PER_SEGMENT)
+    frame_times = _frame_time_candidates(windows, max_frames, candidate_budget, fallback_meta, logs)
     if not frame_times:
-        frame_times = _sample_frame_times(review_segments or windows, max_frames)
+        frame_times = _sample_frame_times(windows, max_frames)
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        return [], {"segment_plan": segment_meta, "candidate_budget": candidate_budget, "error": "video_open_failed"}
+        return [], {"segment_id": segment_id, "candidate_budget": candidate_budget, "error": "video_open_failed"}
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     candidates = []
@@ -1977,6 +1917,7 @@ def _extract_representative_frame_images(
                     "frame_index": frame_index,
                     "scene_score": scene_score,
                     "selection_hint": hint,
+                    "segment_id": segment_id,
                     "frame": frame,
                 }
             )
@@ -2001,6 +1942,7 @@ def _extract_representative_frame_images(
             }
         if encoded:
             encoded["image_sent"] = bool(item.get("image_sent"))
+            encoded["segment_id"] = segment_id
             encoded["ocr_text"] = item.get("ocr_text", "")
             encoded["ocr_flags"] = item.get("ocr_flags", [])
             encoded["ocr_ran"] = bool(item.get("ocr_ran"))
@@ -2009,7 +1951,9 @@ def _extract_representative_frame_images(
             encoded["image_decision_reasons"] = item.get("image_decision_reasons", [])
             images.append(encoded)
     return images, {
-        "segment_plan": segment_meta,
+        "segment_id": segment_id,
+        "segment_start": segment[0].strftime("%Y-%m-%d %H:%M:%S"),
+        "segment_end": segment[1].strftime("%Y-%m-%d %H:%M:%S"),
         "candidate_budget": candidate_budget,
         "candidate_frames": len(candidates),
         "selected_frames": len(selected),
@@ -2021,9 +1965,18 @@ def _build_vlm_review_prompt(
     sensitive_files: List[str],
     candidate_events: List[Dict[str, Any]],
     review_logs: List[Dict[str, Any]],
+    segment_id: str,
+    segment: Tuple[datetime, datetime],
 ) -> str:
-    return f"""You are auditing a desktop recording for possible sensitive-data leakage.
+    return f"""You are auditing one behavior segment from a desktop recording for possible sensitive-data leakage.
 Use only the provided log context and sampled video frames. Prefer visual evidence over OCR when they disagree.
+
+Segment:
+{{
+  "segment_id": {json.dumps(segment_id)},
+  "start": {json.dumps(segment[0].strftime("%Y-%m-%d %H:%M:%S"))},
+  "end": {json.dumps(segment[1].strftime("%Y-%m-%d %H:%M:%S"))}
+}}
 
 Sensitive files or objects:
 {json.dumps(sensitive_files, ensure_ascii=False, indent=2)}
@@ -2070,6 +2023,7 @@ Output exactly one JSON object and no markdown:
   }},
   "observed_actions": [
     {{
+      "segment_id": {json.dumps(segment_id)},
       "action_type": "open_file|copy_content|paste_content|select_file|attach_file|upload_start|upload_complete|send_message|publish_content|screenshot|screen_record|screen_share|save_as|convert_file|compress_file|rename_file|vm_copy|external_exposure|none|unknown",
       "risk_level": "none|preparation|selected_or_attached|in_progress|content_exposed|completed",
       "time": "YYYY-MM-DD HH:MM:SS or empty",
@@ -2086,223 +2040,6 @@ Output exactly one JSON object and no markdown:
   "reason": "short explanation"
 }}
 """
-
-
-def _live_vlm_review_case(
-    case_dir: Path,
-    groundtruth: Any,
-    logs: List[Dict[str, Any]],
-    sensitive_files: List[str],
-    fallback_meta: Dict[str, Any],
-    max_frames: int,
-    local_ocr_gate: bool = False,
-) -> Dict[str, Any]:
-    video_path = _choose_video_file(case_dir)
-    rec_start = _recording_start(groundtruth, logs)
-    if not video_path or not rec_start:
-        return {
-            "status": "skipped",
-            "reason": "missing_video_or_recording_start",
-            "is_violation": True,
-            "max_frames_requested": max_frames,
-        }
-
-    api_key = _first_env("OPENAI_API_KEY", "DASHSCOPE_API_KEY", "QWEN_API_KEY", "VL_API_KEY")
-    base_url = _first_env("OPENAI_BASE_URL", "DASHSCOPE_BASE_URL", "QWEN_BASE_URL", "VL_BASE_URL")
-    model = _first_env("VL_MODEL_NAME", "OPENAI_MODEL", "QWEN_VL_MODEL", "QWEN_MODEL") or "qwen3.7-plus"
-    cache_path = _vlm_review_cache_path(
-        case_dir=case_dir,
-        video_path=video_path,
-        rec_start=rec_start,
-        fallback_meta=fallback_meta,
-        logs=logs,
-        sensitive_files=sensitive_files,
-        max_frames=max_frames,
-        model=model,
-        base_url=base_url,
-        local_ocr_gate=local_ocr_gate,
-    )
-    cached = _read_vlm_review_cache(cache_path)
-    if cached:
-        _progress(f"[VLM CACHE HIT] case={case_dir.name} status={cached.get('status', 'unknown')} path={cache_path}")
-        return cached
-
-    def remember(verdict: Dict[str, Any]) -> Dict[str, Any]:
-        if str(verdict.get("status", "")) in {"success", "local_ocr_positive", "skipped"}:
-            _write_vlm_review_cache(cache_path, verdict)
-        return verdict
-
-    windows = _windows_from_fallback(fallback_meta, logs)
-    frame_records, frame_plan = _extract_representative_frame_images(
-        video_path,
-        rec_start,
-        windows,
-        fallback_meta,
-        logs,
-        sensitive_files,
-        max_frames,
-        max_edge=_int_env("DLD_VLM_REVIEW_IMAGE_MAX_EDGE", 960, minimum=1),
-        jpeg_quality=_int_env("DLD_VLM_REVIEW_JPEG_QUALITY", 65, minimum=1),
-    )
-    image_records = [item for item in frame_records if item.get("image_sent")]
-    if not frame_records:
-        return remember({
-            "status": "skipped",
-            "reason": "no_frames_extracted",
-            "is_violation": True,
-            "max_frames_requested": max_frames,
-            "frame_plan": frame_plan,
-        })
-
-    local_ocr_verdict = _local_ocr_vlm_verdict(frame_records, max_frames, frame_plan, enabled=local_ocr_gate)
-    if local_ocr_verdict:
-        _postprocess_vlm_actions(local_ocr_verdict, sensitive_files, logs)
-        return remember(local_ocr_verdict)
-
-    if not api_key:
-        return {
-            "status": "skipped",
-            "reason": "missing_vlm_api_key",
-            "is_violation": True,
-            "frames_sent": len(image_records),
-            "frame_context_count": len(frame_records),
-            "max_frames_requested": max_frames,
-            "frame_plan": frame_plan,
-        }
-
-    from langchain_core.messages import HumanMessage
-    from langchain_openai import ChatOpenAI
-
-    candidate_events = fallback_meta.get("candidate_events", [])[:12]
-    review_logs = _review_log_context(logs, windows)
-    prompt = f"""你是数据泄露审计员。请只根据给定日志上下文和视频关键帧，判断是否已经完成敏感数据外泄。
-
-敏感文件/对象:
-{json.dumps(sensitive_files, ensure_ascii=False, indent=2)}
-
-候选日志事件:
-{json.dumps(candidate_events, ensure_ascii=False, indent=2)}
-
-窗口内关键日志摘要:
-{json.dumps(review_logs, ensure_ascii=False, indent=2)}
-
-视觉帧说明:
-- image_sent=true 的帧附带原图，请以视觉证据为准。
-- image_sent=false 的帧只提供本地 OCR/抽帧摘要，用于补充时间线，不能单独作为完成态强证据。
-- OCR 可能缺字或误识别；若 OCR 与图片冲突，以图片为准。
-
-判定规则:
-- 只有看到或能强证据确认发送成功、上传完成、附件已提交、屏幕共享/截图/VM复制已暴露敏感内容，才判定 is_violation=true。
-- 以下情况必须判定 false：仅打开敏感文件、右键/选择文件、进入上传页、附件已添加但仍在编辑页、保存草稿/草稿箱、取消/关闭、下载文件、正常编辑、复制到本地白名单应用、监控系统自己的“已完成/完成状态”提示。
-- 邮件/聊天必须看到“已发送/发送成功/消息已出现在会话中/收件方可见”等完成态才为 true；“发送按钮高亮”“写信页面”“草稿”都不是完成态。
-- AI 服务/网页聊天是特殊 sink：只要敏感文本已经出现在外部 AI/聊天输入框、prompt 框、对话消息或回答上下文中，即视为内容已暴露，可以判定 true；仅打开 AI 页面但未出现敏感内容则为 false。
-- 网盘/Git/网页上传必须看到“上传完成/文件已出现在远端列表/提交成功”等完成态才为 true；“选择文件/上传对话框/进度未完成”都不是完成态。
-- 不要把日志里的 risk_level、category、监控系统页面状态当作完成外泄证据，它们只能说明需要人工/VLM复核。
-- 如果画面看不清或证据不足，判定 false，但 confidence 给低一些，reason 写明缺什么证据。
-- 输出一个 JSON 对象，不要 markdown:
-{{"is_violation": true/false, "confidence": 0.0-1.0, "completed_action": "send|upload|screen_share|screenshot|vm_copy|none|unknown", "evidence_frames": [1,2], "reason": "..."}}
-"""
-    prompt = _build_vlm_review_prompt(sensitive_files, candidate_events, review_logs)
-    contents: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
-    for image in frame_records:
-        contents.append(
-            {
-                "type": "text",
-                "text": (
-                    f"Frame {image['index']} @ {image['timestamp']} "
-                    f"(source_frame={image['frame_index']}, reason={image.get('selection_reason', '')}, "
-                    f"scene_score={image.get('scene_score', 0.0)}, "
-                    f"image_sent={str(bool(image.get('image_sent'))).lower()}, "
-                    f"ocr_flags={image.get('ocr_flags', [])}, "
-                    f"ocr={json.dumps(str(image.get('ocr_text', '') or '')[:300], ensure_ascii=False)})"
-                ),
-            }
-        )
-        if image.get("image_sent") and image.get("b64"):
-            contents.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image['b64']}"}})
-
-    llm = ChatOpenAI(model=model, base_url=base_url or None, api_key=api_key)
-    response = llm.invoke([HumanMessage(content=contents)])
-    text = str(response.content or "").strip()
-    match = re.search(r"\{.*\}", text, flags=re.S)
-    if not match:
-        return {
-            "status": "failed",
-            "reason": "non_json_response",
-            "raw": text,
-            "is_violation": True,
-            "frames_sent": len(image_records),
-            "frame_context_count": len(frame_records),
-            "max_frames_requested": max_frames,
-            "frame_plan": frame_plan,
-        }
-    try:
-        verdict = json.loads(match.group(0), strict=False)
-    except json.JSONDecodeError:
-        return {
-            "status": "failed",
-            "reason": "bad_json_response",
-            "raw": text,
-            "is_violation": True,
-            "frames_sent": len(image_records),
-            "frame_context_count": len(frame_records),
-            "max_frames_requested": max_frames,
-            "frame_plan": frame_plan,
-        }
-    verdict["status"] = "success"
-    verdict["frames_sent"] = len(image_records)
-    verdict["frame_context_count"] = len(frame_records)
-    verdict["max_frames_requested"] = max_frames
-    verdict["frame_plan"] = frame_plan
-    verdict["frame_selection"] = [
-        {
-            "index": image["index"],
-            "timestamp": image["timestamp"],
-            "frame_index": image["frame_index"],
-            "scene_score": image.get("scene_score"),
-            "selection_reason": image.get("selection_reason"),
-            "image_sent": bool(image.get("image_sent")),
-            "ocr_text": image.get("ocr_text", ""),
-            "ocr_flags": image.get("ocr_flags", []),
-            "ocr_ran": bool(image.get("ocr_ran")),
-            "ocr_duplicate": bool(image.get("ocr_duplicate")),
-            "image_priority": image.get("image_priority", 0.0),
-            "image_decision_reasons": image.get("image_decision_reasons", []),
-        }
-        for image in frame_records
-    ]
-    verdict["model"] = model
-    _postprocess_vlm_verdict(verdict)
-    _postprocess_vlm_actions(verdict, sensitive_files, logs)
-    return remember(verdict)
-
-
-def _postprocess_vlm_verdict(verdict: Dict[str, Any]) -> None:
-    if not verdict.get("is_violation"):
-        return
-    reason = str(verdict.get("reason", "") or "").lower()
-    preliminary_markers = (
-        "准备发送",
-        "准备上传",
-        "右键点击",
-        "右键",
-        "选择了'上传",
-        "选择了上传",
-        "上传文件选项",
-        "发送按钮",
-        "按钮高亮",
-        "附件已添加",
-        "已准备发送",
-        "file selected",
-        "choose file",
-        "selected file",
-        "upload option",
-    )
-    if not any(marker in reason for marker in preliminary_markers):
-        return
-    verdict["raw_is_violation"] = verdict.get("is_violation")
-    verdict["is_violation"] = False
-    verdict["postprocess_reason"] = "downgraded_preliminary_action_without_completion_evidence"
 
 
 def _normalize_risk_level(value: str) -> str:
@@ -2562,6 +2299,7 @@ def _normalize_observed_actions(
         normalized.append(
             {
                 "action_id": f"vlm_action_{index}",
+                "segment_id": str(action.get("segment_id") or verdict.get("segment_id") or ""),
                 "action_type": _normalize_action_type(str(action.get("action_type", "") or "")),
                 "risk_level": risk_level or "none",
                 "time": action_time,
@@ -2578,6 +2316,67 @@ def _normalize_observed_actions(
     return normalized
 
 
+def _merge_segment_verdicts(
+    segment_verdicts: List[Dict[str, Any]],
+    sensitive_files: List[str],
+    logs: List[Dict[str, Any]],
+    max_frames_requested: int,
+    frame_plan: Dict[str, Any],
+    model: str,
+) -> Dict[str, Any]:
+    successful = [item for item in segment_verdicts if item.get("status") == "success"]
+    positive_segments = [item for item in successful if _vlm_final_positive(item)]
+    if positive_segments:
+        best = max(positive_segments, key=lambda item: _safe_float(item.get("confidence", 0.0)))
+    elif successful:
+        best = max(successful, key=lambda item: _safe_float(item.get("confidence", 0.0)))
+    elif segment_verdicts:
+        best = segment_verdicts[0]
+    else:
+        best = {
+            "status": "skipped",
+            "reason": "no_segments_reviewed",
+            "is_violation": False,
+            "confidence": 0.0,
+            "completed_action": "none",
+        }
+
+    observed_actions: List[Dict[str, Any]] = []
+    frame_selection: List[Dict[str, Any]] = []
+    reasons = []
+    frames_sent = 0
+    frame_context_count = 0
+    for verdict in segment_verdicts:
+        reasons.append(f"{verdict.get('segment_id', '')}:{verdict.get('reason', '')}")
+        frames_sent += int(verdict.get("frames_sent", 0) or 0)
+        frame_context_count += int(verdict.get("frame_context_count", 0) or 0)
+        for action in verdict.get("observed_actions", []) or []:
+            if isinstance(action, dict):
+                observed_actions.append(dict(action))
+        for frame in verdict.get("frame_selection", []) or []:
+            if isinstance(frame, dict):
+                frame_selection.append(dict(frame))
+
+    merged = dict(best)
+    merged["status"] = "success" if any(item.get("status") == "success" for item in successful) else str(best.get("status", "skipped"))
+    merged["is_violation"] = bool(positive_segments)
+    merged["risk_level"] = str(best.get("risk_level", "") or _infer_risk_level_from_verdict(best) or "none")
+    merged["confidence"] = max((_safe_float(item.get("confidence", 0.0)) for item in segment_verdicts), default=0.0)
+    merged["completed_action"] = str(best.get("completed_action", "") or "none")
+    merged["reason"] = "; ".join(reason for reason in reasons if reason)[:1000]
+    merged["segment_verdicts"] = segment_verdicts
+    merged["observed_actions"] = observed_actions
+    merged["frame_selection"] = frame_selection
+    merged["frames_sent"] = frames_sent
+    merged["frame_context_count"] = frame_context_count
+    merged["max_frames_requested"] = max_frames_requested
+    merged["frame_plan"] = frame_plan
+    merged["model"] = model
+    _postprocess_vlm_verdict(merged)
+    _postprocess_vlm_actions(merged, sensitive_files, logs)
+    return merged
+
+
 def _postprocess_vlm_actions(
     verdict: Dict[str, Any],
     sensitive_files: List[str],
@@ -2585,6 +2384,218 @@ def _postprocess_vlm_actions(
 ) -> None:
     verdict["frontend_app"] = _normalize_frontend_app(verdict.get("frontend_app"), logs)
     verdict["observed_actions"] = _normalize_observed_actions(verdict, sensitive_files, logs)
+
+
+def _frame_selection_payload(frame_records: List[Dict[str, Any]], segment_id: str) -> List[Dict[str, Any]]:
+    return [
+        {
+            "index": image["index"],
+            "segment_id": segment_id,
+            "timestamp": image["timestamp"],
+            "frame_index": image["frame_index"],
+            "scene_score": image.get("scene_score"),
+            "selection_reason": image.get("selection_reason"),
+            "image_sent": bool(image.get("image_sent")),
+            "ocr_text": image.get("ocr_text", ""),
+            "ocr_flags": image.get("ocr_flags", []),
+            "ocr_ran": bool(image.get("ocr_ran")),
+            "ocr_duplicate": bool(image.get("ocr_duplicate")),
+            "image_priority": image.get("image_priority", 0.0),
+            "image_decision_reasons": image.get("image_decision_reasons", []),
+        }
+        for image in frame_records
+    ]
+
+
+def _live_vlm_review_case(
+    case_dir: Path,
+    groundtruth: Any,
+    logs: List[Dict[str, Any]],
+    sensitive_files: List[str],
+    fallback_meta: Dict[str, Any],
+    max_frames: int,
+) -> Dict[str, Any]:
+    video_path = _choose_video_file(case_dir)
+    rec_start = _recording_start(groundtruth, logs)
+    if not video_path or not rec_start:
+        return {
+            "status": "skipped",
+            "reason": "missing_video_or_recording_start",
+            "is_violation": True,
+            "max_frames_requested": max_frames,
+        }
+
+    api_key = _first_env("OPENAI_API_KEY", "DASHSCOPE_API_KEY", "QWEN_API_KEY", "VL_API_KEY")
+    base_url = _first_env("OPENAI_BASE_URL", "DASHSCOPE_BASE_URL", "QWEN_BASE_URL", "VL_BASE_URL")
+    model = _first_env("VL_MODEL_NAME", "OPENAI_MODEL", "QWEN_VL_MODEL", "QWEN_MODEL") or "qwen3.7-plus"
+    cache_path = _vlm_review_cache_path(
+        case_dir=case_dir,
+        video_path=video_path,
+        rec_start=rec_start,
+        fallback_meta=fallback_meta,
+        logs=logs,
+        sensitive_files=sensitive_files,
+        max_frames=max_frames,
+        model=model,
+        base_url=base_url,
+    )
+    cached = _read_vlm_review_cache(cache_path)
+    if cached:
+        _progress(f"[VLM CACHE HIT] case={case_dir.name} status={cached.get('status', 'unknown')} path={cache_path}")
+        return cached
+
+    def remember(verdict: Dict[str, Any]) -> Dict[str, Any]:
+        if str(verdict.get("status", "")) in {"success", "skipped"}:
+            _write_vlm_review_cache(cache_path, verdict)
+        return verdict
+
+    windows = _windows_from_fallback(fallback_meta, logs)
+    max_segments = max(1, min(MAX_SEGMENTS_PER_CASE, max(1, int(max_frames) // FRAMES_PER_SEGMENT)))
+    review_segments, segment_plan = _prepare_review_segments(windows, fallback_meta, logs, max_segments=max_segments)
+    if not review_segments:
+        return remember(
+            {
+                "status": "skipped",
+                "reason": "no_review_segments",
+                "is_violation": True,
+                "max_frames_requested": max_frames,
+                "frame_plan": {"segment_level": True, "segment_plan": segment_plan, "segments": []},
+            }
+        )
+
+    HumanMessage = None
+    llm = None
+    if api_key:
+        from langchain_core.messages import HumanMessage as LangchainHumanMessage
+        from langchain_openai import ChatOpenAI
+
+        HumanMessage = LangchainHumanMessage
+        llm = ChatOpenAI(model=model, base_url=base_url or None, api_key=api_key)
+    segment_verdicts: List[Dict[str, Any]] = []
+    segment_plans: List[Dict[str, Any]] = []
+    frames_remaining = max(1, int(max_frames))
+
+    for segment_index, segment in enumerate(review_segments, 1):
+        segment_id = f"vlm_seg_{segment_index:02d}"
+        segment_frame_budget = min(FRAMES_PER_SEGMENT, frames_remaining)
+        if segment_frame_budget <= 0:
+            break
+
+        frame_records, frame_plan = _extract_representative_frame_images(
+            video_path,
+            rec_start,
+            segment,
+            segment_id,
+            fallback_meta,
+            logs,
+            sensitive_files,
+            segment_frame_budget,
+            max_edge=IMAGE_MAX_EDGE,
+            jpeg_quality=JPEG_QUALITY,
+        )
+        frame_plan["segment_index"] = segment_index
+        segment_plans.append(frame_plan)
+        frames_remaining -= len(frame_records)
+        image_records = [item for item in frame_records if item.get("image_sent")]
+
+        if not frame_records:
+            segment_verdicts.append(
+                {
+                    "status": "skipped",
+                    "segment_id": segment_id,
+                    "reason": "no_frames_extracted",
+                    "is_violation": False,
+                    "frames_sent": 0,
+                    "frame_context_count": 0,
+                    "max_frames_requested": segment_frame_budget,
+                    "frame_plan": frame_plan,
+                    "frame_selection": [],
+                }
+            )
+            continue
+
+        if not llm:
+            segment_verdicts.append(
+                {
+                    "status": "skipped",
+                    "segment_id": segment_id,
+                    "reason": "missing_vlm_api_key",
+                    "is_violation": False,
+                    "frames_sent": len(image_records),
+                    "frame_context_count": len(frame_records),
+                    "max_frames_requested": segment_frame_budget,
+                    "frame_plan": frame_plan,
+                    "frame_selection": _frame_selection_payload(frame_records, segment_id),
+                }
+            )
+            continue
+
+        candidate_events = fallback_meta.get("candidate_events", [])[:12]
+        review_logs = _review_log_context(logs, [segment])
+        prompt = _build_vlm_review_prompt(sensitive_files, candidate_events, review_logs, segment_id, segment)
+        contents: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for image in frame_records:
+            contents.append(
+                {
+                    "type": "text",
+                    "text": (
+                        f"Segment {segment_id} frame {image['index']} @ {image['timestamp']} "
+                        f"(source_frame={image['frame_index']}, reason={image.get('selection_reason', '')}, "
+                        f"scene_score={image.get('scene_score', 0.0)}, "
+                        f"image_sent={str(bool(image.get('image_sent'))).lower()}, "
+                        f"ocr_flags={image.get('ocr_flags', [])}, "
+                        f"ocr={json.dumps(str(image.get('ocr_text', '') or '')[:300], ensure_ascii=False)})"
+                    ),
+                }
+            )
+            if image.get("image_sent") and image.get("b64"):
+                contents.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image['b64']}"}})
+
+        response = llm.invoke([HumanMessage(content=contents)])
+        text = str(response.content or "").strip()
+        match = re.search(r"\{.*\}", text, flags=re.S)
+        if not match:
+            verdict = {
+                "status": "failed",
+                "segment_id": segment_id,
+                "reason": "non_json_response",
+                "raw": text,
+                "is_violation": False,
+            }
+        else:
+            try:
+                verdict = json.loads(match.group(0), strict=False)
+                verdict["status"] = "success"
+            except json.JSONDecodeError:
+                verdict = {
+                    "status": "failed",
+                    "segment_id": segment_id,
+                    "reason": "bad_json_response",
+                    "raw": text,
+                    "is_violation": False,
+                }
+
+        verdict["segment_id"] = segment_id
+        verdict["segment_time_range"] = {
+            "start": segment[0].strftime("%Y-%m-%d %H:%M:%S"),
+            "end": segment[1].strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        verdict["frames_sent"] = len(image_records)
+        verdict["frame_context_count"] = len(frame_records)
+        verdict["max_frames_requested"] = segment_frame_budget
+        verdict["frame_plan"] = frame_plan
+        verdict["frame_selection"] = _frame_selection_payload(frame_records, segment_id)
+        verdict["model"] = model
+        _postprocess_vlm_verdict(verdict)
+        _postprocess_vlm_actions(verdict, sensitive_files, logs)
+        segment_verdicts.append(verdict)
+
+    frame_plan = {
+        "segment_level": True,
+        "segment_plan": segment_plan,
+        "segments": segment_plans,
+    }
+    return remember(_merge_segment_verdicts(segment_verdicts, sensitive_files, logs, max_frames, frame_plan, model))
 
 
 def _verdict_timestamp(fallback_meta: Dict[str, Any], logs: List[Dict[str, Any]]) -> str:
@@ -2609,6 +2620,83 @@ def _frame_segments_from_vlm_verdict(
 ) -> List[Dict[str, Any]]:
     if verdict.get("status") != "success" or not verdict.get("is_violation"):
         return []
+
+    frame_times = _frame_timestamps_by_index(verdict)
+    frame_by_key = {
+        (str(frame.get("segment_id", "")), int(frame.get("index", 0) or 0)): frame
+        for frame in verdict.get("frame_selection", []) or []
+        if isinstance(frame, dict)
+    }
+    action_segments: List[Dict[str, Any]] = []
+    for index, action in enumerate(verdict.get("observed_actions", []) or []):
+        if not isinstance(action, dict):
+            continue
+        risk_level = _normalize_risk_level(str(action.get("risk_level", "") or ""))
+        if risk_level not in POSITIVE_RISK_LEVELS:
+            continue
+
+        segment_id = str(action.get("segment_id", "") or f"vlm_seg_action_{index}")
+        evidence_frames = []
+        for item in action.get("evidence_frames", []) or []:
+            try:
+                evidence_frames.append(int(item))
+            except (TypeError, ValueError):
+                continue
+        supporting_timestamps = []
+        for frame_index in evidence_frames:
+            frame = frame_by_key.get((segment_id, frame_index))
+            if frame and frame.get("timestamp"):
+                supporting_timestamps.append(str(frame.get("timestamp")))
+            elif frame_index in frame_times:
+                supporting_timestamps.append(frame_times[frame_index])
+        if action.get("time"):
+            supporting_timestamps.append(str(action.get("time")))
+        supporting_timestamps = sorted({item for item in supporting_timestamps if str(item or "").strip()})
+
+        segment_range = ""
+        for segment_verdict in verdict.get("segment_verdicts", []) or []:
+            if not isinstance(segment_verdict, dict) or str(segment_verdict.get("segment_id", "")) != segment_id:
+                continue
+            time_range = segment_verdict.get("segment_time_range")
+            if isinstance(time_range, dict):
+                start = str(time_range.get("start", "") or "")
+                end = str(time_range.get("end", "") or "")
+                segment_range = f"{start} - {end}" if start or end else ""
+                break
+        if not segment_range and supporting_timestamps:
+            segment_range = f"{supporting_timestamps[0]} - {supporting_timestamps[-1]}"
+
+        source_file = str(action.get("source_file", "") or "")
+        derived_file = str(action.get("derived_file", "") or "")
+        primary_resource = source_file or derived_file or (sensitive_files[0] if sensitive_files else "unknown")
+        related_resources = [item for item in [derived_file, *sensitive_files] if item and item != primary_resource]
+        visible_evidence = [
+            str(action.get("description", "") or ""),
+            f"risk_level={risk_level}",
+            f"evidence_source={action.get('evidence_source', 'remote_vlm')}",
+        ]
+        if evidence_frames:
+            visible_evidence.append(f"frame_ids={','.join(str(item) for item in evidence_frames)}")
+        action_segments.append(
+            {
+                "segment_id": f"{segment_id}_action_{index}",
+                "time_range": segment_range,
+                "app_name": str(action.get("app", "") or "unknown"),
+                "operation_type": _normalize_action_type(str(action.get("action_type", "") or "")),
+                "primary_resource": primary_resource,
+                "related_resources": related_resources[:8],
+                "action_description": str(action.get("description", "") or verdict.get("reason", "") or ""),
+                "visible_evidence": [item for item in visible_evidence if item],
+                "supporting_timestamps": supporting_timestamps,
+                "confidence": round(_safe_float(action.get("confidence", verdict.get("confidence", 0.0))), 4),
+                "evidence_source": action.get("evidence_source", "remote_vlm"),
+                "frame_ids": evidence_frames,
+                "source_segment_id": segment_id,
+            }
+        )
+
+    if action_segments:
+        return action_segments
 
     timestamp = _verdict_timestamp(fallback_meta, logs)
     completed_action = str(verdict.get("completed_action", "") or "unknown")
@@ -2741,7 +2829,7 @@ def _review_source(
     if not isinstance(vlm_verdict, dict):
         return "remote_vlm_pending" if vlm_live_queued else "triage"
     status = str(vlm_verdict.get("status", "") or "")
-    if status in {"local_positive", "local_ocr_positive"}:
+    if status == "local_positive":
         return "local_gate"
     if status == "success":
         return "remote_vlm_cache" if vlm_verdict.get("cache_hit") else "remote_vlm"
@@ -2760,7 +2848,7 @@ def _confirmed_leak_positive(
     if not isinstance(vlm_verdict, dict):
         return False
     status = str(vlm_verdict.get("status", "") or "")
-    if status not in {"success", "local_positive", "local_ocr_positive"}:
+    if status not in {"success", "local_positive"}:
         return False
     if status == "local_positive":
         risk_level = _normalize_risk_level(str(vlm_verdict.get("risk_level", "") or ""))
@@ -3462,7 +3550,6 @@ def run_benchmark(
                     sensitive_files=record["sensitive_files"],
                     fallback_meta=record["fallback_meta"],
                     max_frames=record["adaptive_vlm_frames"],
-                    local_ocr_gate=str(vlm_gate_mode or "all").strip().lower() != "all",
                 )
                 future_to_record[future] = record
 
@@ -3487,7 +3574,7 @@ def run_benchmark(
                     f"reason={verdict.get('reason', '')}"
                 )
 
-    local_statuses = {"local_positive", "local_ocr_positive"}
+    local_statuses = {"local_positive"}
     local_vlm_resolutions = sum(
         1
         for record in case_records
@@ -3507,7 +3594,7 @@ def run_benchmark(
         if isinstance(record.get("live_vlm_verdict"), dict)
         and record.get("vlm_live_queued")
         and str(record["live_vlm_verdict"].get("status", "")) not in local_statuses
-        and str(record["live_vlm_verdict"].get("reason", "")) != "missing_vlm_api_key"
+        and not _vlm_missing_api_key(record["live_vlm_verdict"])
         and not bool(record["live_vlm_verdict"].get("cache_hit"))
     )
     result.vlm_local_resolutions = local_vlm_resolutions
