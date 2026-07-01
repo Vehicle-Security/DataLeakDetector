@@ -6,6 +6,8 @@ import argparse
 import ctypes
 import json
 import os
+import platform
+import shlex
 import subprocess
 import sys
 import threading
@@ -17,6 +19,8 @@ from typing import Any, Dict, List, Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BENCHMARK_SCRIPT = REPO_ROOT / "tools" / "benchmark_nas_samples.py"
+ENV_PREFIXES = ("DLD_", "VL_", "OPENAI_", "DASHSCOPE_", "QWEN_", "LLM_")
+SECRET_ENV_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "AUTH")
 
 
 def _now() -> str:
@@ -47,11 +51,163 @@ def _runtime_path(json_output: Path) -> Path:
     return json_output.with_name(f"{json_output.stem}.runtime.jsonl")
 
 
+def _metadata_path(json_output: Path) -> Path:
+    return json_output.with_name("run_metadata.json")
+
+
+def _command_path(json_output: Path) -> Path:
+    return json_output.with_name("run_command.txt")
+
+
 def _write_event(path: Path, event: str, **fields: Any) -> None:
     payload: Dict[str, Any] = {"timestamp": _now(), "event": event}
     payload.update(fields)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def _quote_command(command: List[str]) -> str:
+    if os.name == "nt":
+        return subprocess.list2cmdline(command)
+    return shlex.join(command)
+
+
+def _redact_env_value(name: str, value: str) -> str:
+    upper_name = name.upper()
+    if any(marker in upper_name for marker in SECRET_ENV_MARKERS):
+        if not value:
+            return ""
+        if len(value) <= 8:
+            return "<redacted>"
+        return f"{value[:4]}...{value[-4:]}"
+    return value
+
+
+def _relevant_environment() -> Dict[str, str]:
+    items: Dict[str, str] = {}
+    for name, value in sorted(os.environ.items()):
+        upper_name = name.upper()
+        if any(upper_name.startswith(prefix) for prefix in ENV_PREFIXES):
+            items[name] = _redact_env_value(name, value)
+    return items
+
+
+def _benchmark_arg_config(args: List[str]) -> Dict[str, Any]:
+    config: Dict[str, Any] = {}
+    positional: List[str] = []
+    index = 0
+    while index < len(args):
+        item = args[index]
+        if item.startswith("--"):
+            key = item[2:]
+            if "=" in key:
+                key, value = key.split("=", 1)
+                config[key.replace("-", "_")] = value
+            elif index + 1 < len(args) and not args[index + 1].startswith("--"):
+                config[key.replace("-", "_")] = args[index + 1]
+                index += 1
+            else:
+                config[key.replace("-", "_")] = True
+        else:
+            positional.append(item)
+        index += 1
+    if positional:
+        config["_positional"] = positional
+    return config
+
+
+def _git_value(args: List[str]) -> Optional[str]:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=str(REPO_ROOT),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        return None
+    return result.stdout.strip()
+
+
+def _git_metadata() -> Dict[str, Any]:
+    status = _git_value(["status", "--short"])
+    return {
+        "commit": _git_value(["rev-parse", "HEAD"]),
+        "branch": _git_value(["branch", "--show-current"]),
+        "status_short": status.splitlines() if status else [],
+    }
+
+
+def _write_run_metadata(
+    metadata_path: Path,
+    command_path: Path,
+    *,
+    command: List[str],
+    launcher_command: List[str],
+    benchmark_args: List[str],
+    json_output: Path,
+    runtime_path: Path,
+    parsed: argparse.Namespace,
+) -> None:
+    metadata = {
+        "created_at": _now(),
+        "repo_root": str(REPO_ROOT),
+        "benchmark_script": str(BENCHMARK_SCRIPT),
+        "output_dir": str(json_output.parent),
+        "outputs": {
+            "report_json": str(json_output),
+            "report_log": str(json_output.with_suffix(".log")),
+            "report_errors_json": str(json_output.with_name(f"{json_output.stem}_errors.json")),
+            "runtime_jsonl": str(runtime_path),
+            "run_metadata_json": str(metadata_path),
+            "run_command_txt": str(command_path),
+        },
+        "command": {
+            "argv": command,
+            "line": _quote_command(command),
+            "launcher_argv": launcher_command,
+            "launcher_line": _quote_command(launcher_command),
+            "benchmark_args": benchmark_args,
+        },
+        "config": {
+            "guard": {
+                "heartbeat_seconds": int(parsed.heartbeat_seconds),
+                "output_root": str(parsed.output_root),
+                "run_name": str(parsed.run_name),
+            },
+            "benchmark": _benchmark_arg_config(benchmark_args),
+            "environment": _relevant_environment(),
+        },
+        "runtime": {
+            "python": sys.version,
+            "python_executable": sys.executable,
+            "platform": platform.platform(),
+            "cwd": str(Path.cwd()),
+        },
+        "git": _git_metadata(),
+    }
+    metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    command_text = [
+        "# Guarded command",
+        metadata["command"]["launcher_line"],
+        "",
+        "# Command",
+        metadata["command"]["line"],
+        "",
+        "# Output directory",
+        str(json_output.parent),
+        "",
+        "# Benchmark config",
+        json.dumps(metadata["config"]["benchmark"], ensure_ascii=False, indent=2),
+        "",
+        "# Relevant environment (secrets redacted)",
+        json.dumps(metadata["config"]["environment"], ensure_ascii=False, indent=2),
+        "",
+    ]
+    command_path.write_text("\n".join(command_text), encoding="utf-8")
 
 
 class SleepGuard:
@@ -84,6 +240,7 @@ def _heartbeat(runtime_path: Path, stop_event: threading.Event, interval: int) -
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    launcher_args = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(
         description="Run benchmark_nas_samples.py with sleep prevention and runtime logging.",
         add_help=True,
@@ -105,7 +262,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         default="nas_vlm_guarded",
         help="Prefix for the timestamped run folder when --json-output is not provided.",
     )
-    parsed, benchmark_args = parser.parse_known_args(argv)
+    parsed, benchmark_args = parser.parse_known_args(launcher_args)
 
     benchmark_args = list(benchmark_args)
     if benchmark_args and benchmark_args[0] == "--":
@@ -117,9 +274,29 @@ def main(argv: Optional[List[str]] = None) -> int:
     json_output = json_output.resolve()
     json_output.parent.mkdir(parents=True, exist_ok=True)
     runtime_path = _runtime_path(json_output)
+    metadata_path = _metadata_path(json_output)
+    command_path = _command_path(json_output)
 
     command = [sys.executable, str(BENCHMARK_SCRIPT), *benchmark_args]
-    _write_event(runtime_path, "start", json_output=str(json_output), command=command)
+    launcher_command = [sys.executable, str(Path(__file__).resolve()), *launcher_args]
+    _write_run_metadata(
+        metadata_path,
+        command_path,
+        command=command,
+        launcher_command=launcher_command,
+        benchmark_args=benchmark_args,
+        json_output=json_output,
+        runtime_path=runtime_path,
+        parsed=parsed,
+    )
+    _write_event(
+        runtime_path,
+        "start",
+        json_output=str(json_output),
+        command=command,
+        metadata=str(metadata_path),
+        command_file=str(command_path),
+    )
 
     stop_event = threading.Event()
     heartbeat = threading.Thread(
