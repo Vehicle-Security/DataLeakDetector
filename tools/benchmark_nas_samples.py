@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -352,6 +354,10 @@ class BenchmarkSummary:
     vlm_remote_requests: int = 0
     vlm_local_resolutions: int = 0
     vlm_cache_hits: int = 0
+    datalog_cases: int = 0
+    datalog_positive: int = 0
+    datalog_confirmed: int = 0
+    datalog_fallbacks: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -366,6 +372,10 @@ class BenchmarkSummary:
                 "vlm_remote_requests": self.vlm_remote_requests,
                 "vlm_local_resolutions": self.vlm_local_resolutions,
                 "vlm_cache_hits": self.vlm_cache_hits,
+                "datalog_cases": self.datalog_cases,
+                "datalog_positive": self.datalog_positive,
+                "datalog_confirmed": self.datalog_confirmed,
+                "datalog_fallbacks": self.datalog_fallbacks,
                 "skipped_cases": len(self.skipped),
             },
             "cases": self.cases,
@@ -555,12 +565,24 @@ def _expected_positive(groundtruth: Any) -> bool:
     return any(_is_risk_label(item.get("operation", "")) for item in _operation_items(groundtruth))
 
 
+def _is_valid_sensitive_file_ref(path: str) -> bool:
+    text = str(path or "").strip()
+    if not _looks_like_file_reference(text):
+        return False
+    lowered = text.replace("\\", "/").lower()
+    if lowered.endswith((".lnk", ".tmp", ".log", ".aodl", ".journal")):
+        return False
+    if "/appdata/" in lowered and "/desktop/" not in lowered and "/documents/" not in lowered:
+        return False
+    return True
+
+
 def _sensitive_files_from_groundtruth(groundtruth: Any) -> List[str]:
     seen = set()
     files = []
     for item in _operation_items(groundtruth):
         path = str(item.get("sensitive_file_path", "") or "").strip()
-        if path and path.lower() not in seen:
+        if path and _is_valid_sensitive_file_ref(path) and path.lower() not in seen:
             seen.add(path.lower())
             files.append(path)
     return files
@@ -569,6 +591,9 @@ def _sensitive_files_from_groundtruth(groundtruth: Any) -> List[str]:
 def _looks_like_file_reference(value: str) -> bool:
     text = str(value or "").strip()
     if not text or len(text) > 260:
+        return False
+    lowered = text.replace("\\", "/").lower()
+    if lowered.endswith(".lnk") or "/appdata/roaming/microsoft/windows/recent/" in lowered:
         return False
     if "/" in text or "\\" in text:
         return True
@@ -583,7 +608,7 @@ def _sensitive_files_from_logs(logs: List[Dict[str, Any]], log_first: Any) -> Li
         path = log_first.normalize_path(log.get("file_path", "") or hint)
         if hasattr(log_first, "is_system_noise_path") and log_first.is_system_noise_path(path):
             continue
-        if not _looks_like_file_reference(path):
+        if not _is_valid_sensitive_file_ref(path):
             continue
         name = log.get("file_name") or log_first.basename(path)
         content_preview = str(log.get("content_preview", "") or "")
@@ -2649,6 +2674,23 @@ def _audit_evidence_sources(actions: List[Dict[str, Any]]) -> List[str]:
     )
 
 
+def _relation_counts(facts: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for fact in facts:
+        relation = str(fact.get("relation", "") or "unknown")
+        counts[relation] = counts.get(relation, 0) + 1
+    return counts
+
+
+def _compact_text(value: Any, limit: int = 240) -> str:
+    text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+    while "  " in text:
+        text = text.replace("  ", " ")
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)] + "..."
+
+
 def _detection_actions(
     case_id: str,
     detection: Dict[str, Any],
@@ -2680,6 +2722,123 @@ def _detection_actions(
     return actions
 
 
+def _operation_record_actions(
+    case_id: str,
+    detection: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    actions: List[Dict[str, Any]] = []
+    for index, record in enumerate(detection.get("operation_records", []) or []):
+        if not isinstance(record, dict):
+            continue
+        operation = str(record.get("operation", "") or "").lower()
+        source_file = str(record.get("source_path", "") or record.get("original_file", "") or "")
+        target_file = str(
+            record.get("target_path", "")
+            or record.get("derived_file", "")
+            or record.get("sensitive_file_path", "")
+            or ""
+        )
+        if not source_file:
+            source_file = target_file
+        action_type = "open_file"
+        risk_level = "preparation"
+        if any(token in operation for token in ("transform", "convert", "compress", "rename", "copy", "derive")):
+            action_type = "convert_file"
+            risk_level = "selected_or_attached"
+        elif "upload" in operation or "send" in operation or "share" in operation:
+            action_type = "upload_complete"
+            risk_level = "completed"
+        elif "open" in operation or "anchor" in operation or "hint" in operation:
+            action_type = "open_file"
+
+        actions.append(
+            {
+                "action_id": f"{case_id}:log_op_{index}",
+                "action_type": action_type,
+                "risk_level": risk_level,
+                "time": str(record.get("operation_time", "") or record.get("timestamp", "") or ""),
+                "app": str(record.get("app_name", "") or ""),
+                "app_category": "unknown",
+                "source_file": source_file,
+                "derived_file": target_file if target_file != source_file else "",
+                "evidence_frames": [],
+                "confidence": 0.82,
+                "description": str(record.get("description", "") or operation or "log operation record"),
+                "evidence_source": "log_operation",
+            }
+        )
+    return actions
+
+
+def _file_mapping_actions(
+    case_id: str,
+    detection: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    mappings = detection.get("file_mappings", {}) or {}
+    direct = mappings.get("direct_file_mappings", {}) if isinstance(mappings, dict) else {}
+    if not isinstance(direct, dict):
+        return []
+    actions: List[Dict[str, Any]] = []
+    for index, (child, parent) in enumerate(direct.items()):
+        actions.append(
+            {
+                "action_id": f"{case_id}:log_map_{index}",
+                "action_type": "convert_file",
+                "risk_level": "selected_or_attached",
+                "time": "",
+                "app": "log_lineage",
+                "app_category": "lineage",
+                "source_file": str(parent or ""),
+                "derived_file": str(child or ""),
+                "evidence_frames": [],
+                "confidence": 0.8,
+                "description": f"log file mapping: {parent} -> {child}",
+                "evidence_source": "log_lineage",
+            }
+        )
+    return actions
+
+
+def _log_sensitive_open_actions(
+    case_id: str,
+    logs: List[Dict[str, Any]],
+    sensitive_files: List[str],
+    limit: int = 24,
+) -> List[Dict[str, Any]]:
+    actions: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for log in logs:
+        path = str(log.get("file_path", "") or "")
+        file_name = str(log.get("file_name", "") or "")
+        candidate = path or file_name
+        if not _is_sensitive_ref(candidate, sensitive_files):
+            continue
+        key = candidate.replace("\\", "/").lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        process_info = log.get("process_info", {}) if isinstance(log.get("process_info"), dict) else {}
+        actions.append(
+            {
+                "action_id": f"{case_id}:log_open_{len(actions)}",
+                "action_type": "open_file",
+                "risk_level": "preparation",
+                "time": str(log.get("timestamp", "") or ""),
+                "app": str(log.get("app_name", "") or process_info.get("process_name", "") or ""),
+                "app_category": "unknown",
+                "source_file": _canonical_sensitive_ref(candidate, sensitive_files),
+                "derived_file": "",
+                "evidence_frames": [],
+                "confidence": 0.78,
+                "description": f"log references sensitive file {candidate}",
+                "evidence_source": "log_sensitive_open",
+            }
+        )
+        if len(actions) >= limit:
+            break
+    return actions
+
+
 def _correlation_actions(
     case_id: str,
     correlation_bundle: Optional[Dict[str, Any]],
@@ -2689,11 +2848,21 @@ def _correlation_actions(
     actions: List[Dict[str, Any]] = []
     for index, candidate in enumerate(correlation_bundle.get("upload_candidates", []) or []):
         current_files = candidate.get("current_files", []) or []
+        operation_type = str(candidate.get("operation_type", "") or "upload_complete")
+        normalized_action = _normalize_action_type(operation_type)
+        if operation_type in {"file_selected", "select_file", "attach_file"}:
+            normalized_action = "select_file"
+            risk_level = "selected_or_attached"
+        elif operation_type in {"upload_start", "file_upload_start"}:
+            normalized_action = "upload_start"
+            risk_level = "in_progress"
+        else:
+            risk_level = "completed"
         actions.append(
             {
                 "action_id": f"{case_id}:corr_upload_{index}",
-                "action_type": _normalize_action_type(str(candidate.get("operation_type", "") or "upload_complete")),
-                "risk_level": "completed",
+                "action_type": normalized_action,
+                "risk_level": risk_level,
                 "time": str(candidate.get("timestamp", "") or ""),
                 "app": str(candidate.get("app_name", "") or ""),
                 "app_category": str(candidate.get("sink_type", "") or "external_sink"),
@@ -2731,12 +2900,265 @@ def _build_audit_actions(
     detection: Dict[str, Any],
     vlm_verdict: Optional[Dict[str, Any]],
     correlation_bundle: Optional[Dict[str, Any]],
+    logs: Optional[List[Dict[str, Any]]] = None,
+    sensitive_files: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     actions = []
+    actions.extend(_operation_record_actions(case_id, detection))
+    actions.extend(_file_mapping_actions(case_id, detection))
+    if logs is not None and sensitive_files is not None:
+        actions.extend(_log_sensitive_open_actions(case_id, logs, sensitive_files))
     actions.extend(_detection_actions(case_id, detection))
     actions.extend(_vlm_actions(case_id, vlm_verdict))
     actions.extend(_correlation_actions(case_id, correlation_bundle))
     return actions
+
+
+def _action_timestamp_ms(action: Dict[str, Any], fallback_index: int = 0) -> int:
+    value = str(action.get("time", "") or action.get("timestamp", "") or "").strip()
+    if value:
+        dt = _parse_dt(value)
+        if dt:
+            return int(dt.timestamp() * 1000)
+        digits = re.sub(r"\D", "", value)
+        if digits:
+            try:
+                return int(digits[:13].ljust(13, "0"))
+            except ValueError:
+                pass
+    return fallback_index
+
+
+def _action_process(action: Dict[str, Any]) -> str:
+    app = str(action.get("app", "") or action.get("app_category", "") or "").strip()
+    return app.replace("\\", "/").rsplit("/", 1)[-1].lower() or "unknown"
+
+
+def _is_sensitive_ref(value: str, sensitive_files: List[str]) -> bool:
+    text = str(value or "").replace("\\", "/").lower()
+    if not text:
+        return False
+    if not _is_valid_sensitive_file_ref(text):
+        return False
+    for sensitive in sensitive_files:
+        needle = str(sensitive or "").replace("\\", "/").lower()
+        name = needle.rsplit("/", 1)[-1]
+        if needle and (needle in text or text in needle):
+            return True
+        if name and name in text:
+            return True
+    return False
+
+
+def _canonical_sensitive_ref(value: str, sensitive_files: List[str]) -> str:
+    text = str(value or "").strip()
+    if text and _is_sensitive_ref(text, sensitive_files):
+        return text.replace("\\", "/")
+    return str(sensitive_files[0]).replace("\\", "/") if sensitive_files else text.replace("\\", "/")
+
+
+def _audit_actions_to_datalog_facts(
+    case_id: str,
+    audit_actions: List[Dict[str, Any]],
+    sensitive_files: List[str],
+) -> List[Dict[str, Any]]:
+    if not sensitive_files:
+        return []
+
+    facts: List[Dict[str, Any]] = []
+    seen: set[tuple[str, tuple[Any, ...]]] = set()
+
+    def add(relation: str, args: Tuple[Any, ...], source_action: str, evidence_source: str) -> None:
+        key = (relation, args)
+        if key in seen:
+            return
+        seen.add(key)
+        facts.append(
+            {
+                "relation": relation,
+                "args": list(args),
+                "source_action": source_action,
+                "evidence_source": evidence_source,
+            }
+        )
+
+    canonical_sources = [str(item).replace("\\", "/") for item in sensitive_files if str(item or "").strip()]
+    for source_index, source in enumerate(canonical_sources[:32]):
+        add(
+            "OpenFile",
+            (f"{case_id}:sensitive_source_{source_index}", "sensitive_source", source, source_index),
+            f"{case_id}:sensitive_source",
+            "sensitive_manifest",
+        )
+
+    for index, action in enumerate(audit_actions):
+        if not isinstance(action, dict):
+            continue
+        action_type = _normalize_action_type(str(action.get("action_type", "") or "unknown"))
+        risk_level = _normalize_risk_level(str(action.get("risk_level", "") or ""))
+        evidence_source = str(action.get("evidence_source", "") or "audit_action")
+        if evidence_source == "local_positive":
+            continue
+        source_file = str(action.get("source_file", "") or "")
+        derived_file = str(action.get("derived_file", "") or "")
+        if derived_file and not _is_valid_sensitive_file_ref(derived_file):
+            derived_file = ""
+        if not _is_sensitive_ref(source_file, sensitive_files) and not _is_sensitive_ref(derived_file, sensitive_files):
+            continue
+
+        data = _canonical_sensitive_ref(source_file or derived_file, sensitive_files)
+        process = _action_process(action)
+        timestamp = _action_timestamp_ms(action, index)
+        raw_action_id = str(action.get("action_id", "") or f"{case_id}:action_{index}")
+        op_id = re.sub(r"[^A-Za-z0-9_:.\\/-]+", "_", raw_action_id)[:180] or f"{case_id}:action_{index}"
+
+        add("OpenFile", (f"{op_id}:source", process, data, timestamp), raw_action_id, evidence_source)
+        for source_index, source in enumerate(canonical_sources[:32]):
+            if source != data and _is_sensitive_ref(data, [source]):
+                add(
+                    "TransferFile",
+                    (f"{op_id}:source_alias_{source_index}", "sensitive_source", source, data, timestamp),
+                    raw_action_id,
+                    evidence_source,
+                )
+        if derived_file and derived_file.replace("\\", "/") != data:
+            derived = derived_file.replace("\\", "/")
+            add("TransferFile", (f"{op_id}:derive", process, data, derived, timestamp), raw_action_id, evidence_source)
+            for source_index, source in enumerate(canonical_sources[:32]):
+                if source != data and _is_sensitive_ref(data, [source]):
+                    add(
+                        "TransferFile",
+                        (f"{op_id}:derive_alias_{source_index}", "sensitive_source", source, derived, timestamp),
+                        raw_action_id,
+                        evidence_source,
+                    )
+            data = derived
+
+        if action_type in {
+            "upload_complete",
+            "send_message",
+            "publish_content",
+            "external_exposure",
+            "screen_share",
+            "screenshot",
+            "screen_record",
+            "vm_copy",
+        } or risk_level in {"content_exposed", "completed"}:
+            channel = action_type if action_type not in {"unknown", "none"} else "external_exposure"
+            add("LeakFile", (f"{op_id}:leak", process, data, channel, timestamp), raw_action_id, evidence_source)
+
+    return facts
+
+
+def _run_datalog_on_audit_actions(
+    case_id: str,
+    audit_actions: List[Dict[str, Any]],
+    sensitive_files: List[str],
+) -> Dict[str, Any]:
+    facts = _audit_actions_to_datalog_facts(case_id, audit_actions, sensitive_files)
+    if not facts:
+        return {
+            "engine": "none",
+            "fact_count": 0,
+            "relation_counts": {},
+            "facts": [],
+            "leak_paths": [],
+            "risk_positive": False,
+            "confirmed_leak": False,
+            "reason": "no_audit_facts",
+            "trace": [],
+        }
+
+    try:
+        from data_leak_detector.leak_reasoner import DatalogEngine
+    except Exception as exc:
+        leak_like = [fact for fact in facts if fact["relation"] == "LeakFile"]
+        return {
+            "engine": "rule_fallback",
+            "fact_count": len(facts),
+            "relation_counts": _relation_counts(facts),
+            "facts": facts,
+            "leak_paths": [],
+            "risk_positive": bool(leak_like),
+            "confirmed_leak": bool(leak_like),
+            "reason": f"datalog_import_failed:{type(exc).__name__}",
+            "trace": [],
+        }
+
+    engine = None
+    try:
+        trace_buffer = io.StringIO()
+        with contextlib.redirect_stdout(trace_buffer):
+            engine = DatalogEngine()
+            for fact in facts:
+                engine.add_fact(fact["relation"], *fact["args"])
+            leak_paths = engine.query_leak()
+        trace_lines = [_compact_text(line, 500) for line in trace_buffer.getvalue().splitlines() if line.strip()]
+        return {
+            "engine": "souffle" if getattr(engine, "use_souffle", False) else "python",
+            "fact_count": len(facts),
+            "relation_counts": _relation_counts(facts),
+            "facts": facts,
+            "leak_paths": [path.to_dict() if hasattr(path, "to_dict") else dict(path) for path in leak_paths],
+            "risk_positive": bool(leak_paths),
+            "confirmed_leak": bool(leak_paths),
+            "reason": "leak_paths_found" if leak_paths else "no_leak_path",
+            "trace": trace_lines,
+        }
+    except Exception as exc:
+        leak_like = [fact for fact in facts if fact["relation"] == "LeakFile"]
+        return {
+            "engine": "rule_fallback",
+            "fact_count": len(facts),
+            "relation_counts": _relation_counts(facts),
+            "facts": facts,
+            "leak_paths": [],
+            "risk_positive": bool(leak_like),
+            "confirmed_leak": bool(leak_like),
+            "reason": f"datalog_failed:{type(exc).__name__}",
+            "error": str(exc),
+            "trace": [],
+        }
+    finally:
+        if engine is not None:
+            with contextlib.suppress(Exception):
+                engine.cleanup()
+
+
+def _log_datalog_trace(case_id: str, decision: Dict[str, Any], max_items: int = 3) -> None:
+    facts = decision.get("facts", []) or []
+    leak_paths = decision.get("leak_paths", []) or []
+    relation_counts = decision.get("relation_counts", {}) or {}
+    count_text = ",".join(f"{name}={count}" for name, count in sorted(relation_counts.items())) or "none"
+    _progress(
+        f"[DATALOG] case={case_id} engine={decision.get('engine', 'unknown')} "
+        f"facts={decision.get('fact_count', 0)} relations={count_text} "
+        f"leak_paths={len(leak_paths)} confirmed={int(bool(decision.get('confirmed_leak')))} "
+        f"reason={decision.get('reason', '')}"
+    )
+    for index, fact in enumerate(facts[:max_items], 1):
+        _progress(
+            f"[DATALOG FACT {index}/{len(facts)}] case={case_id} "
+            f"{fact.get('relation')}({', '.join(_compact_text(arg, 80) for arg in fact.get('args', []))}) "
+            f"source={fact.get('evidence_source', '')} action={_compact_text(fact.get('source_action', ''), 100)}"
+        )
+    if len(facts) > max_items:
+        _progress(f"[DATALOG FACTS] case={case_id} omitted={len(facts) - max_items}")
+    for index, path in enumerate(leak_paths[:max_items], 1):
+        _progress(
+            f"[DATALOG PATH {index}/{len(leak_paths)}] case={case_id} "
+            f"proc={_compact_text(path.get('leaking_proc', ''), 80)} "
+            f"file={_compact_text(path.get('leaked_file', ''), 120)} "
+            f"channel={_compact_text(path.get('leak_channel', ''), 80)} "
+            f"path={_compact_text(path.get('full_path', ''), 220)}"
+        )
+    if len(leak_paths) > max_items:
+        _progress(f"[DATALOG PATHS] case={case_id} omitted={len(leak_paths) - max_items}")
+    for index, line in enumerate((decision.get("trace", []) or [])[:max_items], 1):
+        _progress(f"[DATALOG TRACE {index}] case={case_id} {_compact_text(line, 500)}")
+    trace_count = len(decision.get("trace", []) or [])
+    if trace_count > max_items:
+        _progress(f"[DATALOG TRACE] case={case_id} omitted={trace_count - max_items}")
 
 
 def _case_dirs(root: Path, stages: Optional[List[str]]) -> Iterable[Path]:
@@ -3007,10 +3429,8 @@ def run_benchmark(
 
         correlation_bundle: Optional[Dict[str, Any]] = None
         final_positive = triage_positive
-        confirmed_leak = deterministic_positive
         if vlm_verdict:
             if vlm_verdict.get("status") == "success":
-                vlm_positive = _vlm_final_positive(vlm_verdict)
                 frame_segments = _frame_segments_from_vlm_verdict(
                     vlm_verdict,
                     sensitive_files,
@@ -3024,16 +3444,28 @@ def run_benchmark(
                     groundtruth=groundtruth,
                     frame_segments=frame_segments,
                 )
-                final_positive = vlm_positive or len(correlation_bundle.get("upload_candidates", [])) > 0
             else:
-                final_positive = True
-            confirmed_leak = _confirmed_leak_positive(deterministic_positive, vlm_verdict, correlation_bundle)
-        elif deterministic_positive:
-            final_positive = True
-            confirmed_leak = True
+                correlation_bundle = None
         review_source = _review_source(deterministic_positive, vlm_verdict, record["vlm_live_queued"])
-        audit_actions = _build_audit_actions(case_id, detection, vlm_verdict, correlation_bundle)
+        audit_actions = _build_audit_actions(
+            case_id,
+            detection,
+            vlm_verdict,
+            correlation_bundle,
+            logs=logs,
+            sensitive_files=sensitive_files,
+        )
+        datalog_decision = _run_datalog_on_audit_actions(case_id, audit_actions, sensitive_files)
+        _log_datalog_trace(case_id, datalog_decision)
         evidence_sources = _audit_evidence_sources(audit_actions)
+        datalog_positive = bool(datalog_decision.get("risk_positive"))
+        datalog_confirmed = bool(datalog_decision.get("confirmed_leak"))
+        vlm_fallback_positive = bool(vlm_verdict) and _vlm_final_positive(vlm_verdict)
+        final_positive = triage_positive or datalog_positive
+        confirmed_leak = datalog_confirmed
+        if not triage_positive and not datalog_positive and vlm_fallback_positive:
+            final_positive = True
+            datalog_decision["reason"] = f"{datalog_decision.get('reason', '')};vlm_risk_fallback"
 
         triage_bucket = result.triage.add(expected, triage_positive)
         deterministic_bucket = result.deterministic.add(expected, deterministic_positive)
@@ -3043,6 +3475,14 @@ def run_benchmark(
             result.deterministic_hits += 1
         if should_run_vlm:
             result.vlm_reviews += 1
+        if int(datalog_decision.get("fact_count", 0) or 0) > 0:
+            result.datalog_cases += 1
+        if datalog_positive:
+            result.datalog_positive += 1
+        if datalog_confirmed:
+            result.datalog_confirmed += 1
+        if str(datalog_decision.get("engine", "")) == "rule_fallback":
+            result.datalog_fallbacks += 1
 
         vlm_status = "none"
         frames_sent = 0
@@ -3070,6 +3510,7 @@ def run_benchmark(
             f"case={case_id} expected={int(expected)} final={int(final_positive)} "
             f"confirmed={int(confirmed_leak)} "
             f"det={int(deterministic_positive)} triage={int(triage_positive)} "
+            f"datalog={int(datalog_positive)} "
             f"vlm={vlm_status} image_frames={frames_sent} context_frames={frame_context_count} "
             f"requested_frames={record['adaptive_vlm_frames']} confidence={confidence} "
             f"action={completed_action} risk={risk_level} source={review_source} reasons={','.join(fallback_meta.get('reasons', []))}"
@@ -3090,7 +3531,11 @@ def run_benchmark(
                 "confirmed_leak": confirmed_leak,
                 "confirmed_bucket": confirmed_bucket,
                 "review_source": review_source,
+                "reasoning_source": "datalog" if datalog_positive else ("triage" if final_positive else "none"),
                 "evidence_sources": evidence_sources,
+                "datalog_decision": datalog_decision,
+                "datalog_facts": datalog_decision.get("facts", []),
+                "datalog_leak_paths": datalog_decision.get("leak_paths", []),
                 "upload_events": len(detection.get("upload_events", [])),
                 "operation_records": len(detection.get("operation_records", [])),
                 "sensitive_files": len(sensitive_files),
@@ -3127,6 +3572,10 @@ def _print_report(report: Dict[str, Any]) -> None:
         f"remote_vlm_requests={report['summary'].get('vlm_remote_requests', 0)} "
         f"local_vlm_resolutions={report['summary'].get('vlm_local_resolutions', 0)} "
         f"vlm_cache_hits={report['summary'].get('vlm_cache_hits', 0)} "
+        f"datalog_cases={report['summary'].get('datalog_cases', 0)} "
+        f"datalog_positive={report['summary'].get('datalog_positive', 0)} "
+        f"datalog_confirmed={report['summary'].get('datalog_confirmed', 0)} "
+        f"datalog_fallbacks={report['summary'].get('datalog_fallbacks', 0)} "
         f"skipped={report['summary']['skipped_cases']}"
     )
     failures = [case for case in report["cases"] if case["final_bucket"] in {"fp", "fn"}]
@@ -3137,7 +3586,7 @@ def _print_report(report: Dict[str, Any]) -> None:
         print(
             f"- {case['case']} {case['final_bucket']} "
             f"det={case['upload_events']} vlm={case['vlm_decision']} "
-            f"source={case.get('review_source', '')} "
+            f"source={case.get('review_source', '')} reasoning={case.get('reasoning_source', '')} "
             f"evidence={','.join(case.get('evidence_sources', []))} "
             f"reasons={','.join(case['vlm_reasons'])}"
         )
