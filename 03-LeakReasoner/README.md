@@ -35,7 +35,7 @@ brew install souffle
 ```bash
 LLM_API_KEY=your_api_key_here
 LLM_MODEL_NAME=qwen-plus
-LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
 ```
 
 ### 3. 运行测试

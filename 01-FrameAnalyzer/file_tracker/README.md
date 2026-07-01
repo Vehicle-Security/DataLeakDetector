@@ -127,7 +127,7 @@ pip install langgraph langchain-openai python-dotenv
 
 ```bash
 MODEL_NAME=qwen2-vl-72b-instruct
-OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+OPENAI_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
 OPENAI_API_KEY=your_api_key_here
 TEMPERATURE=0.01
 ```

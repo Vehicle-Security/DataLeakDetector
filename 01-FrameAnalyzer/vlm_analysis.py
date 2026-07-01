@@ -5,11 +5,25 @@ import re
 import os
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv, find_dotenv
 import easyocr
 import torch
 from prompt_loader import PROMPTS
+
+load_dotenv(find_dotenv())
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 reader = easyocr.Reader(['ch_sim', 'en'], gpu=(DEVICE == 'cuda'))
+
+TOKEN_PLAN_BASE_URL = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+
+
+def _first_env(*names):
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return ""
+
 
 def analyze_scene_deep_dive(filtered_frames, output_path="./spec/output/deep_report.json"):
     if not filtered_frames:
@@ -53,8 +67,8 @@ def analyze_scene_deep_dive(filtered_frames, output_path="./spec/output/deep_rep
     
     llm = ChatOpenAI(
         model=os.getenv("VL_MODEL_NAME", "qwen3.7-plus"),
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-        api_key="sk-62823ac2c480482084d040855d2e5a15", # 建议通过环境变量获取
+        base_url=_first_env("OPENAI_BASE_URL", "DASHSCOPE_BASE_URL", "QWEN_BASE_URL", "VL_BASE_URL") or TOKEN_PLAN_BASE_URL,
+        api_key=_first_env("OPENAI_API_KEY", "DASHSCOPE_API_KEY", "QWEN_API_KEY", "VL_API_KEY"),
         streaming=False,
     )
 
