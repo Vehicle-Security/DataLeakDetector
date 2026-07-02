@@ -1311,7 +1311,7 @@ def _local_vlm_gate_decision(
     return decision
 
 
-VLM_REVIEW_CACHE_VERSION = "v5-audit-actions"
+VLM_REVIEW_CACHE_VERSION = "v6-fact-split-parent-risk"
 
 
 def _bool_env(name: str, default: bool = True) -> bool:
@@ -2344,13 +2344,39 @@ def _local_positive_supports_leak(action: Dict[str, Any]) -> bool:
     )
     if any(marker in reason for marker in strong_reasons):
         return True
-    if not _bool_env("DLD_DATALOG_TRUST_LOCAL_VISUAL_GATE", True):
+    if not _bool_env("DLD_DATALOG_TRUST_LOCAL_VISUAL_GATE", False):
         return False
     visual_reasons = ("direct_visual_capture_event", "screenshot_context")
     return (
         action_type == "external_exposure"
         and risk_level in {"content_exposed", "completed"}
         and any(marker in reason for marker in visual_reasons)
+    )
+
+
+def _local_positive_supports_risk(action: Dict[str, Any]) -> bool:
+    action_type = _normalize_action_type(str(action.get("action_type", "") or ""))
+    risk_level = _normalize_risk_level(str(action.get("risk_level", "") or ""))
+    reason = str(action.get("description", "") or "").lower()
+    if action_type != "external_exposure" or risk_level not in {"content_exposed", "completed"}:
+        return False
+    strong = (
+        "explicit_transfer_event",
+        "vm_context",
+        "export_context",
+        "git_context_with_completion_text",
+        "archive_or_convert_with_completion_text",
+    )
+    if any(marker in reason for marker in strong):
+        return True
+    if not _bool_env("DLD_DATALOG_TRUST_LOCAL_VISUAL_GATE", True):
+        return False
+    return any(
+        marker in reason
+        for marker in (
+            "direct_visual_capture_event",
+            "screenshot_context",
+        )
     )
 
 
@@ -2369,6 +2395,10 @@ def _external_sink_action_context(action: Dict[str, Any]) -> bool:
         "sync",
         "onedrive",
         "sticky notes",
+        "web_post",
+        "code_repo",
+        "gitea",
+        "gitcode",
         "\u4fbf\u7b3a",
     )
     return any(marker in text for marker in external_markers)
@@ -2406,6 +2436,104 @@ def _action_has_hard_negative_context(action: Dict[str, Any]) -> bool:
     return any(marker in text for marker in hard_negative_markers)
 
 
+def _action_has_historical_or_inbound_context(action: Dict[str, Any]) -> bool:
+    link_text = " ".join(str(item or "") for item in action.get("mapping_links", []) or [])
+    text = f"{_action_text(action)} {link_text.lower()}"
+    completion_markers = (
+        "sent email",
+        "email appears in the sent folder",
+        "appears in the sent folder, indicating completed",
+        "completed transmission",
+        "successfully sent",
+        "send success",
+        "\u53d1\u9001\u6210\u529f",
+        "\u5df2\u53d1\u9001",
+    )
+    if any(marker in text for marker in completion_markers):
+        return False
+
+    historical_markers = (
+        "already sent",
+        "sent previously",
+        "previously sent",
+        "dated ",
+        "no new exfiltration",
+        "no new sending",
+        "interaction is limited to local viewing",
+        "local viewing",
+        "local access",
+    )
+    if any(marker in text for marker in historical_markers):
+        return True
+
+    sent_folder_read_markers = (
+        "browse",
+        "browses",
+        "view",
+        "views",
+        "visible as an attachment",
+        "listed as an attachment",
+        "sent folder list",
+        "attachment list",
+    )
+    if "sent folder" in text and any(marker in text for marker in sent_folder_read_markers):
+        return True
+
+    source = str(action.get("source_file", "") or "").replace("\\", "/").lower()
+    derived = str(action.get("derived_file", "") or "").replace("\\", "/").lower()
+    app_category = str(action.get("app_category", "") or "").lower()
+    outgoing_markers = (
+        "compose",
+        "draft",
+        "attach",
+        "attached",
+        "send",
+        "sent email",
+        "upload",
+        "share",
+        "publish",
+        "commit",
+        "\u5199\u90ae\u4ef6",
+        "\u9644\u4ef6",
+        "\u53d1\u9001",
+        "\u4e0a\u4f20",
+        "\u5206\u4eab",
+    )
+    if app_category in {"email", "mail_attachment"} and "/downloads/" in source and not any(
+        marker in text for marker in outgoing_markers
+    ):
+        return True
+    if (
+        app_category in {"email", "mail_attachment"}
+        and "/downloads/" in source
+        and ("wps cloud files" in text or "/cachedata/" in text or "cachedata" in derived)
+    ):
+        return True
+
+    return False
+
+
+def _action_has_cloud_editor_read_context(action: Dict[str, Any]) -> bool:
+    text = _action_text(action)
+    if "cloud_storage" not in text:
+        return False
+    if not any(marker in text for marker in ("online editor", "being edited", "web editor", "viewer/editor")):
+        return False
+    outbound_markers = (
+        "upload complete",
+        "uploaded",
+        "remote listing",
+        "share link",
+        "generated link",
+        "shared",
+        "published",
+        "success",
+        "\u4e0a\u4f20\u6210\u529f",
+        "\u5206\u4eab\u94fe\u63a5",
+    )
+    return not any(marker in text for marker in outbound_markers)
+
+
 def _action_has_unfinished_context(action: Dict[str, Any]) -> bool:
     text = _action_text(action)
     unfinished_markers = (
@@ -2425,6 +2553,12 @@ def _action_has_unfinished_context(action: Dict[str, Any]) -> bool:
         "no submit success",
         "no sent confirmation",
         "no success confirmation",
+        "pending",
+        "awaiting",
+        "not shown",
+        "not visible",
+        "not observed",
+        "not confirmed as completed",
         "final submission",
         "final publish",
         "validation error",
@@ -2445,6 +2579,28 @@ def _action_has_completion_context(action: Dict[str, Any]) -> bool:
     return _completion_evidence_from_text(text)
 
 
+def _action_has_staging_context(action: Dict[str, Any]) -> bool:
+    text = _action_text(action)
+    staging_markers = (
+        "attached",
+        "attach",
+        "selected",
+        "file selection",
+        "file_selected",
+        "upload complete",
+        "upload completed",
+        "uploading",
+        "upload_start",
+        "spinner",
+        "release mouse to upload",
+        "ready for submission",
+        "\u9644\u4ef6",
+        "\u4e0a\u4f20",
+        "\u5df2\u9009\u62e9",
+    )
+    return any(marker in text for marker in staging_markers)
+
+
 def _vlm_parent_verdict_blocks_risk(action: Dict[str, Any]) -> bool:
     if str(action.get("evidence_source", "") or "") != "remote_vlm":
         return False
@@ -2455,6 +2611,19 @@ def _vlm_parent_verdict_blocks_risk(action: Dict[str, Any]) -> bool:
         return False
     action_risk = _normalize_risk_level(str(action.get("risk_level", "") or ""))
     action_type = _normalize_action_type(str(action.get("action_type", "") or ""))
+    if action_type in {"attach_file", "select_file", "upload_start"} and action_risk in {"selected_or_attached", "in_progress"}:
+        text = _action_text(action)
+        if parent_risk == "none" and not bool(action.get("verdict_is_violation")) and any(
+            marker in text
+            for marker in (
+                "likely for upload",
+                "saved as a draft",
+                "likely selecting",
+                "suggesting the sensitive",
+            )
+        ):
+            return True
+        return not _action_has_staging_context(action)
     if action_risk in {"content_exposed", "completed"} or action_type in {"upload_complete", "send_message", "publish_content"}:
         return _action_has_unfinished_context(action) or not (
             _action_has_completion_context(action) and not _action_has_unfinished_context(action)
@@ -2467,13 +2636,17 @@ def _content_exposure_action_supports_leak(action: Dict[str, Any]) -> bool:
     risk_level = _normalize_risk_level(str(action.get("risk_level", "") or ""))
     if _action_has_hard_negative_context(action):
         return False
+    if _action_has_historical_or_inbound_context(action):
+        return False
+    if _action_has_cloud_editor_read_context(action):
+        return False
     if _vlm_parent_verdict_blocks_risk(action):
         return False
     if risk_level not in {"content_exposed", "completed"}:
         return False
     if action_type == "attach_file":
-        return _external_sink_action_context(action)
-    if action_type in {"paste_content", "copy_content", "select_file", "upload_start"}:
+        return False
+    if action_type in {"paste_content", "copy_content"}:
         return _external_sink_action_context(action)
     return action_type == "external_exposure"
 
@@ -3615,7 +3788,12 @@ def _audit_actions_to_datalog_facts(
         }
         local_positive_leak_allowed = evidence_source != "local_positive" or _local_positive_supports_leak(action)
         action_leak_allowed = False
-        if not _action_has_hard_negative_context(action) and not _vlm_parent_verdict_blocks_risk(action):
+        if (
+            not _action_has_hard_negative_context(action)
+            and not _action_has_historical_or_inbound_context(action)
+            and not _action_has_cloud_editor_read_context(action)
+            and not _vlm_parent_verdict_blocks_risk(action)
+        ):
             if action_type in leak_action_types and risk_level in {"content_exposed", "completed"}:
                 action_leak_allowed = not _action_has_unfinished_context(action)
             elif (
@@ -3651,7 +3829,7 @@ def _audit_action_supports_risk(action: Dict[str, Any], sensitive_files: List[st
         and risk_level == "completed"
         and _safe_float(action.get("confidence", 0.0)) >= 0.9
     ):
-        return not _action_has_hard_negative_context(action)
+        return not _action_has_hard_negative_context(action) and not _action_has_historical_or_inbound_context(action)
     if (
         not _is_sensitive_ref(source_file, sensitive_files)
         and not _is_sensitive_ref(derived_file, sensitive_files)
@@ -3660,12 +3838,16 @@ def _audit_action_supports_risk(action: Dict[str, Any], sensitive_files: List[st
         return False
     if _action_has_hard_negative_context(action):
         return False
+    if _action_has_historical_or_inbound_context(action):
+        return False
+    if _action_has_cloud_editor_read_context(action):
+        return False
     if _vlm_parent_verdict_blocks_risk(action):
         return False
     if evidence_source == "deterministic" and action_type in {"upload_complete", "send_message", "publish_content"}:
         return risk_level == "completed" and _safe_float(action.get("confidence", 0.0)) >= 0.9
     if evidence_source == "local_positive":
-        return _local_positive_supports_leak(action)
+        return _local_positive_supports_risk(action)
     if action_type in {
         "upload_complete",
         "send_message",
@@ -3676,15 +3858,66 @@ def _audit_action_supports_risk(action: Dict[str, Any], sensitive_files: List[st
         "screen_record",
         "vm_copy",
     } and risk_level in {"content_exposed", "completed"}:
+        if action_type in {"upload_complete", "send_message", "publish_content"} and _action_has_unfinished_context(action):
+            return False
+        if action_type == "external_exposure" and _action_has_unfinished_context(action):
+            return False
         return True
     if risk_level in {"content_exposed", "completed"} and _external_sink_action_context(action):
-        return True
+        if action_type == "open_file":
+            return False
+        return not _action_has_unfinished_context(action)
     if action_type in {"attach_file", "upload_start", "select_file"} and risk_level in {"selected_or_attached", "in_progress"}:
-        return _external_sink_action_context(action) and not (
-            "ai_service" in _action_text(action)
-            and risk_level == "selected_or_attached"
-            and _action_has_unfinished_context(action)
+        text = _action_text(action)
+        if not _external_sink_action_context(action) or not _action_has_staging_context(action):
+            return False
+        detail_text = " ".join(
+            str(action.get(key, "") or "").lower()
+            for key in ("description", "app", "app_category", "source_file", "derived_file")
         )
+        if action_type == "select_file" and "cloud_storage" in text and not any(
+            marker in detail_text
+            for marker in (
+                "attach",
+                "upload",
+                "share",
+                "submit",
+                "send",
+                "file picker",
+                "file upload",
+                "open dialog",
+                "selected for",
+                "\u9644\u4ef6",
+                "\u4e0a\u4f20",
+                "\u5206\u4eab",
+                "\u53d1\u9001",
+            )
+        ):
+            return False
+        if "ai_service" in text and risk_level == "selected_or_attached" and _action_has_unfinished_context(action):
+            return False
+        if _action_has_unfinished_context(action) and not any(
+            marker in text
+            for marker in (
+                "email",
+                "mail",
+                "gmail",
+                "outlook",
+                "proton",
+                "qqmail",
+                "163 mail",
+                "messaging",
+                "meeting",
+                "cloud_storage",
+                "code_repo",
+                "community_publish",
+                "\u90ae\u7bb1",
+                "\u90ae\u4ef6",
+                "\u4f1a\u8bae",
+            )
+        ):
+            return False
+        return True
     return False
 
 
