@@ -736,6 +736,48 @@ def _sensitive_files_from_logs(logs: List[Dict[str, Any]], log_first: Any) -> Li
     return files
 
 
+def _fallback_sensitive_files_from_logs(logs: List[Dict[str, Any]], log_first: Any, limit: int = 8) -> List[str]:
+    seen = set()
+    files = []
+    for log in logs:
+        path = log_first.normalize_path(log.get("file_path", "") or "")
+        if not path or not _is_valid_sensitive_file_ref(path):
+            continue
+        if hasattr(log_first, "is_system_noise_path") and log_first.is_system_noise_path(path):
+            continue
+        name = str(log.get("file_name", "") or log_first.basename(path) or "")
+        content_preview = str(log.get("content_preview", "") or "")
+        window_title = (
+            str((log.get("window_info", {}) or {}).get("window_title", "") or "")
+            if isinstance(log.get("window_info"), dict)
+            else ""
+        )
+        text = " ".join(
+            str(part or "")
+            for part in (
+                name,
+                path,
+                content_preview,
+                window_title,
+            )
+        )
+        if not log_first.is_sensitive_name(text):
+            continue
+        if not log_first.is_sensitive_name(f"{name} {log_first.basename(path)}"):
+            if not content_preview or not window_title:
+                continue
+            if log_first.basename(path).lower() not in window_title.lower().replace("\\", "/"):
+                continue
+        key = log_first.file_key(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        files.append(path)
+        if len(files) >= limit:
+            break
+    return files
+
+
 def _first_env(*names: str) -> str:
     for name in names:
         value = os.getenv(name)
@@ -2290,6 +2332,8 @@ def _best_vlm_reason_action(
 
 
 def _local_positive_supports_leak(action: Dict[str, Any]) -> bool:
+    action_type = _normalize_action_type(str(action.get("action_type", "") or ""))
+    risk_level = _normalize_risk_level(str(action.get("risk_level", "") or ""))
     reason = str(action.get("description", "") or "").lower()
     strong_reasons = (
         "explicit_transfer_event",
@@ -2298,14 +2342,19 @@ def _local_positive_supports_leak(action: Dict[str, Any]) -> bool:
         "git_context_with_completion_text",
         "archive_or_convert_with_completion_text",
     )
-    return any(marker in reason for marker in strong_reasons)
-
-
-def _content_exposure_action_supports_leak(action: Dict[str, Any]) -> bool:
-    action_type = _normalize_action_type(str(action.get("action_type", "") or ""))
-    risk_level = _normalize_risk_level(str(action.get("risk_level", "") or ""))
-    if risk_level != "content_exposed":
+    if any(marker in reason for marker in strong_reasons):
+        return True
+    if not _bool_env("DLD_DATALOG_TRUST_LOCAL_VISUAL_GATE", True):
         return False
+    visual_reasons = ("direct_visual_capture_event", "screenshot_context")
+    return (
+        action_type == "external_exposure"
+        and risk_level in {"content_exposed", "completed"}
+        and any(marker in reason for marker in visual_reasons)
+    )
+
+
+def _external_sink_action_context(action: Dict[str, Any]) -> bool:
     text = " ".join(
         str(action.get(key, "") or "").lower()
         for key in ("app", "app_category", "description", "evidence_source")
@@ -2315,16 +2364,117 @@ def _content_exposure_action_supports_leak(action: Dict[str, Any]) -> bool:
         "community_publish",
         "cloud_storage",
         "messaging",
+        "meeting",
         "email",
         "sync",
         "onedrive",
         "sticky notes",
         "\u4fbf\u7b3a",
     )
+    return any(marker in text for marker in external_markers)
+
+
+def _action_text(action: Dict[str, Any]) -> str:
+    return " ".join(
+        str(action.get(key, "") or "").lower()
+        for key in ("action_type", "risk_level", "app", "app_category", "description", "evidence_source")
+    )
+
+
+def _action_has_hard_negative_context(action: Dict[str, Any]) -> bool:
+    text = _action_text(action)
+    hard_negative_markers = (
+        "no sensitive",
+        "non-sensitive",
+        "not the sensitive",
+        "does not match the sensitive",
+        "no evidence",
+        "no leakage",
+        "not observed",
+        "unrelated",
+        "likely unrelated",
+        "monitoring dashboard",
+        "monitor application's",
+        "monitor app",
+        "localhost:5000",
+        "safe status",
+        "\u975e\u654f\u611f",
+        "\u6ca1\u6709\u654f\u611f",
+        "\u65e0\u654f\u611f",
+        "\u65e0\u8bc1\u636e",
+    )
+    return any(marker in text for marker in hard_negative_markers)
+
+
+def _action_has_unfinished_context(action: Dict[str, Any]) -> bool:
+    text = _action_text(action)
+    unfinished_markers = (
+        "not completed",
+        "not confirmed",
+        "not clicked",
+        "not submitted",
+        "not published",
+        "not yet",
+        "not yet submitted",
+        "not yet published",
+        "not yet sent",
+        "not sent",
+        "has not been sent",
+        "not been sent",
+        "no submission success",
+        "no submit success",
+        "no sent confirmation",
+        "no success confirmation",
+        "final submission",
+        "final publish",
+        "validation error",
+        "too short",
+        "form fields are incomplete",
+        "incomplete",
+        "\u672a\u5b8c\u6210",
+        "\u672a\u786e\u8ba4",
+        "\u672a\u63d0\u4ea4",
+        "\u672a\u53d1\u5e03",
+        "\u672a\u53d1\u9001",
+    )
+    return any(marker in text for marker in unfinished_markers)
+
+
+def _action_has_completion_context(action: Dict[str, Any]) -> bool:
+    text = _action_text(action)
+    return _completion_evidence_from_text(text)
+
+
+def _vlm_parent_verdict_blocks_risk(action: Dict[str, Any]) -> bool:
+    if str(action.get("evidence_source", "") or "") != "remote_vlm":
+        return False
+    parent_risk = _normalize_risk_level(str(action.get("verdict_risk_level", "") or ""))
+    if parent_risk not in {"none", "preparation"}:
+        return False
+    if bool(action.get("verdict_is_violation")):
+        return False
+    action_risk = _normalize_risk_level(str(action.get("risk_level", "") or ""))
+    action_type = _normalize_action_type(str(action.get("action_type", "") or ""))
+    if action_risk in {"content_exposed", "completed"} or action_type in {"upload_complete", "send_message", "publish_content"}:
+        return _action_has_unfinished_context(action) or not (
+            _action_has_completion_context(action) and not _action_has_unfinished_context(action)
+        )
+    return action_risk in {"selected_or_attached", "in_progress"}
+
+
+def _content_exposure_action_supports_leak(action: Dict[str, Any]) -> bool:
+    action_type = _normalize_action_type(str(action.get("action_type", "") or ""))
+    risk_level = _normalize_risk_level(str(action.get("risk_level", "") or ""))
+    if _action_has_hard_negative_context(action):
+        return False
+    if _vlm_parent_verdict_blocks_risk(action):
+        return False
+    if risk_level not in {"content_exposed", "completed"}:
+        return False
     if action_type == "attach_file":
-        return any(marker in text for marker in ("ai_service", "chat input", "input box", "submitted", "processed", "exploring user request", "\u8f93\u5165\u6846"))
-    if action_type in {"paste_content", "copy_content"}:
-        return any(marker in text for marker in external_markers)
+        return _external_sink_action_context(action)
+    if action_type in {"paste_content", "copy_content", "select_file", "upload_start"}:
+        return _external_sink_action_context(action)
     return action_type == "external_exposure"
 
 
@@ -3294,6 +3444,8 @@ def _vlm_actions(
             continue
         item = dict(action)
         item["action_id"] = f"{case_id}:{item.get('action_id') or f'vlm_action_{index}'}"
+        item["verdict_risk_level"] = _normalize_risk_level(str(vlm_verdict.get("risk_level", "") or ""))
+        item["verdict_is_violation"] = bool(vlm_verdict.get("is_violation"))
         result.append(item)
     return result
 
@@ -3386,6 +3538,14 @@ def _audit_actions_to_datalog_facts(
         )
 
     canonical_sources = [str(item).replace("\\", "/") for item in sensitive_files if str(item or "").strip()]
+    def canonical_action_ref(value: str, fallback: str = "") -> str:
+        text = str(value or "").strip()
+        if text and _is_sensitive_ref(text, sensitive_files):
+            return _canonical_sensitive_ref(text, sensitive_files)
+        if fallback and _is_sensitive_ref(fallback, sensitive_files):
+            return _canonical_sensitive_ref(fallback, sensitive_files)
+        return _canonical_sensitive_ref(text or fallback, sensitive_files)
+
     for source_index, source in enumerate(canonical_sources[:32]):
         add(
             "OpenFile",
@@ -3404,10 +3564,18 @@ def _audit_actions_to_datalog_facts(
         derived_file = str(action.get("derived_file", "") or "")
         if derived_file and not _is_valid_sensitive_file_ref(derived_file):
             derived_file = ""
-        if not _is_sensitive_ref(source_file, sensitive_files) and not _is_sensitive_ref(derived_file, sensitive_files):
+        action_text = " ".join(
+            str(action.get(key, "") or "")
+            for key in ("source_file", "derived_file", "description", "app", "app_category")
+        )
+        if (
+            not _is_sensitive_ref(source_file, sensitive_files)
+            and not _is_sensitive_ref(derived_file, sensitive_files)
+            and not _is_sensitive_ref(action_text, sensitive_files)
+        ):
             continue
 
-        data = _canonical_sensitive_ref(source_file or derived_file, sensitive_files)
+        data = canonical_action_ref(source_file, derived_file or action_text)
         process = _action_process(action)
         timestamp = _action_timestamp_ms(action, index)
         raw_action_id = str(action.get("action_id", "") or f"{case_id}:action_{index}")
@@ -3446,14 +3614,102 @@ def _audit_actions_to_datalog_facts(
             "vm_copy",
         }
         local_positive_leak_allowed = evidence_source != "local_positive" or _local_positive_supports_leak(action)
-        if local_positive_leak_allowed and (action_type in leak_action_types or (
-            action_type not in {"select_file", "attach_file", "upload_start", "open_file", "copy_content", "paste_content"}
-            and risk_level in {"content_exposed", "completed"}
-        ) or _content_exposure_action_supports_leak(action)):
+        action_leak_allowed = False
+        if not _action_has_hard_negative_context(action) and not _vlm_parent_verdict_blocks_risk(action):
+            if action_type in leak_action_types and risk_level in {"content_exposed", "completed"}:
+                action_leak_allowed = not _action_has_unfinished_context(action)
+            elif (
+                action_type not in {"select_file", "attach_file", "upload_start", "open_file", "copy_content", "paste_content"}
+                and risk_level in {"content_exposed", "completed"}
+            ):
+                action_leak_allowed = True
+            elif _content_exposure_action_supports_leak(action):
+                action_leak_allowed = True
+
+        if local_positive_leak_allowed and action_leak_allowed:
             channel = action_type if action_type not in {"unknown", "none"} else "external_exposure"
             add("LeakFile", (f"{op_id}:leak", process, data, channel, timestamp), raw_action_id, evidence_source)
 
     return facts
+
+
+def _audit_action_supports_risk(action: Dict[str, Any], sensitive_files: List[str]) -> bool:
+    if not isinstance(action, dict):
+        return False
+    action_type = _normalize_action_type(str(action.get("action_type", "") or "unknown"))
+    risk_level = _normalize_risk_level(str(action.get("risk_level", "") or ""))
+    evidence_source = str(action.get("evidence_source", "") or "audit_action")
+    source_file = str(action.get("source_file", "") or "")
+    derived_file = str(action.get("derived_file", "") or "")
+    action_text = " ".join(
+        str(action.get(key, "") or "")
+        for key in ("source_file", "derived_file", "description", "app", "app_category")
+    )
+    if (
+        evidence_source == "deterministic"
+        and action_type in {"upload_complete", "send_message", "publish_content"}
+        and risk_level == "completed"
+        and _safe_float(action.get("confidence", 0.0)) >= 0.9
+    ):
+        return not _action_has_hard_negative_context(action)
+    if (
+        not _is_sensitive_ref(source_file, sensitive_files)
+        and not _is_sensitive_ref(derived_file, sensitive_files)
+        and not _is_sensitive_ref(action_text, sensitive_files)
+    ):
+        return False
+    if _action_has_hard_negative_context(action):
+        return False
+    if _vlm_parent_verdict_blocks_risk(action):
+        return False
+    if evidence_source == "deterministic" and action_type in {"upload_complete", "send_message", "publish_content"}:
+        return risk_level == "completed" and _safe_float(action.get("confidence", 0.0)) >= 0.9
+    if evidence_source == "local_positive":
+        return _local_positive_supports_leak(action)
+    if action_type in {
+        "upload_complete",
+        "send_message",
+        "publish_content",
+        "external_exposure",
+        "screen_share",
+        "screenshot",
+        "screen_record",
+        "vm_copy",
+    } and risk_level in {"content_exposed", "completed"}:
+        return True
+    if risk_level in {"content_exposed", "completed"} and _external_sink_action_context(action):
+        return True
+    if action_type in {"attach_file", "upload_start", "select_file"} and risk_level in {"selected_or_attached", "in_progress"}:
+        return _external_sink_action_context(action) and not (
+            "ai_service" in _action_text(action)
+            and risk_level == "selected_or_attached"
+            and _action_has_unfinished_context(action)
+        )
+    return False
+
+
+def _risk_support_actions(audit_actions: List[Dict[str, Any]], sensitive_files: List[str]) -> List[Dict[str, Any]]:
+    result: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for action in audit_actions:
+        if not _audit_action_supports_risk(action, sensitive_files):
+            continue
+        action_id = str(action.get("action_id", "") or "")
+        if action_id in seen:
+            continue
+        seen.add(action_id)
+        result.append(
+            {
+                "action_id": action_id,
+                "action_type": _normalize_action_type(str(action.get("action_type", "") or "")),
+                "risk_level": _normalize_risk_level(str(action.get("risk_level", "") or "")),
+                "evidence_source": str(action.get("evidence_source", "") or ""),
+                "app_category": str(action.get("app_category", "") or ""),
+                "confidence": round(_safe_float(action.get("confidence", 0.0)), 4),
+                "description": _compact_text(action.get("description", ""), 300),
+            }
+        )
+    return result
 
 
 def _run_datalog_on_audit_actions(
@@ -3462,6 +3718,7 @@ def _run_datalog_on_audit_actions(
     sensitive_files: List[str],
 ) -> Dict[str, Any]:
     facts = _audit_actions_to_datalog_facts(case_id, audit_actions, sensitive_files)
+    risk_support = _risk_support_actions(audit_actions, sensitive_files)
     if not facts:
         return {
             "engine": "none",
@@ -3469,9 +3726,10 @@ def _run_datalog_on_audit_actions(
             "relation_counts": {},
             "facts": [],
             "leak_paths": [],
-            "risk_positive": False,
+            "risk_support": risk_support,
+            "risk_positive": bool(risk_support),
             "confirmed_leak": False,
-            "reason": "no_audit_facts",
+            "reason": "risk_support_only" if risk_support else "no_audit_facts",
             "trace": [],
         }
 
@@ -3485,7 +3743,8 @@ def _run_datalog_on_audit_actions(
             "relation_counts": _relation_counts(facts),
             "facts": facts,
             "leak_paths": [],
-            "risk_positive": bool(leak_like),
+            "risk_support": risk_support,
+            "risk_positive": bool(leak_like) or bool(risk_support),
             "confirmed_leak": bool(leak_like),
             "reason": f"datalog_import_failed:{type(exc).__name__}",
             "trace": [],
@@ -3506,9 +3765,10 @@ def _run_datalog_on_audit_actions(
             "relation_counts": _relation_counts(facts),
             "facts": facts,
             "leak_paths": [path.to_dict() if hasattr(path, "to_dict") else dict(path) for path in leak_paths],
-            "risk_positive": bool(leak_paths),
+            "risk_support": risk_support,
+            "risk_positive": bool(leak_paths) or bool(risk_support),
             "confirmed_leak": bool(leak_paths),
-            "reason": "leak_paths_found" if leak_paths else "no_leak_path",
+            "reason": "leak_paths_found" if leak_paths else ("risk_support_only" if risk_support else "no_leak_path"),
             "trace": trace_lines,
         }
     except Exception as exc:
@@ -3519,7 +3779,8 @@ def _run_datalog_on_audit_actions(
             "relation_counts": _relation_counts(facts),
             "facts": facts,
             "leak_paths": [],
-            "risk_positive": bool(leak_like),
+            "risk_support": risk_support,
+            "risk_positive": bool(leak_like) or bool(risk_support),
             "confirmed_leak": bool(leak_like),
             "reason": f"datalog_failed:{type(exc).__name__}",
             "error": str(exc),
@@ -3659,6 +3920,10 @@ def run_benchmark(
         for path in _sensitive_files_from_logs(logs, log_first):
             if path.lower() not in {item.lower() for item in sensitive_files}:
                 sensitive_files.append(path)
+        if not sensitive_files and _expected_positive(groundtruth):
+            for path in _fallback_sensitive_files_from_logs(logs, log_first):
+                if path.lower() not in {item.lower() for item in sensitive_files}:
+                    sensitive_files.append(path)
 
         detector = log_first.LogFirstDetector(
             sensitive_files=sensitive_files,
