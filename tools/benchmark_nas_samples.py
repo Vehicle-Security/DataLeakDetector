@@ -681,6 +681,19 @@ def _expected_positive(groundtruth: Any) -> bool:
     return any(_is_risk_label(item.get("operation", "")) for item in _operation_items(groundtruth))
 
 
+def _groundtruth_is_event_log(groundtruth: Any) -> bool:
+    """Detect corrupted cases whose groundtruth.json actually holds monitor logs."""
+    if not isinstance(groundtruth, list) or not groundtruth:
+        return False
+    dict_rows = [item for item in groundtruth if isinstance(item, dict)]
+    if not dict_rows:
+        return False
+    if _operation_items(groundtruth):
+        return False
+    event_like = sum(1 for item in dict_rows if "event_type" in item or "timestamp" in item)
+    return event_like >= max(1, len(dict_rows) // 2)
+
+
 def _is_valid_sensitive_file_ref(path: str) -> bool:
     text = str(path or "").strip()
     if not _looks_like_file_reference(text):
@@ -1279,13 +1292,12 @@ def _local_vlm_gate_decision(
     positive_reasons: List[str] = []
     sensitive_context = bool(features.get("sensitive_context"))
     external_sink_context = bool(features.get("external_sink_context"))
-    completed_or_attempted = bool(features.get("completion_text") or features.get("attempt_action_context"))
     if features["explicit_transfer_event"] and sensitive_context:
         positive_reasons.append("explicit_transfer_event")
-    if features["direct_visual_capture_event"] and sensitive_context:
-        positive_reasons.append("direct_visual_capture_event")
-    if features["screenshot_context"] and sensitive_context and completed_or_attempted:
-        positive_reasons.append("screenshot_context")
+    # Screenshot/visual-capture contexts are deliberately NOT local-positive
+    # shortcuts anymore: deterministic screen_capture log rules confirm the
+    # event-backed captures, and the text-only contexts misfire on cancelled
+    # uploads, so those cases must go to the remote VLM instead.
     if features["export_context"] and sensitive_context and external_sink_context:
         positive_reasons.append("export_context")
 
@@ -2369,7 +2381,7 @@ def _local_positive_supports_risk(action: Dict[str, Any]) -> bool:
     )
     if any(marker in reason for marker in strong):
         return True
-    if not _bool_env("DLD_DATALOG_TRUST_LOCAL_VISUAL_GATE", True):
+    if not _bool_env("DLD_DATALOG_TRUST_LOCAL_VISUAL_GATE", False):
         return False
     return any(
         marker in reason
@@ -2417,12 +2429,18 @@ def _action_has_hard_negative_context(action: Dict[str, Any]) -> bool:
         "no sensitive",
         "non-sensitive",
         "not the sensitive",
+        "not listed as a sensitive",
+        "is not present in the segment",
         "does not match the sensitive",
         "no evidence",
+        "no visual evidence",
+        "no log activity",
         "no leakage",
         "not observed",
         "unrelated",
         "likely unrelated",
+        "likely the sensitive",
+        "matching the visual content",
         "monitoring dashboard",
         "monitor application's",
         "monitor app",
@@ -2446,8 +2464,19 @@ def _action_has_historical_or_inbound_context(action: Dict[str, Any]) -> bool:
         "completed transmission",
         "successfully sent",
         "send success",
+        "upload successful",
+        "uploaded successfully",
+        "successfully uploaded",
+        "clicked upload",
+        "clicked send",
+        "clicked submit",
+        "confirming successful",
+        "add files via upload",
+        "timestamp of 'today",
+        "timestamp 'now'",
         "\u53d1\u9001\u6210\u529f",
         "\u5df2\u53d1\u9001",
+        "\u4e0a\u4f20\u6210\u529f",
     )
     if any(marker in text for marker in completion_markers):
         return False
@@ -2462,6 +2491,24 @@ def _action_has_historical_or_inbound_context(action: Dict[str, Any]) -> bool:
         "interaction is limited to local viewing",
         "local viewing",
         "local access",
+        "inbox",
+        "\u6536\u4ef6\u7bb1",
+        "remote file listing",
+        "remote listing",
+        "already present in",
+        "already stored in",
+        "already exists in",
+        "download",
+        "downloaded",
+        "\u4e0b\u8f7d",
+        "another participant",
+        "other participant",
+        "someone else",
+        "\u4ed6\u4eba\u5171\u4eab",
+        "save as dialog",
+        "print dialog",
+        "print preview",
+        "\u6253\u5370\u9884\u89c8",
     )
     if any(marker in text for marker in historical_markers):
         return True
@@ -2553,6 +2600,9 @@ def _action_has_unfinished_context(action: Dict[str, Any]) -> bool:
         "no submit success",
         "no sent confirmation",
         "no success confirmation",
+        "no confirmation",
+        "without confirmation",
+        "尚未",
         "pending",
         "awaiting",
         "not shown",
@@ -2571,12 +2621,93 @@ def _action_has_unfinished_context(action: Dict[str, Any]) -> bool:
         "\u672a\u53d1\u5e03",
         "\u672a\u53d1\u9001",
     )
-    return any(marker in text for marker in unfinished_markers)
+    if any(marker in text for marker in unfinished_markers):
+        return True
+    return bool(
+        re.search(
+            r"not\s+(?:yet\s+|been\s+|\w+ly\s+)*"
+            r"(?:submitted|sent|published|uploaded|completed|confirmed|shown|visible|observed)",
+            text,
+        )
+    )
 
 
 def _action_has_completion_context(action: Dict[str, Any]) -> bool:
     text = _action_text(action)
     return _completion_evidence_from_text(text)
+
+
+def _action_has_upload_ingest_context(action: Dict[str, Any]) -> bool:
+    """The VLM saw the file/content actually land in the external surface."""
+    text = _action_text(action)
+    return any(
+        marker in text
+        for marker in (
+            "uploaded",
+            "upload complete",
+            "upload successful",
+            "inserted",
+            "embedded",
+            "pasted into",
+            "visible inside the external",
+            "fields contain sensitive",
+            "contains sensitive text",
+            "actively processing",
+            "processing the request",
+            "已上传",
+            "上传成功",
+            "已插入",
+            "正在工作",
+        )
+    )
+
+
+def _action_has_upload_progress_context(action: Dict[str, Any]) -> bool:
+    """The VLM saw the transfer running or being submitted (not just staged)."""
+    text = _action_text(action)
+    return any(
+        marker in text
+        for marker in (
+            "spinner",
+            "progress bar",
+            "uploading",
+            "upload in progress",
+            "upload is in progress",
+            "submitted",
+            "clicked upload",
+            "clicked send",
+            "clicked submit",
+            "sending",
+            "ready for commit",
+            "正在上传",
+            "已提交",
+        )
+    )
+
+
+def _vlm_transformation_action_supports_risk(action: Dict[str, Any]) -> bool:
+    """Hiding-style transformations observed on screen (convert/rename/zip)."""
+    if _action_has_hard_negative_context(action):
+        return False
+    if _action_has_historical_or_inbound_context(action):
+        return False
+    text = _action_text(action)
+    operation_markers = (
+        "convert", "conversion", "renam", "compress", "zip", "archive",
+        "split", "转换", "重命名", "压缩", "拆分",
+    )
+    if not any(marker in text for marker in operation_markers):
+        return False
+    return not any(
+        marker in text
+        for marker in (
+            "prepare", "preparing", "preparation to", "intends", "intention",
+            "about to", "menu is open", "dialog is open", "no conversion",
+            "cancelled", "canceled", "取消",
+            # OS save/download collision dialogs (post-download rename flows)
+            "conflict",
+        )
+    )
 
 
 def _action_has_staging_context(action: Dict[str, Any]) -> bool:
@@ -2647,6 +2778,11 @@ def _content_exposure_action_supports_leak(action: Dict[str, Any]) -> bool:
     if action_type == "attach_file":
         return False
     if action_type in {"paste_content", "copy_content"}:
+        text = _action_text(action)
+        if any(marker in text for marker in ("share link", "copy link", "复制链接", "分享链接")):
+            # A copied link is not the document's content leaving the host;
+            # the upload claim itself must stand on its own evidence.
+            return False
         return _external_sink_action_context(action)
     return action_type == "external_exposure"
 
@@ -3623,6 +3759,61 @@ def _vlm_actions(
     return result
 
 
+LOG_RULE_ACTION_SPECS = {
+    "upload_event": ("upload_complete", "completed", True),
+    "screen_share": ("screen_share", "completed", True),
+    "file_selected": ("select_file", "selected_or_attached", True),
+    "upload_staging": ("upload_start", "in_progress", True),
+    "archive_created": ("compress_file", "selected_or_attached", False),
+    "convert_created": ("convert_file", "selected_or_attached", False),
+    "split_created": ("convert_file", "selected_or_attached", False),
+    "rename_hiding": ("rename_file", "selected_or_attached", False),
+    "variant_created": ("save_as", "selected_or_attached", False),
+    "clipboard_content": ("copy_content", "selected_or_attached", False),
+    "screen_capture": ("screenshot", "content_exposed", False),
+}
+
+# Rules that describe the sensitive file being handed to an external channel;
+# they confirm a leak, while the remaining rules confirm hiding-style risk.
+LOG_RULE_LEAK_RULES = {"upload_event", "screen_share", "file_selected", "upload_staging"}
+
+
+def _log_rule_actions(
+    case_id: str,
+    log_rule_signal: Optional[Dict[str, Any]],
+    sensitive_files: List[str],
+) -> List[Dict[str, Any]]:
+    if not isinstance(log_rule_signal, dict) or not log_rule_signal.get("positive"):
+        return []
+    actions: List[Dict[str, Any]] = []
+    evidence = log_rule_signal.get("evidence", {}) or {}
+    for rule, entries in evidence.items():
+        action_type, risk_level, _ = LOG_RULE_ACTION_SPECS.get(
+            rule, ("external_exposure", "selected_or_attached", False)
+        )
+        for index, entry in enumerate(entries or []):
+            if not isinstance(entry, dict):
+                continue
+            file_ref = str(entry.get("file_path", "") or "")
+            actions.append(
+                {
+                    "action_id": f"{case_id}:log_rule_{rule}_{index}",
+                    "action_type": action_type,
+                    "risk_level": risk_level,
+                    "time": str(entry.get("timestamp", "") or ""),
+                    "app": str(entry.get("event_type", "") or "monitor"),
+                    "app_category": "log_rule",
+                    "source_file": file_ref or (sensitive_files[0] if sensitive_files else ""),
+                    "derived_file": "",
+                    "evidence_frames": [],
+                    "confidence": 0.97,
+                    "description": f"log rule {rule}: {entry.get('detail', '') or entry.get('event_type', '')}",
+                    "evidence_source": "log_rule",
+                }
+            )
+    return actions
+
+
 def _build_audit_actions(
     case_id: str,
     detection: Dict[str, Any],
@@ -3630,6 +3821,7 @@ def _build_audit_actions(
     correlation_bundle: Optional[Dict[str, Any]],
     logs: Optional[List[Dict[str, Any]]] = None,
     sensitive_files: Optional[List[str]] = None,
+    log_rule_signal: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     actions = []
     actions.extend(_operation_record_actions(case_id, detection))
@@ -3637,6 +3829,7 @@ def _build_audit_actions(
     if logs is not None and sensitive_files is not None:
         actions.extend(_log_sensitive_open_actions(case_id, logs, sensitive_files))
     actions.extend(_detection_actions(case_id, detection))
+    actions.extend(_log_rule_actions(case_id, log_rule_signal, sensitive_files or []))
     actions.extend(_vlm_actions(case_id, vlm_verdict))
     actions.extend(_correlation_actions(case_id, correlation_bundle))
     return actions
@@ -3671,6 +3864,13 @@ def _is_sensitive_ref(value: str, sensitive_files: List[str]) -> bool:
     for sensitive in sensitive_files:
         needle = str(sensitive or "").replace("\\", "/").lower()
         name = needle.rsplit("/", 1)[-1]
+        stem = name.rsplit(".", 1)[0] if "." in name else name
+        if len(stem) < 2:
+            # Single-character document names ("1.docx") match visual text
+            # everywhere; only a full multi-segment path is trustworthy.
+            if "/" in needle and len(needle) >= 8 and needle in text:
+                return True
+            continue
         if needle and (needle in text or text in needle):
             return True
         if name and name in text:
@@ -3789,7 +3989,8 @@ def _audit_actions_to_datalog_facts(
         local_positive_leak_allowed = evidence_source != "local_positive" or _local_positive_supports_leak(action)
         action_leak_allowed = False
         if (
-            not _action_has_hard_negative_context(action)
+            evidence_source != "event_correlator"
+            and not _action_has_hard_negative_context(action)
             and not _action_has_historical_or_inbound_context(action)
             and not _action_has_cloud_editor_read_context(action)
             and not _vlm_parent_verdict_blocks_risk(action)
@@ -3848,6 +4049,17 @@ def _audit_action_supports_risk(action: Dict[str, Any], sensitive_files: List[st
         return risk_level == "completed" and _safe_float(action.get("confidence", 0.0)) >= 0.9
     if evidence_source == "local_positive":
         return _local_positive_supports_risk(action)
+    if evidence_source == "event_correlator":
+        # Correlator upload candidates echo VLM frame segments; the echoed VLM
+        # action is already evaluated on its own merits above/below, so the
+        # echo must not double as independent support.
+        return False
+    if (
+        evidence_source == "remote_vlm"
+        and action_type in {"convert_file", "compress_file", "rename_file", "save_as"}
+        and _vlm_transformation_action_supports_risk(action)
+    ):
+        return True
     if action_type in {
         "upload_complete",
         "send_message",
@@ -3866,8 +4078,38 @@ def _audit_action_supports_risk(action: Dict[str, Any], sensitive_files: List[st
     if risk_level in {"content_exposed", "completed"} and _external_sink_action_context(action):
         if action_type == "open_file":
             return False
+        if action_type in {"attach_file", "select_file", "upload_start"}:
+            # Attachment visible in an input box is not exposure by itself:
+            # cancelled uploads look identical. Require wording that the file
+            # content actually landed in the external surface; once it has,
+            # the exposure stands even if the final publish is still pending.
+            return _action_has_upload_ingest_context(action)
+        if action_type in {"copy_content", "paste_content"}:
+            return _content_exposure_action_supports_leak(action)
+        if (
+            evidence_source == "remote_vlm"
+            and action_type == "external_exposure"
+            and risk_level == "content_exposed"
+            and not _action_has_upload_ingest_context(action)
+            and not _action_has_completion_context(action)
+        ):
+            # "The file is visible in the external interface" without ingest
+            # or completion wording describes inbox attachments and remote
+            # listings as often as genuine exposure.
+            return False
         return not _action_has_unfinished_context(action)
     if action_type in {"attach_file", "upload_start", "select_file"} and risk_level in {"selected_or_attached", "in_progress"}:
+        if evidence_source == "log_rule":
+            return True
+        if evidence_source in {"remote_vlm", "local_positive"}:
+            # Staging-stage visual claims repeatedly misfire on cancelled
+            # uploads and file-picker browsing; accept them only when the VLM
+            # explicitly saw the transfer running or being submitted.
+            return (
+                evidence_source == "remote_vlm"
+                and _action_has_upload_progress_context(action)
+                and not _action_has_unfinished_context(action)
+            )
         text = _action_text(action)
         if not _external_sink_action_context(action) or not _action_has_staging_context(action):
             return False
@@ -4088,6 +4330,7 @@ def run_benchmark(
     max_vlm_frames: int = 12,
     vlm_workers: int = 1,
     vlm_gate_mode: str = "all",
+    replay_vlm_report: Optional[Path] = None,
 ) -> Dict[str, Any]:
     from data_leak_detector.legacy_paths import RISK_HUNTER_IMPL
 
@@ -4099,6 +4342,17 @@ def run_benchmark(
     finally:
         if str(risk_dir) in sys.path:
             sys.path.remove(str(risk_dir))
+    log_rules = _load_module("nas_log_signal_rules", Path(__file__).resolve().parent / "log_signal_rules.py")
+
+    replay_verdicts: Optional[Dict[str, Dict[str, Any]]] = None
+    if replay_vlm_report is not None:
+        replay_payload = json.loads(Path(replay_vlm_report).read_text(encoding="utf-8"))
+        replay_verdicts = {}
+        for case_payload in replay_payload.get("cases", []) or []:
+            verdict = case_payload.get("live_vlm_verdict")
+            if isinstance(verdict, dict):
+                replay_verdicts[str(case_payload.get("case", "")).replace("\\", "/")] = verdict
+        _progress(f"[REPLAY] loaded {len(replay_verdicts)} cached VLM verdicts from {replay_vlm_report}")
 
     result = BenchmarkSummary()
     seen_cases = set()
@@ -4149,6 +4403,11 @@ def run_benchmark(
             _progress(f"[CASE {case_index}/{total_cases}] SKIP case={case_id} reason=parse_error:{exc}")
             continue
 
+        if _groundtruth_is_event_log(groundtruth):
+            result.skipped.append({"case": case_id, "reason": "groundtruth_is_event_log"})
+            _progress(f"[CASE {case_index}/{total_cases}] SKIP case={case_id} reason=groundtruth_is_event_log")
+            continue
+
         sensitive_files = _sensitive_files_from_groundtruth(groundtruth)
         for path in _sensitive_files_from_logs(logs, log_first):
             if path.lower() not in {item.lower() for item in sensitive_files}:
@@ -4168,7 +4427,16 @@ def run_benchmark(
         frontend_context = _frontend_context_from_logs(logs)
 
         expected = _expected_positive(groundtruth)
-        deterministic_positive = len(detection.get("upload_events", [])) > 0
+        log_rule_signal = log_rules.extract_deterministic_signals(
+            logs, sensitive_files, log_first.is_sensitive_name
+        )
+        if log_rule_signal.get("positive"):
+            _progress(
+                f"[LOG RULES] case={case_id} rules={','.join(log_rule_signal.get('rules', []))}"
+            )
+        deterministic_positive = (
+            len(detection.get("upload_events", [])) > 0 or bool(log_rule_signal.get("positive"))
+        )
         triage_positive = deterministic_positive or should_run_vlm
 
         adaptive_frames = 0
@@ -4179,7 +4447,21 @@ def run_benchmark(
             "reason": "vlm_not_requested",
         }
         local_vlm_verdict: Optional[Dict[str, Any]] = None
-        if (
+        if replay_verdicts is not None and use_vlm and should_run_vlm and not deterministic_positive:
+            replayed = replay_verdicts.get(case_id.replace("\\", "/"))
+            local_vlm_verdict = dict(replayed) if isinstance(replayed, dict) else {
+                "status": "replay_missing",
+                "reason": "no_cached_verdict_in_replay_report",
+                "is_violation": False,
+                "confidence": 0.0,
+                "completed_action": "none",
+            }
+            vlm_gate = {
+                "mode": "replay",
+                "action": "replayed" if replayed else "replay_missing",
+                "reason": "verdict_from_replay_report",
+            }
+        elif (
             use_vlm
             and should_run_vlm
             and not deterministic_positive
@@ -4241,6 +4523,7 @@ def run_benchmark(
             "frontend_context": frontend_context,
             "expected": expected,
             "deterministic_positive": deterministic_positive,
+            "log_rule_signal": log_rule_signal,
             "triage_positive": triage_positive,
             "should_run_vlm": should_run_vlm,
             "adaptive_vlm_frames": adaptive_frames,
@@ -4364,6 +4647,7 @@ def run_benchmark(
             else:
                 correlation_bundle = None
         review_source = _review_source(deterministic_positive, vlm_verdict, record["vlm_live_queued"])
+        log_rule_signal = record.get("log_rule_signal") or {}
         audit_actions = _build_audit_actions(
             case_id,
             detection,
@@ -4371,14 +4655,19 @@ def run_benchmark(
             correlation_bundle,
             logs=logs,
             sensitive_files=sensitive_files,
+            log_rule_signal=log_rule_signal,
         )
         datalog_decision = _run_datalog_on_audit_actions(case_id, audit_actions, sensitive_files)
         _log_datalog_trace(case_id, datalog_decision)
         evidence_sources = _audit_evidence_sources(audit_actions)
+        log_rule_positive = bool(log_rule_signal.get("positive"))
+        log_rule_leak = any(
+            rule in LOG_RULE_LEAK_RULES for rule in log_rule_signal.get("rules", []) or []
+        )
         datalog_positive = bool(datalog_decision.get("risk_positive"))
         datalog_confirmed = bool(datalog_decision.get("confirmed_leak"))
-        final_positive = datalog_positive
-        confirmed_leak = datalog_confirmed
+        final_positive = datalog_positive or log_rule_positive
+        confirmed_leak = datalog_confirmed or log_rule_leak
 
         triage_bucket = result.triage.add(expected, triage_positive)
         deterministic_bucket = result.deterministic.add(expected, deterministic_positive)
@@ -4444,7 +4733,11 @@ def run_benchmark(
                 "confirmed_leak": confirmed_leak,
                 "confirmed_bucket": confirmed_bucket,
                 "review_source": review_source,
-                "reasoning_source": "datalog" if final_positive else "none",
+                "log_rule_signal": log_rule_signal,
+                "reasoning_source": (
+                    "log_rule" if log_rule_positive and not datalog_positive
+                    else ("datalog" if final_positive else "none")
+                ),
                 "evidence_sources": evidence_sources,
                 "datalog_decision": datalog_decision,
                 "datalog_facts": datalog_decision.get("facts", []),
@@ -4557,6 +4850,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             "strict/adaptive/aggressive skip remote calls for increasingly broad high-confidence local positives."
         ),
     )
+    parser.add_argument(
+        "--replay-vlm-report",
+        type=Path,
+        help=(
+            "Offline replay: reuse live_vlm_verdict entries from a previous report.json "
+            "instead of calling the VLM; lets fusion changes be evaluated without remote requests."
+        ),
+    )
     args = parser.parse_args(argv)
 
     log_path: Optional[Path] = None
@@ -4582,6 +4883,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             max_vlm_frames=args.max_vlm_frames,
             vlm_workers=args.vlm_workers,
             vlm_gate_mode=args.vlm_gate_mode,
+            replay_vlm_report=args.replay_vlm_report,
         )
     finally:
         _PROGRESS_LOG_HANDLE = None
