@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1180" viewBox="0 0 2200 1180">
+  <defs>
+    <style>
+      .title { font: 700 52px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
+      .sub { font: 26px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #52616f; }
+      .card-title { font: 700 30px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
+      .body { font: 24px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #203246; }
+      .small { font: 20px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #52616f; }
+      .mono { font: 700 21px Consolas, "Microsoft YaHei", monospace; fill: #334155; }
+      .card { fill: #fff; stroke: #8ea3ba; stroke-width: 3; rx: 18; }
+      .log { fill: #eff6ff; }
+      .rule { fill: #ecfdf3; }
+      .vlm { fill: #fff7d6; }
+      .graph { fill: #f5f3ff; }
+      .out { fill: #fff1f2; }
+      .edge { stroke: #475569; stroke-width: 5; fill: none; marker-end: url(#arrow); }
+      .thin { stroke: #64748b; stroke-width: 3; fill: none; marker-end: url(#arrow2); }
+      .tag { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 2; rx: 10; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrow2" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect width="2200" height="1180" fill="#ffffff"/>
+  <text class="title" x="80" y="90">DataLeakDetector 当前主链路</text>
+  <text class="sub" x="82" y="138">当前工作区的重点已经从“让 VLM 看见风险”推进到“规则、VLM、Datalog 三路证据融合”。</text>
+
+  <rect class="card log" x="90" y="245" width="345" height="220"/>
+  <text class="card-title" x="130" y="305">采集输入</text>
+  <text class="body" x="130" y="352">keyevents.json / logs.json</text>
+  <text class="body" x="130" y="390">录屏 video.mp4</text>
+  <text class="small" x="130" y="430">文件、窗口、剪贴板、ETW、fs_usage</text>
+
+  <rect class="card rule" x="530" y="245" width="385" height="220"/>
+  <text class="card-title" x="570" y="305">确定性日志规则</text>
+  <text class="body" x="570" y="352">零 FP 规则优先定案</text>
+  <text class="body" x="570" y="390">其余样本进入复核队列</text>
+  <text class="small" x="570" y="430">file_selected / archive / rename / clipboard</text>
+
+  <rect class="card vlm" x="1010" y="245" width="385" height="220"/>
+  <text class="card-title" x="1050" y="305">片段级视觉复核</text>
+  <text class="body" x="1050" y="352">日志圈窗口，segment 选帧</text>
+  <text class="body" x="1050" y="390">OCR 预筛 + VLM verdict</text>
+  <text class="small" x="1050" y="430">max 24 frames，缓存和本地 gate 降成本</text>
+
+  <rect class="card graph" x="1490" y="245" width="385" height="220"/>
+  <text class="card-title" x="1530" y="305">证据关联与推理</text>
+  <text class="body" x="1530" y="352">EventCorrelator 绑定对象</text>
+  <text class="body" x="1530" y="390">LeakReasoner 跑 Datalog</text>
+  <text class="small" x="1530" y="430">audit_actions -> facts -> leak paths</text>
+
+  <path class="edge" d="M435 355 L530 355"/>
+  <path class="edge" d="M915 355 L1010 355"/>
+  <path class="edge" d="M1395 355 L1490 355"/>
+
+  <rect class="card out" x="770" y="620" width="700" height="270"/>
+  <text class="card-title" x="820" y="680">最终输出不是单一模型判断</text>
+  <text class="body" x="820" y="730">final_positive = Datalog 风险成立 或 确定性规则命中</text>
+  <text class="body" x="820" y="775">confirmed_leak = Datalog confirmed 或 强日志规则命中</text>
+  <text class="body" x="820" y="820">每个 case 保留：规则、VLM、audit_actions、facts、leak_paths</text>
+  <text class="small" x="820" y="862">这使误报/漏报能回溯到具体证据来源，而不是只看黑盒结论。</text>
+
+  <path class="thin" d="M720 465 C720 555, 900 570, 950 620"/>
+  <path class="thin" d="M1202 465 C1202 555, 1120 570, 1120 620"/>
+  <path class="thin" d="M1682 465 C1682 555, 1360 570, 1290 620"/>
+
+  <rect class="tag" x="170" y="990" width="460" height="80"/>
+  <text class="mono" x="205" y="1040">deterministic: 133 TP / 0 FP</text>
+
+  <rect class="tag" x="760" y="990" width="520" height="80"/>
+  <text class="mono" x="795" y="1040">replay v7 final: P=100%, R=93.60%</text>
+
+  <rect class="tag" x="1410" y="990" width="560" height="80"/>
+  <text class="mono" x="1445" y="1040">live fusion final: P=95.12%, R=96.06%</text>
+</svg>

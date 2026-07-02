@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1220" viewBox="0 0 2200 1220">
+  <defs>
+    <style>
+      .title { font: 700 52px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
+      .sub { font: 26px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #52616f; }
+      .h { font: 700 30px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #102033; }
+      .body { font: 24px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #203246; }
+      .small { font: 20px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #52616f; }
+      .mono { font: 700 21px Consolas, "Microsoft YaHei", monospace; fill: #334155; }
+      .card { fill: #fff; stroke: #8ea3ba; stroke-width: 3; rx: 18; }
+      .blue { fill: #eff6ff; }
+      .yellow { fill: #fff7d6; }
+      .green { fill: #ecfdf3; }
+      .purple { fill: #f5f3ff; }
+      .red { fill: #fff1f2; }
+      .line { stroke: #334155; stroke-width: 5; }
+      .edge { stroke: #475569; stroke-width: 5; fill: none; marker-end: url(#arrow); }
+      .window { fill: #dbeafe; stroke: #2563eb; stroke-width: 3; rx: 10; }
+      .seg { fill: #fef3c7; stroke: #f59e0b; stroke-width: 3; rx: 9; }
+      .keep { fill: #dcfce7; stroke: #16a34a; stroke-width: 4; rx: 9; }
+      .frame { fill: #f8fafc; stroke: #94a3b8; stroke-width: 2.5; rx: 8; }
+      .anchor { fill: #fee2e2; stroke: #ef4444; stroke-width: 3; rx: 8; }
+      .sent { fill: #dcfce7; stroke: #16a34a; stroke-width: 3; rx: 8; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect width="2200" height="1220" fill="#ffffff"/>
+  <text class="title" x="80" y="90">片段级 VLM/OCR 复核：长视频只看高价值证据帧</text>
+  <text class="sub" x="82" y="138">算法目标：保留动作证据和短暂完成态，同时控制远端图片数量。</text>
+
+  <line class="line" x1="160" y1="290" x2="2040" y2="290"/>
+  <text class="small" x="160" y="250">录屏时间线</text>
+  <rect class="window" x="410" y="255" width="300" height="70"/>
+  <rect class="window" x="1010" y="255" width="420" height="70"/>
+  <rect class="window" x="1680" y="255" width="260" height="70"/>
+  <text class="body" x="455" y="303">日志圈窗口</text>
+  <text class="body" x="1120" y="303">候选窗口</text>
+  <text class="body" x="1725" y="303">候选窗口</text>
+
+  <rect class="card blue" x="120" y="460" width="450" height="230"/>
+  <text class="h" x="160" y="520">1. 自适应预算</text>
+  <text class="body" x="160" y="568">基础每段 4 帧</text>
+  <text class="body" x="160" y="606">多窗口、长窗口、VM、会议加预算</text>
+  <text class="mono" x="160" y="648">max_frames = 24</text>
+
+  <rect class="card yellow" x="645" y="460" width="450" height="230"/>
+  <text class="h" x="685" y="520">2. segment 切片</text>
+  <text class="body" x="685" y="568">约 45 秒一段</text>
+  <text class="body" x="685" y="606">相邻片段保留重叠</text>
+  <text class="mono" x="685" y="648">MAX_SEGMENTS_PER_CASE = 6</text>
+
+  <rect class="card green" x="1170" y="460" width="450" height="230"/>
+  <text class="h" x="1210" y="520">3. 候选帧排序</text>
+  <text class="body" x="1210" y="568">事件锚点优先</text>
+  <text class="body" x="1210" y="606">边界帧 + scene score</text>
+  <text class="mono" x="1210" y="648">event_anchor / scene_change</text>
+
+  <rect class="card purple" x="1695" y="460" width="385" height="230"/>
+  <text class="h" x="1735" y="520">4. OCR/VLM</text>
+  <text class="body" x="1735" y="568">OCR 找完成态、敏感名</text>
+  <text class="body" x="1735" y="606">只发送高优先级图片</text>
+  <text class="mono" x="1735" y="648">image_sent=true</text>
+
+  <path class="edge" d="M570 575 L645 575"/>
+  <path class="edge" d="M1095 575 L1170 575"/>
+  <path class="edge" d="M1620 575 L1695 575"/>
+
+  <rect class="card red" x="260" y="825" width="1680" height="210"/>
+  <text class="h" x="310" y="880">一段里的帧选择</text>
+  <rect class="anchor" x="380" y="930" width="70" height="54"/>
+  <rect class="frame" x="480" y="930" width="70" height="54"/>
+  <rect class="sent" x="580" y="930" width="70" height="54"/>
+  <rect class="frame" x="680" y="930" width="70" height="54"/>
+  <rect class="sent" x="780" y="930" width="70" height="54"/>
+  <rect class="frame" x="880" y="930" width="70" height="54"/>
+  <rect class="anchor" x="980" y="930" width="70" height="54"/>
+  <text class="small" x="1100" y="948">红：动作附近候选；绿：带图发给 VLM；灰：只作为文字/OCR/时间线补充</text>
+  <text class="small" x="1100" y="990">这样既能抓住“发送成功”等短暂 UI，也不会把整段视频都交给远端模型。</text>
+
+  <text class="small" x="80" y="1145">输出：frame_plan、frame_selection、segment_verdicts、observed_actions，后续转成 frame_segments 和 audit_actions。</text>
+</svg>
