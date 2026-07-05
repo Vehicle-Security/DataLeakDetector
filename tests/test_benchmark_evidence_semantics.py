@@ -244,6 +244,21 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
         self.assertTrue(coverage["sensitive_object_anchor"])
         self.assertEqual(coverage["sampled_frames"], 1)
 
+    def test_monitor_ui_ocr_does_not_create_completion_flag(self) -> None:
+        bm = self.benchmark
+
+        monitor_flags = bm._ocr_risk_flags(
+            "Win Monitor localhost:5000 Safe 已完成 Windows 数据泄露行为监控系统",
+            ["C:/secret/plan.pdf"],
+        )
+        upload_flags = bm._ocr_risk_flags(
+            "Upload completed successfully",
+            ["C:/secret/plan.pdf"],
+        )
+
+        self.assertNotIn("completion_keyword", monitor_flags)
+        self.assertIn("completion_keyword", upload_flags)
+
 
 class EvidenceDecisionTest(unittest.TestCase):
     def test_risk_positive_does_not_make_final_positive(self) -> None:

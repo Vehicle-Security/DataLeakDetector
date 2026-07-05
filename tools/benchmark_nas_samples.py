@@ -1033,6 +1033,12 @@ def _compact_ocr_text(text: str) -> str:
     return re.sub(r"\s+", "", str(text or "")).lower()
 
 
+def _ocr_text_is_monitor_ui(text: str) -> bool:
+    lowered = str(text or "").lower()
+    compact = _compact_ocr_text(text)
+    return any(token.lower() in lowered or _compact_ocr_text(token) in compact for token in MONITOR_UI_TOKENS)
+
+
 def _ocr_reader() -> Any:
     global _OCR_READER, _OCR_READER_FAILED
     if _OCR_READER or _OCR_READER_FAILED:
@@ -1128,7 +1134,8 @@ def _ocr_risk_flags(text: str, sensitive_files: List[str]) -> List[str]:
     flags: List[str] = []
     if not compact:
         return flags
-    if any(_compact_ocr_text(token) in compact for token in COMPLETION_OCR_TOKENS):
+    monitor_ui = _ocr_text_is_monitor_ui(text)
+    if not monitor_ui and any(_compact_ocr_text(token) in compact for token in COMPLETION_OCR_TOKENS):
         flags.append("completion_keyword")
     if any(_compact_ocr_text(token) in compact for token in PRELIMINARY_OCR_TOKENS):
         flags.append("preliminary_keyword")
@@ -1865,7 +1872,7 @@ def _annotate_and_limit_image_frames(
         if not ocr_text:
             image_priority += 0.5
             image_reasons.append("ocr_not_run" if ocr_enabled and not should_ocr else "no_ocr_text")
-        elif any(token in ocr_text.lower() for token in MONITOR_UI_TOKENS) and not flags:
+        elif _ocr_text_is_monitor_ui(ocr_text) and "sensitive_name_visible" not in flags:
             image_priority -= 3.0
             image_reasons.append("monitor_ui_downrank")
 
