@@ -1489,10 +1489,12 @@ def _ocr_text_is_monitor_ui(text: str) -> bool:
     return any(token.lower() in lowered or _compact_ocr_text(token) in compact for token in MONITOR_UI_TOKENS)
 
 
-def _ocr_reader() -> Any:
+def _ocr_reader(allow_load: bool = True) -> Any:
     global _OCR_READER, _OCR_READER_FAILED
     if _OCR_READER or _OCR_READER_FAILED:
         return _OCR_READER
+    if not allow_load:
+        return None
     with _OCR_READER_LOCK:
         if _OCR_READER or _OCR_READER_FAILED:
             return _OCR_READER
@@ -1568,7 +1570,7 @@ def _ocr_frame_text(frame: Any) -> str:
         return _rapid_ocr_frame_text(frame)
     if engine != "easyocr":
         return ""
-    reader = _ocr_reader()
+    reader = _ocr_reader(allow_load=_ocr_prewarm_enabled())
     if not reader:
         return ""
     try:
