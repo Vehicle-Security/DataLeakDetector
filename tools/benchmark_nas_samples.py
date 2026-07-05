@@ -2682,11 +2682,18 @@ Frame notes:
 - For long uploads/sends, inspect session_start, heartbeat, terminal, and session_end frames for success, failure, cancel, or still-in-progress UI states.
 
 Terminal-state rules:
-- Completed: visible "Message sent", "Sent", "Upload complete", "Uploaded", success confirmation, remote listing, or recipient-visible artifact.
+- Completed: visible "Message sent", "Sent", "Upload complete", "Uploaded", success confirmation, newly-created remote listing after an outbound upload, or recipient-visible artifact.
 - Failed: visible "Upload failed", "Send failed", network error, retry prompt, or delivery failure.
 - Canceled: visible "Canceled", "Discard draft", attachment removed, upload canceled, or send canceled.
 - In progress: visible progress bar below 100%, "Uploading...", "Sending...", spinner/progress without success.
 - Do not mark failed/canceled/in-progress sessions as completed leakage.
+
+Outbound-direction rules:
+- Downloading a sensitive file from email/cloud/drive to the local computer is not leakage.
+- A browser download bubble, "download attachment" URL, download bar, or local editor opening a downloaded file is not outbound leakage.
+- A file already visible in a remote cloud/mail listing is not proof of a new upload unless the frames/logs show an outbound upload/save/share/send flow that reaches success.
+- A selected checkbox in a remote listing only means the object is selected; it is not a completed upload/share by itself.
+- Reading or editing an existing remote document is not completed leakage unless the user newly pasted/uploaded/shared sensitive local content into that external service.
 
 CRITICAL: Distinguish between staging and completion states carefully:
 
@@ -2702,7 +2709,7 @@ CRITICAL: Distinguish between staging and completion states carefully:
 - "上传完成" / "Upload Complete" / "已上传" / "Uploaded" confirmation
 - Progress bar shows 100% completion
 - Message appears in sent messages list or conversation history
-- File visible in remote cloud storage listing
+- File newly appears in remote cloud storage listing immediately after an observed outbound upload/save action
 - Commit/push success in git interface
 - Content visible in external AI chat history (content_exposed)
 - Screenshot captured or screen share active with sensitive content visible
@@ -2718,14 +2725,15 @@ Return both a completed-action verdict and a risk-stage verdict:
 - Identify frontend applications by category/capability, not by a fixed brand list. If the brand is unknown, infer the category from UI features.
 - Use selected_or_attached when a sensitive file is selected or attached in an external sink but not submitted yet.
 - Use in_progress when upload/send/share is visibly underway but completion is not shown.
-- Use content_exposed when sensitive text/image content is visible in an external AI/chat/editor/message input or conversation, even without a separate sent confirmation.
+- Use content_exposed when sensitive text/image content is newly entered or displayed in an external AI/chat/message input, conversation, active screen share, screenshot, or remote recipient-visible surface. Do not use content_exposed for a normal download, an existing remote listing, or merely opening an existing cloud document.
 - Use completed when upload/send/share/commit/publish success, remote listing, sent message, shared screen exposure, screenshot capture, or VM/remote copy completion is visible.
 - Use preparation for opening a sink page, browsing, right-clicking, or unrelated local editing without sensitive data entering the sink.
 - Use none when there is no sensitive-object interaction.
 
 Strict completion rules:
 - Email/chat is completed only after sent/success, the message appears in the conversation, or the recipient-visible artifact is shown.
-- Cloud/Git/community upload is completed only after success, remote listing, commit/publish success, or a generated remote attachment link.
+- Cloud/Git/community upload is completed only after success, a newly-created remote listing tied to an outbound upload/save action, commit/publish success, or a generated remote attachment link.
+- Existing remote listing or selected checkbox is not enough for cloud completion; the listing must be tied to a preceding outbound upload/save/share action.
 - AI/chat input containing sensitive content is content_exposed even before a final submit if the content is visible in the external service.
 - A draft, file picker, highlighted send button, selected file, or upload page alone is not completed, but may be selected_or_attached or in_progress.
 - For observed_actions, emit one separate structured action for every sensitive-object interaction you can see or infer from the provided logs.
@@ -3637,9 +3645,127 @@ def _content_exposure_action_supports_leak(action: Dict[str, Any]) -> bool:
     return action_type == "external_exposure"
 
 
+def _vlm_verdict_text(verdict: Dict[str, Any]) -> str:
+    parts: List[str] = [
+        str(verdict.get("reason", "") or ""),
+        f"completed_action:{verdict.get('completed_action', '') or ''}",
+        f"risk_level:{verdict.get('risk_level', '') or ''}",
+    ]
+    for action in verdict.get("observed_actions", []) or []:
+        if isinstance(action, dict):
+            parts.extend(
+                (
+                    f"action_type:{action.get('action_type', '') or ''}",
+                    f"action_risk_level:{action.get('risk_level', '') or ''}",
+                    str(action.get("description", "") or ""),
+                    str(action.get("app", "") or ""),
+                    str(action.get("app_category", "") or ""),
+                )
+            )
+    return " ".join(parts).lower()
+
+
+def _has_strong_outbound_completion_text(text: str) -> bool:
+    return any(
+        marker in text
+        for marker in (
+            "message sent",
+            "email sent",
+            "sent successfully",
+            "send success",
+            "upload complete",
+            "upload completed",
+            "upload successful",
+            "uploaded successfully",
+            "share link generated",
+            "shareable link",
+            "public sharing link",
+            "copied the public sharing link",
+            "published successfully",
+            "commit successful",
+            "push successful",
+            "screen share active",
+            "screenshot captured",
+        )
+    )
+
+
+def _has_hard_non_outbound_text(text: str) -> bool:
+    return any(
+        marker in text
+        for marker in (
+            "downloaded from",
+            "downloaded the sensitive",
+            "download completion",
+            "download bubble",
+            "download bar",
+            "download_attach",
+            "readaction=download",
+            "from the external sink",
+            "from qq mail",
+            "from 163",
+            "selected checkbox",
+            "checkbox selected",
+            "already visible",
+            "existing remote",
+            "existing cloud",
+            "remote file listing with its checkbox",
+            "has not been confirmed",
+            "not confirmed as completed",
+            "no success confirmation",
+            "no evidence of completion",
+            "without completing",
+            "state remains selected_or_attached",
+            "not sent",
+            "was not sent",
+            "not submitted",
+            "not uploaded",
+            "file picker",
+            "upload dialog is open",
+            "attached but not",
+            "selected but not",
+        )
+    )
+
+
+def _non_outbound_downgrade_level(text: str) -> str:
+    if any(
+        marker in text
+        for marker in (
+            "selected_or_attached",
+            "attached but not",
+            "selected but not",
+            "file picker",
+            "upload dialog",
+            "checkbox selected",
+            "selected checkbox",
+            "form shows",
+        )
+    ):
+        return "selected_or_attached"
+    return "none"
+
+
 def _postprocess_vlm_verdict(verdict: Dict[str, Any]) -> None:
     risk_level = _normalize_risk_level(str(verdict.get("risk_level", "") or ""))
     verdict["risk_level"] = risk_level or _infer_risk_level_from_verdict(verdict)
+    text = _vlm_verdict_text(verdict)
+    if _has_hard_non_outbound_text(text) and not _has_strong_outbound_completion_text(text):
+        verdict["raw_is_violation"] = verdict.get("is_violation")
+        verdict["raw_risk_level"] = verdict.get("risk_level")
+        verdict["is_violation"] = False
+        verdict["risk_level"] = _non_outbound_downgrade_level(text)
+        verdict["completed_action"] = "none"
+        verdict["postprocess_reason"] = "downgraded_non_outbound_or_unfinished_context"
+        for action in verdict.get("observed_actions", []) or []:
+            if not isinstance(action, dict):
+                continue
+            action_risk = _normalize_risk_level(str(action.get("risk_level", "") or ""))
+            if action_risk in {"content_exposed", "completed"}:
+                action["raw_risk_level"] = action.get("risk_level", "")
+                action["risk_level"] = verdict["risk_level"]
+                action["consistency_warning"] = "downgraded_non_outbound_or_unfinished_context"
+        return
     if not verdict.get("is_violation"):
         return
     if verdict["risk_level"] in {"content_exposed", "completed"}:
@@ -4074,6 +4200,7 @@ def _merge_segment_verdicts(
     merged["model"] = model
     _postprocess_vlm_verdict(merged)
     _postprocess_vlm_actions(merged, sensitive_files, logs)
+    _postprocess_vlm_verdict(merged)
     return merged
 
 
@@ -4112,7 +4239,9 @@ def _validate_vlm_consistency(verdict: Dict[str, Any]) -> None:
 
     if has_negative and is_high_risk:
         # Contradiction detected - downgrade
+        verdict['raw_is_violation'] = verdict.get('is_violation')
         verdict['risk_level'] = 'selected_or_attached'
+        verdict['is_violation'] = False
         verdict['confidence'] = verdict.get('confidence', 0.8) * 0.5
         verdict['consistency_warning'] = 'description_contradicts_high_risk_level'
         verdict['original_risk_level'] = risk_level
@@ -5793,6 +5922,85 @@ def _log_datalog_trace(case_id: str, decision: Dict[str, Any], max_items: int = 
         _progress(f"[DATALOG TRACE] case={case_id} omitted={trace_count - max_items}")
 
 
+def _evaluate_case_record_decision(record: Dict[str, Any], *, log_trace: bool = True) -> Dict[str, Any]:
+    case_id = record["case_id"]
+    logs = record["logs"]
+    sensitive_files = record["sensitive_files"]
+    groundtruth = record["groundtruth"]
+    detection = record["detection"]
+    fallback_meta = record["fallback_meta"]
+    expected_level = record["expected_level"]
+    deterministic_positive = record["deterministic_positive"]
+    triage_positive = record["triage_positive"]
+    vlm_verdict = record.get("live_vlm_verdict")
+
+    correlation_bundle: Optional[Dict[str, Any]] = None
+    if isinstance(vlm_verdict, dict) and vlm_verdict.get("status") == "success":
+        frame_segments = _frame_segments_from_vlm_verdict(
+            vlm_verdict,
+            sensitive_files,
+            fallback_meta,
+            logs,
+        )
+        correlation_bundle = _run_event_correlator_bundle(
+            case_id,
+            logs=_logs_for_correlation(logs, fallback_meta),
+            sensitive_files=sensitive_files,
+            groundtruth=groundtruth,
+            frame_segments=frame_segments,
+        )
+
+    log_rule_signal = record.get("log_rule_signal") or {}
+    audit_actions = _build_audit_actions(
+        case_id,
+        detection,
+        vlm_verdict,
+        correlation_bundle,
+        logs=logs,
+        sensitive_files=sensitive_files,
+        log_rule_signal=log_rule_signal,
+    )
+    datalog_decision = _run_datalog_on_audit_actions(case_id, audit_actions, sensitive_files)
+    if log_trace:
+        _log_datalog_trace(case_id, datalog_decision)
+    evidence_sources = _audit_evidence_sources(audit_actions)
+    log_rule_positive = bool(log_rule_signal.get("positive"))
+    datalog_positive = bool(datalog_decision.get("risk_positive"))
+    datalog_confirmed = bool(datalog_decision.get("confirmed_leak"))
+    rules_only_positive = bool(deterministic_positive) or log_rules_confirm_leak(
+        log_rule_signal.get("rules", []) or []
+    )
+    vlm_only_positive = _vlm_only_confirmed_positive(vlm_verdict)
+    frame_coverage = _semantic_frame_coverage(vlm_verdict)
+    evidence_decision = decide_evidence_outcome(
+        datalog_risk_positive=datalog_positive,
+        datalog_confirmed=datalog_confirmed,
+        log_rule_positive=log_rule_positive,
+        log_rule_rules=log_rule_signal.get("rules", []) or [],
+    )
+    risk_positive = evidence_decision.risk_positive
+    confirmed_leak = evidence_decision.confirmed_leak
+    final_positive = _final_positive_for_expected_level(expected_level, risk_positive, confirmed_leak)
+    return {
+        "correlation_bundle": correlation_bundle,
+        "review_source": _review_source(deterministic_positive, vlm_verdict, record["vlm_live_queued"]),
+        "log_rule_signal": log_rule_signal,
+        "audit_actions": audit_actions,
+        "datalog_decision": datalog_decision,
+        "evidence_sources": evidence_sources,
+        "datalog_positive": datalog_positive,
+        "datalog_confirmed": datalog_confirmed,
+        "rules_only_positive": rules_only_positive,
+        "vlm_only_positive": vlm_only_positive,
+        "frame_coverage": frame_coverage,
+        "evidence_decision": evidence_decision,
+        "risk_positive": risk_positive,
+        "confirmed_leak": confirmed_leak,
+        "final_positive": final_positive,
+        "final_semantics": f"groundtruth_aligned:{expected_level}",
+    }
+
+
 def _case_dirs(root: Path, stages: Optional[List[str]]) -> Iterable[Path]:
     stage_dirs = [root / stage for stage in stages] if stages else [path for path in root.iterdir() if path.is_dir()]
     for stage_dir in stage_dirs:
@@ -6071,6 +6279,8 @@ def run_benchmark(
             else:
                 _progress(f"[VLM] OCR prefilter enabled engine={_ocr_engine_name()} prewarm=off")
         future_to_record = {}
+        live_eval_done = 0
+        live_eval_correct = 0
         with ThreadPoolExecutor(max_workers=workers) as executor:
             for record in pending_vlm_records:
                 future = executor.submit(
@@ -6097,11 +6307,37 @@ def run_benchmark(
                         "max_frames_requested": record["adaptive_vlm_frames"],
                     }
                 record["live_vlm_verdict"] = verdict
+                live_eval_text = "eval=unavailable"
+                try:
+                    live_evaluation = _evaluate_case_record_decision(record, log_trace=True)
+                    record["live_evaluation"] = live_evaluation
+                    expected_value = bool(record["expected"])
+                    final_value = bool(live_evaluation["final_positive"])
+                    live_eval_done += 1
+                    live_eval_correct += int(expected_value == final_value)
+                    if expected_value and final_value:
+                        live_bucket = "TP"
+                    elif expected_value and not final_value:
+                        live_bucket = "FN"
+                    elif not expected_value and final_value:
+                        live_bucket = "FP"
+                    else:
+                        live_bucket = "TN"
+                    live_acc = live_eval_correct / live_eval_done if live_eval_done else 0.0
+                    live_eval_text = (
+                        f"expected={int(expected_value)} expected_level={record['expected_level']} "
+                        f"final={int(final_value)} risk={int(bool(live_evaluation['risk_positive']))} "
+                        f"confirmed={int(bool(live_evaluation['confirmed_leak']))} bucket={live_bucket} "
+                        f"rolling={live_eval_correct}/{live_eval_done} acc={live_acc:.3f}"
+                    )
+                except Exception as eval_exc:
+                    live_eval_text = f"eval_error={type(eval_exc).__name__}:{_compact_text(str(eval_exc), 160)}"
                 _progress(
                     f"[VLM {done_index}/{len(pending_vlm_records)} DONE] "
                     f"case={record['case_id']} status={verdict.get('status', 'unknown')} "
                     f"image_frames={verdict.get('frames_sent', 0)} "
                     f"context_frames={verdict.get('frame_context_count', 0)}/{record['adaptive_vlm_frames']} "
+                    f"{live_eval_text} "
                     f"reason={verdict.get('reason', '')}"
                 )
 
@@ -6150,57 +6386,25 @@ def run_benchmark(
         should_run_vlm = record["should_run_vlm"]
         vlm_verdict = record["live_vlm_verdict"]
 
-        correlation_bundle: Optional[Dict[str, Any]] = None
-        final_positive = triage_positive
-        if vlm_verdict:
-            if vlm_verdict.get("status") == "success":
-                frame_segments = _frame_segments_from_vlm_verdict(
-                    vlm_verdict,
-                    sensitive_files,
-                    fallback_meta,
-                    logs,
-                )
-                correlation_bundle = _run_event_correlator_bundle(
-                    case_id,
-                    logs=_logs_for_correlation(logs, fallback_meta),
-                    sensitive_files=sensitive_files,
-                    groundtruth=groundtruth,
-                    frame_segments=frame_segments,
-                )
-            else:
-                correlation_bundle = None
-        review_source = _review_source(deterministic_positive, vlm_verdict, record["vlm_live_queued"])
-        log_rule_signal = record.get("log_rule_signal") or {}
-        audit_actions = _build_audit_actions(
-            case_id,
-            detection,
-            vlm_verdict,
-            correlation_bundle,
-            logs=logs,
-            sensitive_files=sensitive_files,
-            log_rule_signal=log_rule_signal,
-        )
-        datalog_decision = _run_datalog_on_audit_actions(case_id, audit_actions, sensitive_files)
-        _log_datalog_trace(case_id, datalog_decision)
-        evidence_sources = _audit_evidence_sources(audit_actions)
-        log_rule_positive = bool(log_rule_signal.get("positive"))
-        datalog_positive = bool(datalog_decision.get("risk_positive"))
-        datalog_confirmed = bool(datalog_decision.get("confirmed_leak"))
-        rules_only_positive = bool(deterministic_positive) or log_rules_confirm_leak(
-            log_rule_signal.get("rules", []) or []
-        )
-        vlm_only_positive = _vlm_only_confirmed_positive(vlm_verdict)
-        frame_coverage = _semantic_frame_coverage(vlm_verdict)
-        evidence_decision = decide_evidence_outcome(
-            datalog_risk_positive=datalog_positive,
-            datalog_confirmed=datalog_confirmed,
-            log_rule_positive=log_rule_positive,
-            log_rule_rules=log_rule_signal.get("rules", []) or [],
-        )
-        risk_positive = evidence_decision.risk_positive
-        confirmed_leak = evidence_decision.confirmed_leak
-        final_positive = _final_positive_for_expected_level(expected_level, risk_positive, confirmed_leak)
-        final_semantics = f"groundtruth_aligned:{expected_level}"
+        evaluation = record.get("live_evaluation")
+        if not isinstance(evaluation, dict):
+            evaluation = _evaluate_case_record_decision(record, log_trace=True)
+            record["live_evaluation"] = evaluation
+        review_source = evaluation["review_source"]
+        log_rule_signal = evaluation["log_rule_signal"]
+        audit_actions = evaluation["audit_actions"]
+        datalog_decision = evaluation["datalog_decision"]
+        evidence_sources = evaluation["evidence_sources"]
+        datalog_positive = evaluation["datalog_positive"]
+        datalog_confirmed = evaluation["datalog_confirmed"]
+        rules_only_positive = evaluation["rules_only_positive"]
+        vlm_only_positive = evaluation["vlm_only_positive"]
+        frame_coverage = evaluation["frame_coverage"]
+        evidence_decision = evaluation["evidence_decision"]
+        risk_positive = evaluation["risk_positive"]
+        confirmed_leak = evaluation["confirmed_leak"]
+        final_positive = evaluation["final_positive"]
+        final_semantics = evaluation["final_semantics"]
 
         triage_bucket = result.triage.add(expected, triage_positive)
         deterministic_bucket = result.deterministic.add(expected, deterministic_positive)
