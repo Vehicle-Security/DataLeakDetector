@@ -2736,6 +2736,51 @@ def _action_has_staging_context(action: Dict[str, Any]) -> bool:
     return any(marker in text for marker in staging_markers)
 
 
+def _action_has_vlm_contradiction(action: Dict[str, Any]) -> bool:
+    evidence_source = str(action.get("evidence_source", "") or "")
+    if evidence_source not in {"remote_vlm", "remote_vlm_reason"}:
+        return False
+    text = _action_text(action)
+    contradiction_markers = (
+        "not sent yet",
+        "not yet sent",
+        "not submitted yet",
+        "not yet submitted",
+        "not uploaded yet",
+        "not yet uploaded",
+        "not completed",
+        "no visual confirmation",
+        "no completion confirmation",
+        "no sent confirmation",
+        "no upload confirmation",
+        "no sensitive file exposed",
+        "no sensitive content exposed",
+        "no sensitive file is exposed",
+        "no sensitive content is exposed",
+        "draft",
+        "cancelled",
+        "canceled",
+    )
+    return any(marker in text for marker in contradiction_markers)
+
+
+def _apply_vlm_action_consistency(action: Dict[str, Any]) -> None:
+    if not _action_has_vlm_contradiction(action):
+        return
+    action["raw_action_type"] = action.get("action_type", "")
+    action["raw_risk_level"] = action.get("risk_level", "")
+    action["consistency_reason"] = "downgraded_vlm_contradiction"
+    if _action_has_staging_context(action) and not any(
+        marker in _action_text(action)
+        for marker in ("no sensitive file exposed", "no sensitive content exposed", "no sensitive file is exposed")
+    ):
+        action["action_type"] = "attach_file"
+        action["risk_level"] = "selected_or_attached"
+    else:
+        action["action_type"] = "none"
+        action["risk_level"] = "none"
+
+
 def _vlm_parent_verdict_blocks_risk(action: Dict[str, Any]) -> bool:
     if str(action.get("evidence_source", "") or "") != "remote_vlm":
         return False
@@ -3759,6 +3804,10 @@ def _vlm_actions(
         item["action_id"] = f"{case_id}:{item.get('action_id') or f'vlm_action_{index}'}"
         item["verdict_risk_level"] = _normalize_risk_level(str(vlm_verdict.get("risk_level", "") or ""))
         item["verdict_is_violation"] = bool(vlm_verdict.get("is_violation"))
+        item["action_type"] = _normalize_action_type(str(item.get("action_type", "") or "unknown"))
+        item["risk_level"] = _normalize_risk_level(str(item.get("risk_level", "") or ""))
+        item["evidence_source"] = str(item.get("evidence_source", "") or "remote_vlm")
+        _apply_vlm_action_consistency(item)
         result.append(item)
     return result
 
@@ -3800,6 +3849,11 @@ def _log_rule_actions(
             if not isinstance(entry, dict):
                 continue
             file_ref = str(entry.get("file_path", "") or "")
+            detail = str(entry.get("detail", "") or entry.get("event_type", "") or "")
+            if not file_ref and _is_sensitive_ref(detail, sensitive_files):
+                file_ref = _canonical_sensitive_ref(detail, sensitive_files)
+            if not file_ref:
+                continue
             actions.append(
                 {
                     "action_id": f"{case_id}:log_rule_{rule}_{index}",
@@ -3808,11 +3862,11 @@ def _log_rule_actions(
                     "time": str(entry.get("timestamp", "") or ""),
                     "app": str(entry.get("event_type", "") or "monitor"),
                     "app_category": "log_rule",
-                    "source_file": file_ref or (sensitive_files[0] if sensitive_files else ""),
+                    "source_file": file_ref,
                     "derived_file": "",
                     "evidence_frames": [],
                     "confidence": 0.97,
-                    "description": f"log rule {rule}: {entry.get('detail', '') or entry.get('event_type', '')}",
+                    "description": f"log rule {rule}: {detail}",
                     "evidence_source": "log_rule",
                 }
             )

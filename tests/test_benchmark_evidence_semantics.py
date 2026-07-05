@@ -132,6 +132,59 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
 
         self.assertTrue(any(fact["relation"] == "CrossProcessTransfer" for fact in facts))
 
+    def test_vlm_contradictory_completed_action_is_downgraded(self) -> None:
+        bm = self.benchmark
+        sensitive_files = ["C:/secret/plan.pdf"]
+        actions = bm._vlm_actions(
+            "case-vlm-contradiction",
+            {
+                "status": "success",
+                "risk_level": "completed",
+                "is_violation": True,
+                "observed_actions": [
+                    {
+                        "action_id": "bad-send",
+                        "action_type": "send_message",
+                        "risk_level": "completed",
+                        "app": "browser.exe",
+                        "app_category": "messaging",
+                        "source_file": "C:/secret/plan.pdf",
+                        "description": "not sent yet; no visual confirmation; no sensitive file exposed",
+                    }
+                ],
+            },
+        )
+
+        decision = bm._run_datalog_on_audit_actions("case-vlm-contradiction", actions, sensitive_files)
+
+        self.assertEqual(actions[0]["action_type"], "none")
+        self.assertEqual(actions[0]["risk_level"], "none")
+        self.assertEqual(actions[0]["consistency_reason"], "downgraded_vlm_contradiction")
+        self.assertFalse(decision["risk_positive"])
+        self.assertFalse(decision["confirmed_leak"])
+
+    def test_log_rule_without_file_evidence_does_not_bind_first_sensitive_file(self) -> None:
+        bm = self.benchmark
+        actions = bm._log_rule_actions(
+            "case-unbound-log",
+            {
+                "positive": True,
+                "rules": ["upload_staging"],
+                "evidence": {
+                    "upload_staging": [
+                        {
+                            "timestamp": "2026-07-05T10:00:00",
+                            "event_type": "upload_staging",
+                            "detail": "upload dialog opened without a file path",
+                        }
+                    ]
+                },
+            },
+            ["C:/secret/plan.pdf"],
+        )
+
+        self.assertEqual(actions, [])
+
 
 if __name__ == "__main__":
     unittest.main()
