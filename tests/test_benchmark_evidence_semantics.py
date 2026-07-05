@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+import sys
+import unittest
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BENCHMARK_PATH = REPO_ROOT / "tools" / "benchmark_nas_samples.py"
+
+
+def load_benchmark_module():
+    spec = importlib.util.spec_from_file_location("benchmark_nas_samples", BENCHMARK_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.benchmark = load_benchmark_module()
+
+    def test_log_selection_rule_is_risk_only(self) -> None:
+        bm = self.benchmark
+        sensitive_files = ["C:/secret/plan.pdf"]
+        actions = bm._log_rule_actions(
+            "case-staging",
+            {
+                "positive": True,
+                "rules": ["file_selected"],
+                "evidence": {
+                    "file_selected": [
+                        {
+                            "file_path": "C:/secret/plan.pdf",
+                            "timestamp": "2026-07-05T10:00:00",
+                            "event_type": "file_selected",
+                        }
+                    ]
+                },
+            },
+            sensitive_files,
+        )
+
+        decision = bm._run_datalog_on_audit_actions("case-staging", actions, sensitive_files)
+
+        self.assertTrue(decision["risk_positive"])
+        self.assertFalse(decision["confirmed_leak"])
+        self.assertNotIn("file_selected", bm.LOG_RULE_LEAK_RULES)
+        self.assertFalse(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
+
+    def test_completed_upload_can_confirm_leak(self) -> None:
+        bm = self.benchmark
+        sensitive_files = ["C:/secret/plan.pdf"]
+        actions = [
+            {
+                "action_id": "case-completed:upload",
+                "action_type": "upload_complete",
+                "risk_level": "completed",
+                "time": "2026-07-05T10:01:00",
+                "app": "browser",
+                "app_category": "cloud_storage",
+                "source_file": "C:/secret/plan.pdf",
+                "confidence": 0.98,
+                "description": "upload completed successfully for C:/secret/plan.pdf",
+                "evidence_source": "remote_vlm",
+            }
+        ]
+
+        decision = bm._run_datalog_on_audit_actions("case-completed", actions, sensitive_files)
+
+        self.assertTrue(decision["risk_positive"])
+        self.assertTrue(decision["confirmed_leak"])
+        self.assertTrue(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
+
+
+if __name__ == "__main__":
+    unittest.main()

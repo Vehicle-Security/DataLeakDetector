@@ -357,6 +357,7 @@ class Metrics:
 class BenchmarkSummary:
     triage: Metrics = field(default_factory=Metrics)
     deterministic: Metrics = field(default_factory=Metrics)
+    risk: Metrics = field(default_factory=Metrics)
     final: Metrics = field(default_factory=Metrics)
     confirmed: Metrics = field(default_factory=Metrics)
     cases: List[Dict[str, Any]] = field(default_factory=list)
@@ -377,8 +378,11 @@ class BenchmarkSummary:
             "summary": {
                 "triage": self.triage.to_dict(),
                 "deterministic": self.deterministic.to_dict(),
+                "risk": self.risk.to_dict(),
                 "final": self.final.to_dict(),
                 "confirmed": self.confirmed.to_dict(),
+                "final_semantics": "confirmed_leak",
+                "risk_semantics": "staging_or_attempted_or_confirmed",
                 "deterministic_hits": self.deterministic_hits,
                 "vlm_reviews": self.vlm_reviews,
                 "live_vlm_reviews": self.live_vlm_reviews,
@@ -3773,9 +3777,10 @@ LOG_RULE_ACTION_SPECS = {
     "screen_capture": ("screenshot", "content_exposed", False),
 }
 
-# Rules that describe the sensitive file being handed to an external channel;
-# they confirm a leak, while the remaining rules confirm hiding-style risk.
-LOG_RULE_LEAK_RULES = {"upload_event", "screen_share", "file_selected", "upload_staging"}
+# Rules with a completed/exposed outcome that can confirm a leak from logs alone.
+# Selection and upload-staging rules remain risk support; they do not prove that
+# the external party received or saw the sensitive object.
+LOG_RULE_LEAK_RULES = {"upload_event", "screen_share"}
 
 
 def _log_rule_actions(
@@ -4666,11 +4671,13 @@ def run_benchmark(
         )
         datalog_positive = bool(datalog_decision.get("risk_positive"))
         datalog_confirmed = bool(datalog_decision.get("confirmed_leak"))
-        final_positive = datalog_positive or log_rule_positive
+        risk_positive = datalog_positive or log_rule_positive
         confirmed_leak = datalog_confirmed or log_rule_leak
+        final_positive = confirmed_leak
 
         triage_bucket = result.triage.add(expected, triage_positive)
         deterministic_bucket = result.deterministic.add(expected, deterministic_positive)
+        risk_bucket = result.risk.add(expected, risk_positive)
         final_bucket = result.final.add(expected, final_positive)
         confirmed_bucket = result.confirmed.add(expected, confirmed_leak)
         if deterministic_positive:
@@ -4710,7 +4717,7 @@ def run_benchmark(
         _progress(
             f"[CASE {case_index}/{total_cases}] {final_bucket.upper()} "
             f"case={case_id} expected={int(expected)} final={int(final_positive)} "
-            f"confirmed={int(confirmed_leak)} "
+            f"risk={int(risk_positive)} confirmed={int(confirmed_leak)} "
             f"det={int(deterministic_positive)} triage={int(triage_positive)} "
             f"datalog={int(datalog_positive)} "
             f"vlm={vlm_status} image_frames={frames_sent} context_frames={frame_context_count} "
@@ -4727,16 +4734,22 @@ def run_benchmark(
                 "deterministic_positive": deterministic_positive,
                 "triage_bucket": triage_bucket,
                 "deterministic_bucket": deterministic_bucket,
+                "risk_bucket": risk_bucket,
                 "final_positive": final_positive,
                 "final_bucket": final_bucket,
-                "risk_positive": final_positive,
+                "risk_positive": risk_positive,
                 "confirmed_leak": confirmed_leak,
                 "confirmed_bucket": confirmed_bucket,
+                "final_semantics": "confirmed_leak",
                 "review_source": review_source,
                 "log_rule_signal": log_rule_signal,
-                "reasoning_source": (
+                "risk_reasoning_source": (
                     "log_rule" if log_rule_positive and not datalog_positive
-                    else ("datalog" if final_positive else "none")
+                    else ("datalog" if risk_positive else "none")
+                ),
+                "reasoning_source": (
+                    "log_rule" if log_rule_leak and not datalog_confirmed
+                    else ("datalog" if datalog_confirmed else "none")
                 ),
                 "evidence_sources": evidence_sources,
                 "datalog_decision": datalog_decision,
@@ -4773,7 +4786,7 @@ def run_benchmark(
 def _print_report(report: Dict[str, Any]) -> None:
     print("\nNAS Sample Benchmark")
     print("=" * 40)
-    for name in ("triage", "deterministic", "final", "confirmed"):
+    for name in ("triage", "deterministic", "risk", "final", "confirmed"):
         metrics = report["summary"][name]
         print(
             f"{name:14} precision={metrics['precision']:.4f} "
