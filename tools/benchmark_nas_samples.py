@@ -371,6 +371,7 @@ SINK_SESSION_IDLE_SECONDS = 90
 SINK_SESSION_MAX_SECONDS = 900
 SINK_SESSION_MIN_SECONDS = 60
 SINK_SESSION_HEARTBEAT_SECONDS = 30
+SINK_SESSION_TRACKING_OFFSETS_SECONDS = (15, 30, 60, 120, 180, 240, 300, 420, 600, 900)
 
 MONITOR_UI_TOKENS = (
     "localhost:5000",
@@ -1149,13 +1150,18 @@ def _build_sink_sessions(
 
         if terminal_time:
             end = min(hard_end, terminal_time + timedelta(seconds=10))
+            tracking_end = end
         else:
             idle_end = last_activity + timedelta(seconds=SINK_SESSION_IDLE_SECONDS)
             end = max(min_end, min(hard_end, idle_end))
+            tracking_end = hard_end
         if hard_recording_end:
             end = min(end, hard_recording_end)
+            tracking_end = min(tracking_end, hard_recording_end)
         if end < start:
             end = start
+        if tracking_end < end:
+            tracking_end = end
 
         sessions.append(
             {
@@ -1167,6 +1173,8 @@ def _build_sink_sessions(
                 "terminal_status": terminal_status or "unknown",
                 "terminal_time": terminal_time.strftime("%Y-%m-%d %H:%M:%S") if terminal_time else "",
                 "terminal_source": terminal_source,
+                "tracking_end": tracking_end.strftime("%Y-%m-%d %H:%M:%S"),
+                "tracking_duration_seconds": round((tracking_end - start).total_seconds(), 3),
                 "active_external_apps": sorted({item for item in active_apps if item})[:12],
                 "matched_events": len(matched_events),
                 "tracking_reason": "sensitive_object_entered_external_sink",
@@ -1194,9 +1202,13 @@ def _merge_sink_sessions(sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]
         prev = merged[-1]
         prev_start = _parse_dt(prev.get("start", "")) or start
         prev_end = _parse_dt(prev.get("end", "")) or end
+        prev_tracking_end = _parse_dt(prev.get("tracking_end", "")) or prev_end
+        session_tracking_end = _parse_dt(session.get("tracking_end", "")) or end
         if start <= prev_end + timedelta(seconds=10):
             new_end = max(prev_end, end)
+            new_tracking_end = max(prev_tracking_end, session_tracking_end)
             prev["end"] = new_end.strftime("%Y-%m-%d %H:%M:%S")
+            prev["tracking_end"] = new_tracking_end.strftime("%Y-%m-%d %H:%M:%S")
             prev["matched_events"] = int(prev.get("matched_events", 0) or 0) + int(session.get("matched_events", 0) or 0)
             apps = set(prev.get("active_external_apps", []) or []) | set(session.get("active_external_apps", []) or [])
             prev["active_external_apps"] = sorted(apps)[:12]
@@ -1205,15 +1217,19 @@ def _merge_sink_sessions(sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                 prev["terminal_time"] = session.get("terminal_time", "")
                 prev["terminal_source"] = session.get("terminal_source", "")
             prev["duration_seconds"] = round((new_end - prev_start).total_seconds(), 3)
+            prev["tracking_duration_seconds"] = round((new_tracking_end - prev_start).total_seconds(), 3)
             continue
         merged.append(session)
 
     for index, session in enumerate(merged, 1):
         start = _parse_dt(session.get("start", ""))
         end = _parse_dt(session.get("end", ""))
+        tracking_end = _parse_dt(session.get("tracking_end", "")) or end
         session["session_id"] = f"sink_session_{index:02d}"
         if start and end:
             session["duration_seconds"] = round((end - start).total_seconds(), 3)
+        if start and tracking_end:
+            session["tracking_duration_seconds"] = round((tracking_end - start).total_seconds(), 3)
     return merged
 
 
@@ -1221,7 +1237,7 @@ def _sink_session_windows(sessions: List[Dict[str, Any]]) -> List[Tuple[datetime
     windows: List[Tuple[datetime, datetime]] = []
     for session in sessions:
         start = _parse_dt(session.get("start", ""))
-        end = _parse_dt(session.get("end", ""))
+        end = _parse_dt(session.get("tracking_end", "")) or _parse_dt(session.get("end", ""))
         if start and end and end >= start:
             windows.append((start, end))
     return windows
@@ -1232,7 +1248,7 @@ def _sessions_for_segment(sessions: List[Dict[str, Any]], segment: Tuple[datetim
     result: List[Dict[str, Any]] = []
     for session in sessions:
         session_start = _parse_dt(session.get("start", ""))
-        session_end = _parse_dt(session.get("end", ""))
+        session_end = _parse_dt(session.get("tracking_end", "")) or _parse_dt(session.get("end", ""))
         if not session_start or not session_end:
             continue
         if session_start <= end and session_end >= start:
@@ -1257,14 +1273,21 @@ def _sink_session_anchor_times(fallback_meta: Dict[str, Any]) -> List[Tuple[date
         session_id = str(session.get("session_id", "sink_session"))
         start = _parse_dt(session.get("start", ""))
         end = _parse_dt(session.get("end", ""))
+        tracking_end = _parse_dt(session.get("tracking_end", "")) or end
         terminal = _parse_dt(session.get("terminal_time", ""))
         terminal_status = str(session.get("terminal_status", "unknown") or "unknown")
         add_offsets(start, session_id, "session_start", (0, 3, 8))
         add_offsets(terminal, session_id, f"terminal_{terminal_status}", (-2, 0, 2, 5, 8, 12))
         if terminal_status in {"", "unknown"}:
             add_offsets(end, session_id, "session_end", (-3, 0, 2, 5, 8, 12, 20, 35, 60))
+            add_offsets(tracking_end, session_id, "tracking_end", (-60, -20, -5, 0))
         else:
             add_offsets(end, session_id, "session_end", (-3, 0, 2, 5, 8, 12, 20))
+        if start and tracking_end and terminal_status in {"", "unknown"}:
+            for offset in SINK_SESSION_TRACKING_OFFSETS_SECONDS:
+                dt = start + timedelta(seconds=offset)
+                if start < dt < tracking_end:
+                    anchors.append((dt, f"{session_id}:session_tracking_plus{offset}"))
         if start and end:
             cursor = start + timedelta(seconds=SINK_SESSION_HEARTBEAT_SECONDS)
             while cursor < end:
@@ -1452,14 +1475,32 @@ def _prepare_review_segments(
 
         selected: List[Tuple[float, Tuple[datetime, datetime], Dict[str, Any]]] = []
         seen_segments: set[Tuple[datetime, datetime]] = set()
-        for item in sorted(protected, key=lambda value: value[0], reverse=True):
-            key = item[1]
-            if key in seen_segments:
-                continue
-            selected.append(item)
-            seen_segments.add(key)
-            if len(selected) >= max_segments:
-                break
+        if protected:
+            protected_by_time = sorted(protected, key=lambda value: value[1][0])
+            protected_quota = min(max_segments, len(protected_by_time))
+            if protected_quota == 1:
+                protected_seed = [max(protected_by_time, key=lambda value: value[0])]
+            else:
+                protected_seed = []
+                for pos in range(protected_quota):
+                    idx = round(pos * (len(protected_by_time) - 1) / max(1, protected_quota - 1))
+                    protected_seed.append(protected_by_time[idx])
+            for item in protected_seed:
+                key = item[1]
+                if key in seen_segments:
+                    continue
+                selected.append(item)
+                seen_segments.add(key)
+                if len(selected) >= max_segments:
+                    break
+            for item in sorted(protected, key=lambda value: value[0], reverse=True):
+                if len(selected) >= max_segments:
+                    break
+                key = item[1]
+                if key in seen_segments:
+                    continue
+                selected.append(item)
+                seen_segments.add(key)
         for item in sorted(scored, key=lambda value: value[0], reverse=True):
             if len(selected) >= max_segments:
                 break
@@ -2209,13 +2250,17 @@ def _frame_time_candidates(
         reason = item[1]
         if "terminal_" in reason:
             return (0, item[0])
-        if "session_end" in reason:
+        if "tracking_end" in reason:
             return (1, item[0])
-        if "session_start" in reason:
+        if "session_tracking" in reason:
             return (2, item[0])
-        if "session_heartbeat" in reason:
+        if "session_end" in reason:
+            return (3, item[0])
+        if "session_start" in reason:
             return (4, item[0])
-        return (3, item[0])
+        if "session_heartbeat" in reason:
+            return (6, item[0])
+        return (5, item[0])
 
     session_anchors = sorted([
         (dt, reason)
@@ -2224,7 +2269,7 @@ def _frame_time_candidates(
     ], key=anchor_priority)
     points: List[Tuple[datetime, str]] = [
         (dt, f"event_anchor_{reason}")
-        for dt, reason in session_anchors[: max(1, int(budget * 0.5))]
+        for dt, reason in session_anchors[: max(1, int(budget * 0.75))]
     ]
     points.extend(
         _event_anchor_times(
@@ -2329,6 +2374,8 @@ def _select_representative_frames(candidates: List[Dict[str, Any]], max_frames: 
             token in hint
             for token in (
                 "terminal_",
+                "tracking_end",
+                "session_tracking",
                 "session_end",
                 "session_start",
                 "event_anchor_transfer",
@@ -2346,7 +2393,26 @@ def _select_representative_frames(candidates: List[Dict[str, Any]], max_frames: 
         copy["selection_reason"] = reason
         selected[key] = copy
 
-    critical_candidates = [item for item in candidates if is_critical_anchor(item)]
+    def critical_priority(item: Dict[str, Any]) -> Tuple[int, int]:
+        hint = str(item.get("selection_hint", "") or "")
+        if "terminal_" in hint:
+            rank = 0
+        elif "tracking_end" in hint:
+            rank = 1
+        elif "session_tracking" in hint:
+            rank = 2
+        elif "session_end" in hint:
+            rank = 3
+        elif "event_anchor_transfer" in hint:
+            rank = 4
+        else:
+            rank = 5
+        return (rank, int(item.get("frame_index", 0)))
+
+    critical_candidates = sorted(
+        [item for item in candidates if is_critical_anchor(item)],
+        key=critical_priority,
+    )
     for item in critical_candidates[: max(1, min(max_frames, max_frames // 2 + 1))]:
         add(item, str(item.get("selection_hint") or "critical_anchor"))
 
