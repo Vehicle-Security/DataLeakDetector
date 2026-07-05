@@ -46,6 +46,8 @@ except Exception:
 from data_leak_detector.evidence_semantics import (  # noqa: E402
     CONFIRMED_LOG_RULES,
     decide_evidence_outcome,
+    is_confirmed_risk_level,
+    log_rules_confirm_leak,
 )
 
 RISK_LABEL_PREFIXES = (
@@ -362,6 +364,8 @@ class Metrics:
 class BenchmarkSummary:
     triage: Metrics = field(default_factory=Metrics)
     deterministic: Metrics = field(default_factory=Metrics)
+    rules_only: Metrics = field(default_factory=Metrics)
+    vlm_only: Metrics = field(default_factory=Metrics)
     risk: Metrics = field(default_factory=Metrics)
     final: Metrics = field(default_factory=Metrics)
     confirmed: Metrics = field(default_factory=Metrics)
@@ -383,6 +387,8 @@ class BenchmarkSummary:
             "summary": {
                 "triage": self.triage.to_dict(),
                 "deterministic": self.deterministic.to_dict(),
+                "rules_only": self.rules_only.to_dict(),
+                "vlm_only": self.vlm_only.to_dict(),
                 "risk": self.risk.to_dict(),
                 "final": self.final.to_dict(),
                 "confirmed": self.confirmed.to_dict(),
@@ -3573,6 +3579,18 @@ def _confirmed_leak_positive(
     return bool(vlm_verdict.get("is_violation"))
 
 
+def _vlm_only_confirmed_positive(vlm_verdict: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(vlm_verdict, dict):
+        return False
+    status = str(vlm_verdict.get("status", "") or "")
+    if status not in {"success", "local_positive"}:
+        return False
+    risk_level = _normalize_risk_level(str(vlm_verdict.get("risk_level", "") or ""))
+    if not risk_level:
+        risk_level = _infer_risk_level_from_verdict(vlm_verdict)
+    return bool(vlm_verdict.get("is_violation")) and is_confirmed_risk_level(risk_level)
+
+
 def _audit_evidence_sources(actions: List[Dict[str, Any]]) -> List[str]:
     return sorted(
         {
@@ -4763,6 +4781,10 @@ def run_benchmark(
         log_rule_positive = bool(log_rule_signal.get("positive"))
         datalog_positive = bool(datalog_decision.get("risk_positive"))
         datalog_confirmed = bool(datalog_decision.get("confirmed_leak"))
+        rules_only_positive = bool(deterministic_positive) or log_rules_confirm_leak(
+            log_rule_signal.get("rules", []) or []
+        )
+        vlm_only_positive = _vlm_only_confirmed_positive(vlm_verdict)
         evidence_decision = decide_evidence_outcome(
             datalog_risk_positive=datalog_positive,
             datalog_confirmed=datalog_confirmed,
@@ -4775,6 +4797,8 @@ def run_benchmark(
 
         triage_bucket = result.triage.add(expected, triage_positive)
         deterministic_bucket = result.deterministic.add(expected, deterministic_positive)
+        rules_only_bucket = result.rules_only.add(expected, rules_only_positive)
+        vlm_only_bucket = result.vlm_only.add(expected, vlm_only_positive)
         risk_bucket = result.risk.add(expected, risk_positive)
         final_bucket = result.final.add(expected, final_positive)
         confirmed_bucket = result.confirmed.add(expected, confirmed_leak)
@@ -4816,6 +4840,7 @@ def run_benchmark(
             f"[CASE {case_index}/{total_cases}] {final_bucket.upper()} "
             f"case={case_id} expected={int(expected)} final={int(final_positive)} "
             f"risk={int(risk_positive)} confirmed={int(confirmed_leak)} "
+            f"rules={int(rules_only_positive)} vlm_only={int(vlm_only_positive)} "
             f"det={int(deterministic_positive)} triage={int(triage_positive)} "
             f"datalog={int(datalog_positive)} "
             f"vlm={vlm_status} image_frames={frames_sent} context_frames={frame_context_count} "
@@ -4832,6 +4857,10 @@ def run_benchmark(
                 "deterministic_positive": deterministic_positive,
                 "triage_bucket": triage_bucket,
                 "deterministic_bucket": deterministic_bucket,
+                "rules_only_positive": rules_only_positive,
+                "rules_only_bucket": rules_only_bucket,
+                "vlm_only_positive": vlm_only_positive,
+                "vlm_only_bucket": vlm_only_bucket,
                 "risk_bucket": risk_bucket,
                 "final_positive": final_positive,
                 "final_bucket": final_bucket,
@@ -4878,7 +4907,7 @@ def run_benchmark(
 def _print_report(report: Dict[str, Any]) -> None:
     print("\nNAS Sample Benchmark")
     print("=" * 40)
-    for name in ("triage", "deterministic", "risk", "final", "confirmed"):
+    for name in ("triage", "deterministic", "rules_only", "vlm_only", "risk", "final", "confirmed"):
         metrics = report["summary"][name]
         print(
             f"{name:14} precision={metrics['precision']:.4f} "

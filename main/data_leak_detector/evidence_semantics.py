@@ -14,7 +14,7 @@ RISK_LEVELS = {
 
 CONFIRMED_RISK_LEVELS = {"content_exposed", "completed"}
 
-CONFIRMED_LOG_RULES = {"upload_event", "screen_share"}
+CONFIRMED_LOG_RULES = {"upload_event", "screen_share", "screen_capture"}
 
 
 @dataclass(frozen=True)

@@ -166,7 +166,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="List and compare wrong benchmark cases.")
     parser.add_argument("report", type=Path, help="Benchmark JSON report.")
     parser.add_argument("--compare", type=Path, help="Compare report against this newer/other report.")
-    parser.add_argument("--metric", choices=("final", "triage", "deterministic", "confirmed"), default="final")
+    parser.add_argument(
+        "--metric",
+        choices=("final", "triage", "deterministic", "rules_only", "vlm_only", "risk", "confirmed"),
+        default="final",
+    )
     parser.add_argument("--limit", type=int, default=40, help="Rows to print per table; 0 means all.")
     parser.add_argument("--json-output", type=Path, help="Write detailed rows to JSON.")
     args = parser.parse_args(argv)

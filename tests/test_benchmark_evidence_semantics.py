@@ -190,6 +190,28 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
 
         self.assertEqual(actions, [])
 
+    def test_vlm_only_positive_requires_confirmed_risk(self) -> None:
+        bm = self.benchmark
+
+        self.assertFalse(
+            bm._vlm_only_confirmed_positive(
+                {"status": "success", "is_violation": True, "risk_level": "selected_or_attached"}
+            )
+        )
+        self.assertTrue(
+            bm._vlm_only_confirmed_positive(
+                {"status": "success", "is_violation": True, "risk_level": "content_exposed"}
+            )
+        )
+
+    def test_benchmark_summary_exposes_ablation_metrics(self) -> None:
+        bm = self.benchmark
+        summary = bm.BenchmarkSummary().to_dict()["summary"]
+
+        self.assertIn("rules_only", summary)
+        self.assertIn("vlm_only", summary)
+        self.assertEqual(summary["final_semantics"], "confirmed_leak")
+
 
 class EvidenceDecisionTest(unittest.TestCase):
     def test_risk_positive_does_not_make_final_positive(self) -> None:
@@ -217,6 +239,17 @@ class EvidenceDecisionTest(unittest.TestCase):
         self.assertTrue(decision.confirmed_leak)
         self.assertTrue(decision.final_positive)
         self.assertEqual(decision.reasoning_source, "log_rule")
+
+    def test_screen_capture_log_rule_makes_final_positive(self) -> None:
+        decision = decide_evidence_outcome(
+            datalog_risk_positive=False,
+            datalog_confirmed=False,
+            log_rule_positive=True,
+            log_rule_rules=["screen_capture"],
+        )
+
+        self.assertTrue(decision.confirmed_leak)
+        self.assertTrue(decision.final_positive)
 
 
 if __name__ == "__main__":
