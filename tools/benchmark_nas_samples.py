@@ -1609,6 +1609,11 @@ def _ocr_prefilter_enabled() -> bool:
     return _ocr_engine_name() != "none"
 
 
+def _ocr_prewarm_enabled() -> bool:
+    value = os.getenv("DLD_VLM_OCR_PREWARM", "0").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 def _warm_ocr_reader() -> None:
     if not _ocr_prefilter_enabled():
         return
@@ -1949,14 +1954,16 @@ def _adaptive_vlm_frame_budget(
     max_frames: int,
 ) -> Tuple[int, Dict[str, Any]]:
     cap = max(1, int(max_frames))
-    min_frames = min(cap, FRAMES_PER_SEGMENT)
-    base_frames = min(cap, max(min_frames, FRAMES_PER_SEGMENT * 2))
+    # max_frames is an emergency cap. The planner should converge on a small
+    # evidence package instead of treating the cap as the normal target.
+    min_frames = min(cap, max(4, FRAMES_PER_SEGMENT // 2))
+    base_frames = min(cap, max(min_frames, FRAMES_PER_SEGMENT))
     frames = base_frames
     reasons: List[str] = []
 
     windows = _windows_from_fallback(fallback_meta, logs)
-    max_segments = max(1, min(MAX_SEGMENTS_PER_CASE, max(1, cap // FRAMES_PER_SEGMENT)))
-    review_segments, segment_meta = _prepare_review_segments(windows, fallback_meta, logs, max_segments=max_segments)
+    planning_segments = max(1, min(MAX_SEGMENTS_PER_CASE, max(2, min(4, cap // max(1, FRAMES_PER_SEGMENT // 2)))))
+    review_segments, segment_meta = _prepare_review_segments(windows, fallback_meta, logs, max_segments=planning_segments)
     durations = [max(0.0, (end - start).total_seconds()) for start, end in review_segments]
     total_window_seconds = sum(durations)
     max_window_seconds = max(durations) if durations else 0.0
@@ -1969,25 +1976,31 @@ def _adaptive_vlm_frame_budget(
         reasons.append(reason)
 
     if len(review_segments) >= 2:
-        bump(FRAMES_PER_SEGMENT, "multiple_review_segments")
+        bump(2, "multiple_review_segments")
     if len(review_segments) >= 4:
-        bump(FRAMES_PER_SEGMENT, "many_review_segments")
-    if total_window_seconds >= 120:
-        bump(FRAMES_PER_SEGMENT, "long_total_review_window")
+        bump(2, "many_review_segments")
+    if total_window_seconds >= 300:
+        bump(3, "very_long_total_review_window")
+    elif total_window_seconds >= 120:
+        bump(2, "long_total_review_window")
     elif total_window_seconds >= 60:
-        bump(max(1, FRAMES_PER_SEGMENT // 2), "medium_total_review_window")
+        bump(1, "medium_total_review_window")
 
     sink_sessions = [item for item in fallback_meta.get("sink_sessions", []) or [] if isinstance(item, dict)]
     if sink_sessions:
-        bump(FRAMES_PER_SEGMENT, "sink_session_tracking")
-    if any(float(item.get("duration_seconds", 0.0) or 0.0) >= 120 for item in sink_sessions):
-        bump(FRAMES_PER_SEGMENT, "long_sink_session")
+        bump(2, "sink_session_tracking")
+    if any(float(item.get("duration_seconds", 0.0) or 0.0) >= 600 for item in sink_sessions):
+        bump(3, "very_long_sink_session")
+    elif any(float(item.get("duration_seconds", 0.0) or 0.0) >= 180 for item in sink_sessions):
+        bump(1, "long_sink_session")
+    if any(str(item.get("terminal_status", "") or "") in {"", "unknown"} for item in sink_sessions):
+        bump(1, "sink_session_terminal_unknown")
     if any(str(item.get("terminal_status", "") or "") in {"completed", "failed", "canceled"} for item in sink_sessions):
-        bump(max(1, FRAMES_PER_SEGMENT // 2), "sink_session_terminal")
+        bump(1, "sink_session_terminal")
 
     candidate_events = fallback_meta.get("candidate_events", []) or []
     if len(candidate_events) >= 8:
-        bump(max(1, FRAMES_PER_SEGMENT // 2), "many_candidate_events")
+        bump(1, "many_candidate_events")
 
     fallback_reasons = [str(item or "") for item in fallback_meta.get("reasons", []) or []]
     if len(fallback_reasons) >= 3:
@@ -2005,9 +2018,21 @@ def _adaptive_vlm_frame_budget(
     signal_text = " ".join(text_parts).lower()
 
     if any(token in signal_text for token in ("vm", "virtual", "remote desktop", "mstsc", "anydesk", "todesk", "sunlogin", "\u865a\u62df\u673a", "\u8fdc\u7a0b")):
-        bump(max(1, FRAMES_PER_SEGMENT // 2), "remote_or_vm_context")
+        bump(2, "remote_or_vm_context")
     if any(token in signal_text for token in ("meeting", "screen_share", "share screen", "zoom", "teams", "feishu", "lark", "\u4f1a\u8bae", "\u5c4f\u5e55\u5171\u4eab")):
-        bump(max(1, FRAMES_PER_SEGMENT // 2), "meeting_or_screen_share_context")
+        bump(2, "meeting_or_screen_share_context")
+
+    soft_target = min(cap, max(8, FRAMES_PER_SEGMENT + 8))
+    if max_window_seconds >= 600 or any(
+        float(item.get("duration_seconds", 0.0) or 0.0) >= 600
+        for item in sink_sessions
+    ):
+        soft_target = min(cap, soft_target + 4)
+    if any(reason in reasons for reason in ("remote_or_vm_context", "meeting_or_screen_share_context")):
+        soft_target = min(cap, soft_target + 2)
+    if frames > soft_target:
+        frames = soft_target
+        reasons.append("soft_target_clamped")
 
     return frames, {
         "adaptive": True,
@@ -2016,6 +2041,7 @@ def _adaptive_vlm_frame_budget(
         "max_frames": cap,
         "selected_frames": frames,
         "frames_per_segment": FRAMES_PER_SEGMENT,
+        "planning_segments": planning_segments,
         "window_count": len(windows),
         "segment_count": len(review_segments),
         "total_window_seconds": round(total_window_seconds, 3),
@@ -4203,7 +4229,8 @@ def _live_vlm_review_case(
         return verdict
 
     windows = _windows_from_fallback(fallback_meta, logs)
-    max_segments = max(1, min(MAX_SEGMENTS_PER_CASE, max(1, int(max_frames) // FRAMES_PER_SEGMENT)))
+    segment_unit = max(2, FRAMES_PER_SEGMENT // 2)
+    max_segments = max(1, min(MAX_SEGMENTS_PER_CASE, max(1, (int(max_frames) + segment_unit - 1) // segment_unit)))
     review_segments, segment_plan = _prepare_review_segments(windows, fallback_meta, logs, max_segments=max_segments)
     if not review_segments:
         return remember(
@@ -4230,7 +4257,9 @@ def _live_vlm_review_case(
 
     for segment_index, segment in enumerate(review_segments, 1):
         segment_id = f"vlm_seg_{segment_index:02d}"
-        segment_frame_budget = min(FRAMES_PER_SEGMENT, frames_remaining)
+        remaining_segments = max(1, len(review_segments) - segment_index + 1)
+        balanced_budget = (frames_remaining + remaining_segments - 1) // remaining_segments
+        segment_frame_budget = min(frames_remaining, FRAMES_PER_SEGMENT, max(2, balanced_budget))
         if segment_frame_budget <= 0:
             break
 
@@ -5990,7 +6019,7 @@ def run_benchmark(
                     f"case={case_id} progress={case_index}/{total_cases} "
                     f"expected={int(expected)} gate={vlm_gate.get('mode')} "
                     f"reasons={','.join(fallback_meta.get('reasons', []))} "
-                    f"frames={adaptive_frames}/{max_vlm_frames} "
+                    f"frame_budget={adaptive_frames}/{max_vlm_frames} "
                     f"complexity={','.join(frame_budget_meta.get('complexity_reasons', [])) or 'base'}"
                 )
             elif local_vlm_verdict is None:
@@ -6034,8 +6063,11 @@ def run_benchmark(
             f"local_resolved={local_vlm_resolutions}"
         )
         if _ocr_prefilter_enabled():
-            _progress(f"[VLM] warming OCR engine={_ocr_engine_name()}")
-            _warm_ocr_reader()
+            if _ocr_prewarm_enabled():
+                _progress(f"[VLM] warming OCR engine={_ocr_engine_name()}")
+                _warm_ocr_reader()
+            else:
+                _progress(f"[VLM] OCR prefilter enabled engine={_ocr_engine_name()} prewarm=off")
         future_to_record = {}
         with ThreadPoolExecutor(max_workers=workers) as executor:
             for record in pending_vlm_records:
