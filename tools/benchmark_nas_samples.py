@@ -1242,6 +1242,15 @@ def _sessions_for_segment(sessions: List[Dict[str, Any]], segment: Tuple[datetim
 
 def _sink_session_anchor_times(fallback_meta: Dict[str, Any]) -> List[Tuple[datetime, str]]:
     anchors: List[Tuple[datetime, str]] = []
+
+    def add_offsets(base: Optional[datetime], session_id: str, label: str, offsets: Tuple[int, ...]) -> None:
+        if not base:
+            return
+        for offset in offsets:
+            suffix = "" if offset == 0 else ("plus" if offset > 0 else "minus") + str(abs(offset))
+            reason = f"{session_id}:{label}" if offset == 0 else f"{session_id}:{label}_{suffix}"
+            anchors.append((base + timedelta(seconds=offset), reason))
+
     for session in fallback_meta.get("sink_sessions", []) or []:
         if not isinstance(session, dict):
             continue
@@ -1249,12 +1258,13 @@ def _sink_session_anchor_times(fallback_meta: Dict[str, Any]) -> List[Tuple[date
         start = _parse_dt(session.get("start", ""))
         end = _parse_dt(session.get("end", ""))
         terminal = _parse_dt(session.get("terminal_time", ""))
-        if start:
-            anchors.append((start, f"{session_id}:session_start"))
-        if terminal:
-            anchors.append((terminal, f"{session_id}:terminal_{session.get('terminal_status', 'unknown')}"))
-        if end:
-            anchors.append((end, f"{session_id}:session_end"))
+        terminal_status = str(session.get("terminal_status", "unknown") or "unknown")
+        add_offsets(start, session_id, "session_start", (0, 3, 8))
+        add_offsets(terminal, session_id, f"terminal_{terminal_status}", (-2, 0, 2, 5, 8, 12))
+        if terminal_status in {"", "unknown"}:
+            add_offsets(end, session_id, "session_end", (-3, 0, 2, 5, 8, 12, 20, 35, 60))
+        else:
+            add_offsets(end, session_id, "session_end", (-3, 0, 2, 5, 8, 12, 20))
         if start and end:
             cursor = start + timedelta(seconds=SINK_SESSION_HEARTBEAT_SECONDS)
             while cursor < end:
@@ -2195,11 +2205,23 @@ def _frame_time_candidates(
     budget = max(max_frames, max_candidates)
     durations = [max(0.0, (end - start).total_seconds()) for start, end in windows]
     total_duration = sum(durations) or float(len(windows))
-    session_anchors = [
+    def anchor_priority(item: Tuple[datetime, str]) -> Tuple[int, datetime]:
+        reason = item[1]
+        if "terminal_" in reason:
+            return (0, item[0])
+        if "session_end" in reason:
+            return (1, item[0])
+        if "session_start" in reason:
+            return (2, item[0])
+        if "session_heartbeat" in reason:
+            return (4, item[0])
+        return (3, item[0])
+
+    session_anchors = sorted([
         (dt, reason)
         for dt, reason in _sink_session_anchor_times(fallback_meta or {})
-        if any(start - timedelta(seconds=3) <= dt <= end + timedelta(seconds=3) for start, end in windows)
-    ]
+        if any(start - timedelta(seconds=5) <= dt <= end + timedelta(seconds=75) for start, end in windows)
+    ], key=anchor_priority)
     points: List[Tuple[datetime, str]] = [
         (dt, f"event_anchor_{reason}")
         for dt, reason in session_anchors[: max(1, int(budget * 0.5))]
@@ -2234,7 +2256,7 @@ def _frame_time_candidates(
 
     deduped: List[Tuple[datetime, str]] = []
     seen: Dict[str, str] = {}
-    for dt, reason in sorted(points, key=lambda item: item[0]):
+    for dt, reason in points:
         key = dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         if key in seen:
             if reason not in seen[key]:
@@ -2242,7 +2264,9 @@ def _frame_time_candidates(
             continue
         seen[key] = reason
         deduped.append((dt, reason))
-    return deduped[:budget]
+        if len(deduped) >= budget:
+            break
+    return sorted(deduped, key=lambda item: item[0])
 
 
 def _thumbnail_scene_score(frame: Any, previous_thumb: Any) -> tuple[float, Any]:
@@ -2299,6 +2323,18 @@ def _select_representative_frames(candidates: List[Dict[str, Any]], max_frames: 
 
     selected: Dict[int, Dict[str, Any]] = {}
 
+    def is_critical_anchor(item: Dict[str, Any]) -> bool:
+        hint = str(item.get("selection_hint", "") or "")
+        return any(
+            token in hint
+            for token in (
+                "terminal_",
+                "session_end",
+                "session_start",
+                "event_anchor_transfer",
+            )
+        )
+
     def add(item: Dict[str, Any], reason: str) -> None:
         if len(selected) >= max_frames:
             return
@@ -2309,6 +2345,10 @@ def _select_representative_frames(candidates: List[Dict[str, Any]], max_frames: 
         copy = dict(item)
         copy["selection_reason"] = reason
         selected[key] = copy
+
+    critical_candidates = [item for item in candidates if is_critical_anchor(item)]
+    for item in critical_candidates[: max(1, min(max_frames, max_frames // 2 + 1))]:
+        add(item, str(item.get("selection_hint") or "critical_anchor"))
 
     anchor_limit = min(max_frames, max(1, max_frames // 2))
     anchor_candidates = [
