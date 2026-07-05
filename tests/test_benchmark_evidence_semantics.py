@@ -378,6 +378,84 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
         self.assertFalse(decision["confirmed_leak"])
         self.assertFalse(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
 
+    def test_deterministic_upload_event_requires_visual_confirmation(self) -> None:
+        bm = self.benchmark
+        sensitive_files = ["C:/secret/plan.pdf"]
+        actions = bm._detection_actions(
+            "case-det-upload",
+            {
+                "upload_events": [
+                    {
+                        "timestamp": "2026-07-05T10:00:00",
+                        "event_type": "file_upload",
+                        "app_name": "browser",
+                        "file_path": "C:/secret/plan.pdf",
+                        "confidence": 0.98,
+                    }
+                ]
+            },
+        )
+
+        self.assertEqual(actions[0]["action_type"], "upload_start")
+        self.assertEqual(actions[0]["risk_level"], "in_progress")
+
+        decision = bm._run_datalog_on_audit_actions("case-det-upload", actions, sensitive_files)
+
+        self.assertTrue(decision["risk_positive"])
+        self.assertFalse(decision["confirmed_leak"])
+        self.assertFalse(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
+
+    def test_local_positive_action_is_risk_not_confirmed(self) -> None:
+        bm = self.benchmark
+        sensitive_files = ["C:/secret/plan.pdf"]
+        actions = [
+            {
+                "action_id": "case-local:vlm_action_0",
+                "action_type": "external_exposure",
+                "risk_level": "completed",
+                "time": "2026-07-05T10:00:00",
+                "app": "vmware.exe",
+                "app_category": "remote_desktop",
+                "source_file": "C:/secret/plan.pdf",
+                "description": "local gate inferred vm_context from log features",
+                "evidence_source": "local_positive",
+            }
+        ]
+
+        decision = bm._run_datalog_on_audit_actions("case-local", actions, sensitive_files)
+
+        self.assertTrue(decision["risk_positive"])
+        self.assertFalse(decision["confirmed_leak"])
+        self.assertFalse(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
+        self.assertFalse(
+            bm._vlm_only_confirmed_positive(
+                {"status": "local_positive", "is_violation": True, "risk_level": "completed"}
+            )
+        )
+
+    def test_deterministic_evidence_builds_visual_review_meta(self) -> None:
+        bm = self.benchmark
+        meta = bm._visual_review_meta_for_deterministic_evidence(
+            {"used": False, "decision": "skip", "reasons": [], "candidate_events": []},
+            {
+                "upload_events": [
+                    {
+                        "timestamp": "2026-07-05T10:00:00",
+                        "event_type": "file_upload",
+                        "app_name": "browser",
+                        "file_path": "C:/secret/plan.pdf",
+                    }
+                ]
+            },
+            {"positive": False, "evidence": {}},
+            [],
+        )
+
+        self.assertTrue(meta["used"])
+        self.assertEqual(meta["decision"], "run")
+        self.assertIn("deterministic_upload_requires_visual_confirmation", meta["reasons"])
+        self.assertEqual(meta["candidate_events"][0]["event_type"], "file_upload")
+
 
 class EvidenceDecisionTest(unittest.TestCase):
     def test_risk_positive_does_not_make_final_positive(self) -> None:

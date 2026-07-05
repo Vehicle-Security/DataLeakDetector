@@ -1410,9 +1410,8 @@ def _local_vlm_gate_decision(
     if features["explicit_transfer_event"] and sensitive_context:
         positive_reasons.append("explicit_transfer_event")
     # Screenshot/visual-capture contexts are deliberately NOT local-positive
-    # shortcuts anymore: deterministic screen_capture log rules confirm the
-    # event-backed captures, and the text-only contexts misfire on cancelled
-    # uploads, so those cases must go to the remote VLM instead.
+    # shortcuts anymore. Text-only contexts misfire on cancelled uploads, so
+    # those cases must go to the remote VLM instead.
     if features["export_context"] and sensitive_context and external_sink_context:
         positive_reasons.append("export_context")
 
@@ -1432,9 +1431,9 @@ def _local_vlm_gate_decision(
             positive_reasons.append("archive_or_convert_with_completion_text")
 
     if positive_reasons:
-        decision["action"] = "local_positive"
-        decision["local_verdict"] = True
-        decision["reason"] = ",".join(sorted(set(positive_reasons)))
+        decision["action"] = "queue_remote_vlm"
+        decision["local_verdict"] = False
+        decision["reason"] = "local_features_require_remote_vlm:" + ",".join(sorted(set(positive_reasons)))
     return decision
 
 
@@ -3654,16 +3653,16 @@ def _review_source(
     vlm_verdict: Optional[Dict[str, Any]],
     vlm_live_queued: bool,
 ) -> str:
-    if deterministic_positive:
-        return "deterministic"
     if not isinstance(vlm_verdict, dict):
-        return "remote_vlm_pending" if vlm_live_queued else "triage"
+        if vlm_live_queued:
+            return "remote_vlm_pending"
+        return "deterministic" if deterministic_positive else "triage"
     status = str(vlm_verdict.get("status", "") or "")
     if status == "local_positive":
         return "local_gate"
     if status == "success":
         return "remote_vlm_cache" if vlm_verdict.get("cache_hit") else "remote_vlm"
-    return status or "unknown"
+    return status or ("deterministic" if deterministic_positive else "unknown")
 
 
 def _confirmed_leak_positive(
@@ -3678,11 +3677,8 @@ def _confirmed_leak_positive(
     if not isinstance(vlm_verdict, dict):
         return False
     status = str(vlm_verdict.get("status", "") or "")
-    if status not in {"success", "local_positive"}:
+    if status != "success":
         return False
-    if status == "local_positive":
-        risk_level = _normalize_risk_level(str(vlm_verdict.get("risk_level", "") or ""))
-        return bool(vlm_verdict.get("is_violation")) and risk_level == "completed"
     return bool(vlm_verdict.get("is_violation"))
 
 
@@ -3690,7 +3686,7 @@ def _vlm_only_confirmed_positive(vlm_verdict: Optional[Dict[str, Any]]) -> bool:
     if not isinstance(vlm_verdict, dict):
         return False
     status = str(vlm_verdict.get("status", "") or "")
-    if status not in {"success", "local_positive"}:
+    if status != "success":
         return False
     risk_level = _normalize_risk_level(str(vlm_verdict.get("risk_level", "") or ""))
     if not risk_level:
@@ -3817,8 +3813,8 @@ def _detection_actions(
         actions.append(
             {
                 "action_id": f"{case_id}:det_upload_{index}",
-                "action_type": "upload_complete",
-                "risk_level": "completed",
+                "action_type": "upload_start",
+                "risk_level": "in_progress",
                 "time": str(raw.get("timestamp", "") or raw.get("time", "") or ""),
                 "app": str(raw.get("app_name", "") or raw.get("process_name", "") or ""),
                 "app_category": "unknown",
@@ -3826,11 +3822,75 @@ def _detection_actions(
                 "derived_file": uploaded_file if uploaded_file != source_file else "",
                 "evidence_frames": [],
                 "confidence": round(_safe_float(raw.get("confidence", 0.95), 0.95), 4),
-                "description": str(raw.get("description", "") or "deterministic upload event"),
+                "description": str(raw.get("description", "") or "deterministic upload event requiring visual confirmation"),
                 "evidence_source": "deterministic",
             }
         )
     return actions
+
+
+def _visual_review_meta_for_deterministic_evidence(
+    fallback_meta: Dict[str, Any],
+    detection: Dict[str, Any],
+    log_rule_signal: Dict[str, Any],
+    logs: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    meta = dict(fallback_meta or {})
+    reasons = set(str(item) for item in meta.get("reasons", []) or [] if str(item or "").strip())
+    candidate_events = list(meta.get("candidate_events", []) or [])
+
+    def add_candidate(timestamp: str, event_type: str, app_name: str = "", reason: str = "") -> None:
+        reasons.add(reason or "deterministic_evidence_requires_visual_confirmation")
+        candidate_events.append(
+            {
+                "timestamp": timestamp,
+                "event_type": event_type,
+                "app_name": app_name,
+                "reason": reason or "deterministic_evidence_requires_visual_confirmation",
+            }
+        )
+
+    for event in detection.get("upload_events", []) or []:
+        raw = dict(event.__dict__) if hasattr(event, "__dict__") else (event if isinstance(event, dict) else {})
+        add_candidate(
+            str(raw.get("timestamp", "") or raw.get("time", "") or ""),
+            str(raw.get("event_type", "") or raw.get("operation_type", "") or "deterministic_upload_event"),
+            str(raw.get("app_name", "") or raw.get("process_name", "") or ""),
+            "deterministic_upload_requires_visual_confirmation",
+        )
+
+    evidence = log_rule_signal.get("evidence", {}) if isinstance(log_rule_signal, dict) else {}
+    for rule, entries in (evidence or {}).items():
+        for entry in entries or []:
+            if not isinstance(entry, dict):
+                continue
+            add_candidate(
+                str(entry.get("timestamp", "") or ""),
+                str(entry.get("event_type", "") or rule),
+                str(entry.get("app_name", "") or entry.get("process_name", "") or ""),
+                f"log_rule_{rule}_requires_visual_confirmation",
+            )
+
+    if not candidate_events and logs:
+        for log in logs:
+            path = str(log.get("file_path", "") or log.get("file_name", "") or "")
+            event_type = str(log.get("event_type", "") or "")
+            if not path and event_type not in {"file_upload", "data_upload", "file_send", "file_share", "file_selected"}:
+                continue
+            add_candidate(
+                str(log.get("timestamp", "") or ""),
+                event_type or "log_context",
+                str(log.get("app_name", "") or ""),
+                "log_context_requires_visual_confirmation",
+            )
+            if len(candidate_events) >= 12:
+                break
+
+    meta["used"] = True
+    meta["decision"] = "run"
+    meta["reasons"] = sorted(reasons) or ["deterministic_evidence_requires_visual_confirmation"]
+    meta["candidate_events"] = candidate_events[:24]
+    return meta
 
 
 def _operation_record_actions(
@@ -4286,6 +4346,7 @@ def _audit_actions_to_datalog_facts(
         if (
             evidence_source != "event_correlator"
             and evidence_source != "log_rule"
+            and evidence_source != "local_positive"
             and not _action_has_hard_negative_context(action)
             and not _action_has_historical_or_inbound_context(action)
             and not _action_has_cloud_editor_read_context(action)
@@ -4343,6 +4404,8 @@ def _audit_action_supports_risk(action: Dict[str, Any], sensitive_files: List[st
         return False
     if evidence_source == "deterministic" and action_type in {"upload_complete", "send_message", "publish_content"}:
         return risk_level == "completed" and _safe_float(action.get("confidence", 0.0)) >= 0.9
+    if evidence_source == "deterministic" and action_type in {"attach_file", "select_file", "upload_start"}:
+        return risk_level in {"selected_or_attached", "in_progress"} and _safe_float(action.get("confidence", 0.0)) >= 0.5
     if evidence_source == "local_positive":
         return _local_positive_supports_risk(action)
     if evidence_source == "event_correlator":
@@ -4734,6 +4797,14 @@ def run_benchmark(
         deterministic_positive = (
             len(detection.get("upload_events", [])) > 0 or bool(log_rule_signal.get("positive"))
         )
+        if deterministic_positive:
+            fallback_meta = _visual_review_meta_for_deterministic_evidence(
+                fallback_meta,
+                detection,
+                log_rule_signal,
+                logs,
+            )
+            should_run_vlm = True
         triage_positive = deterministic_positive or should_run_vlm
 
         adaptive_frames = 0
@@ -4744,7 +4815,7 @@ def run_benchmark(
             "reason": "vlm_not_requested",
         }
         local_vlm_verdict: Optional[Dict[str, Any]] = None
-        if replay_verdicts is not None and use_vlm and should_run_vlm and not deterministic_positive:
+        if replay_verdicts is not None and use_vlm and should_run_vlm:
             replayed = replay_verdicts.get(case_id.replace("\\", "/"))
             local_vlm_verdict = dict(replayed) if isinstance(replayed, dict) else {
                 "status": "replay_missing",
@@ -4758,37 +4829,40 @@ def run_benchmark(
                 "action": "replayed" if replayed else "replay_missing",
                 "reason": "verdict_from_replay_report",
             }
-        elif (
-            use_vlm
-            and should_run_vlm
-            and not deterministic_positive
-        ):
-            vlm_gate = _local_vlm_gate_decision(
-                mode=vlm_gate_mode,
-                logs=logs,
-                detection=detection,
-                fallback_meta=fallback_meta,
-            )
-            if vlm_gate.get("action") == "local_positive":
-                local_vlm_resolutions += 1
-                local_vlm_verdict = {
-                    "status": "local_positive",
-                    "is_violation": True,
-                    "risk_level": "completed",
-                    "confidence": 0.92 if vlm_gate.get("mode") == "strict" else 0.86,
-                    "completed_action": "local_gate",
-                    "reason": vlm_gate.get("reason", "local_feature_gate_positive"),
-                    "frames_sent": 0,
-                    "frame_context_count": 0,
-                    "max_frames_requested": 0,
-                    "model": "local_vlm_gate",
+        elif use_vlm and should_run_vlm:
+            if deterministic_positive:
+                vlm_gate = {
+                    "mode": str(vlm_gate_mode or "all").strip().lower(),
+                    "action": "remote_required",
+                    "reason": "deterministic_evidence_requires_visual_confirmation",
                 }
-                _postprocess_vlm_actions(local_vlm_verdict, sensitive_files, logs)
-                _progress(
-                    f"[LOCAL GATE] case={case_id} progress={case_index}/{total_cases} "
-                    f"gate={vlm_gate.get('mode')} reason={vlm_gate.get('reason')}"
+            else:
+                vlm_gate = _local_vlm_gate_decision(
+                    mode=vlm_gate_mode,
+                    logs=logs,
+                    detection=detection,
+                    fallback_meta=fallback_meta,
                 )
-            elif max_vlm_cases <= 0 or len(pending_vlm_records) < max_vlm_cases:
+                if vlm_gate.get("action") == "local_positive":
+                    local_vlm_resolutions += 1
+                    local_vlm_verdict = {
+                        "status": "local_positive",
+                        "is_violation": True,
+                        "risk_level": "completed",
+                        "confidence": 0.92 if vlm_gate.get("mode") == "strict" else 0.86,
+                        "completed_action": "local_gate",
+                        "reason": vlm_gate.get("reason", "local_feature_gate_positive"),
+                        "frames_sent": 0,
+                        "frame_context_count": 0,
+                        "max_frames_requested": 0,
+                        "model": "local_vlm_gate",
+                    }
+                    _postprocess_vlm_actions(local_vlm_verdict, sensitive_files, logs)
+                    _progress(
+                        f"[LOCAL GATE] case={case_id} progress={case_index}/{total_cases} "
+                        f"gate={vlm_gate.get('mode')} reason={vlm_gate.get('reason')}"
+                    )
+            if local_vlm_verdict is None and (max_vlm_cases <= 0 or len(pending_vlm_records) < max_vlm_cases):
                 adaptive_frames, frame_budget_meta = _adaptive_vlm_frame_budget(
                     fallback_meta,
                     logs,
@@ -4803,7 +4877,7 @@ def run_benchmark(
                     f"frames={adaptive_frames}/{max_vlm_frames} "
                     f"complexity={','.join(frame_budget_meta.get('complexity_reasons', [])) or 'base'}"
                 )
-            else:
+            elif local_vlm_verdict is None:
                 vlm_gate["action"] = "remote_limit_reached"
                 vlm_gate["reason"] = "max_vlm_cases_limit_reached"
         record = {
