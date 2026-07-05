@@ -76,6 +76,62 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
         self.assertTrue(decision["confirmed_leak"])
         self.assertTrue(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
 
+    def test_clipboard_actions_feed_datalog_clipboard_facts(self) -> None:
+        bm = self.benchmark
+        sensitive_files = ["C:/secret/plan.pdf"]
+        actions = [
+            {
+                "action_id": "case-clipboard:copy",
+                "action_type": "copy_content",
+                "risk_level": "selected_or_attached",
+                "time": "2026-07-05T10:00:00",
+                "app": "excel.exe",
+                "source_file": "C:/secret/plan.pdf",
+                "description": "copied sensitive content from C:/secret/plan.pdf",
+                "evidence_source": "remote_vlm",
+            },
+            {
+                "action_id": "case-clipboard:paste",
+                "action_type": "paste_content",
+                "risk_level": "content_exposed",
+                "time": "2026-07-05T10:00:30",
+                "app": "browser.exe",
+                "app_category": "ai_service",
+                "source_file": "C:/secret/plan.pdf",
+                "description": "pasted sensitive content into an external AI input",
+                "evidence_source": "remote_vlm",
+            },
+        ]
+
+        facts = bm._audit_actions_to_datalog_facts("case-clipboard", actions, sensitive_files)
+        relations = [fact["relation"] for fact in facts]
+
+        self.assertIn("ClipboardWrite", relations)
+        self.assertIn("ClipboardRead", relations)
+
+    def test_explicit_cross_process_action_feeds_datalog_fact(self) -> None:
+        bm = self.benchmark
+        sensitive_files = ["C:/secret/plan.pdf"]
+        actions = [
+            {
+                "action_id": "case-cross:transfer",
+                "action_type": "paste_content",
+                "risk_level": "content_exposed",
+                "time": "2026-07-05T10:00:30",
+                "app": "browser.exe",
+                "source_file": "C:/secret/plan.pdf",
+                "from_process": "excel.exe",
+                "to_process": "browser.exe",
+                "shared_data": "C:/secret/plan.pdf",
+                "description": "sensitive content moved from Excel to browser",
+                "evidence_source": "remote_vlm",
+            }
+        ]
+
+        facts = bm._audit_actions_to_datalog_facts("case-cross", actions, sensitive_files)
+
+        self.assertTrue(any(fact["relation"] == "CrossProcessTransfer" for fact in facts))
+
 
 if __name__ == "__main__":
     unittest.main()

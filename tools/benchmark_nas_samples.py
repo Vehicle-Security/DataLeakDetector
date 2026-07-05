@@ -3860,6 +3860,27 @@ def _action_process(action: Dict[str, Any]) -> str:
     return app.replace("\\", "/").rsplit("/", 1)[-1].lower() or "unknown"
 
 
+def _normalize_process_ref(value: Any) -> str:
+    text = str(value or "").strip()
+    return text.replace("\\", "/").rsplit("/", 1)[-1].lower() or "unknown"
+
+
+def _action_process_field(action: Dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = str(action.get(key, "") or "").strip()
+        if value:
+            return _normalize_process_ref(value)
+    return ""
+
+
+def _action_shared_data_field(action: Dict[str, Any]) -> str:
+    for key in ("shared_data", "clipboard_data", "data", "source_file", "derived_file"):
+        value = str(action.get(key, "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
 def _is_sensitive_ref(value: str, sensitive_files: List[str]) -> bool:
     text = str(value or "").replace("\\", "/").lower()
     if not text:
@@ -3960,6 +3981,21 @@ def _audit_actions_to_datalog_facts(
         op_id = re.sub(r"[^A-Za-z0-9_:.\\/-]+", "_", raw_action_id)[:180] or f"{case_id}:action_{index}"
 
         add("OpenFile", (f"{op_id}:source", process, data, timestamp), raw_action_id, evidence_source)
+        if action_type == "copy_content":
+            add("ClipboardWrite", (f"{op_id}:clipboard_write", process, data, timestamp), raw_action_id, evidence_source)
+        elif action_type == "paste_content":
+            add("ClipboardRead", (f"{op_id}:clipboard_read", process, data, timestamp), raw_action_id, evidence_source)
+
+        from_process = _action_process_field(action, "from_process", "source_process", "source_app")
+        to_process = _action_process_field(action, "to_process", "target_process", "target_app")
+        shared_data = canonical_action_ref(_action_shared_data_field(action), data)
+        if from_process and to_process and from_process != to_process and _is_sensitive_ref(shared_data, sensitive_files):
+            add(
+                "CrossProcessTransfer",
+                (f"{op_id}:cross_process", from_process, to_process, shared_data.replace("\\", "/"), timestamp),
+                raw_action_id,
+                evidence_source,
+            )
         for source_index, source in enumerate(canonical_sources[:32]):
             if source != data and _is_sensitive_ref(data, [source]):
                 add(
