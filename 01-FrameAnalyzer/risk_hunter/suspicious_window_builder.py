@@ -223,6 +223,10 @@ def build_analysis_windows(
     post_seconds = _get_int_env("DLD_ANALYSIS_POST_SECONDS", 90, minimum=1)
     fallback_window = _get_int_env("DLD_VLM_FALLBACK_WINDOW_SEC", 300, minimum=1)
     correlation_seconds = _get_int_env("DLD_LOG_CORRELATION_SECONDS", fallback_window, minimum=1)
+    # OPTIMIZATION: Result probe window for completion evidence
+    result_probe_enabled = _get_int_env("DLD_RESULT_PROBE_ENABLED", 1, minimum=0) > 0
+    result_probe_delay = _get_int_env("DLD_RESULT_PROBE_DELAY_SEC", 30, minimum=10)
+    result_probe_duration = _get_int_env("DLD_RESULT_PROBE_DURATION_SEC", 60, minimum=20)
 
     parsed_logs = []
     sensitive_times: List[datetime] = []
@@ -265,6 +269,8 @@ def build_analysis_windows(
             continue
 
         hint = normalize_path(log.get("file_path", "") or file_hint_from_log(log))
+
+        # Main review window
         windows.append(
             {
                 "start_dt": dt - timedelta(seconds=pre_seconds),
@@ -283,6 +289,35 @@ def build_analysis_windows(
                 "requires_completion_evidence": True,
             }
         )
+
+        # OPTIMIZATION: Add result probe window for staging actions
+        if result_probe_enabled and any(
+            keyword in reasons for keyword in [
+                "ambiguous_exfil_context_near_sensitive_log",
+                "ai_context_near_sensitive_log"
+            ]
+        ):
+            probe_start = dt + timedelta(seconds=result_probe_delay)
+            probe_end = probe_start + timedelta(seconds=result_probe_duration)
+            windows.append(
+                {
+                    "start_dt": probe_start,
+                    "end_dt": probe_end,
+                    "anchor_files": [hint] if hint else [],
+                    "reasons": ["result_probe_after_staging_action"] + reasons,
+                    "candidate_events": [
+                        {
+                            "timestamp": log.get("timestamp", ""),
+                            "event_type": "result_probe",
+                            "app_name": _app_name(log),
+                            "window_title": log.get("window_info", {}).get("window_title", ""),
+                            "reason": "probe_completion_evidence",
+                        }
+                    ],
+                    "requires_completion_evidence": True,
+                    "is_result_probe": True,
+                }
+            )
 
     merged = _merge_windows(windows)
     for idx, window in enumerate(merged, 1):

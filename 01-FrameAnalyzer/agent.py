@@ -87,21 +87,222 @@ class VideoFileOperationAgent:
             chosen[frame.get("idx")] = frame
         return [chosen[key] for key in sorted(chosen)]
 
-    def _select_vlm_frames(self, hit_frames: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    @staticmethod
+    def _contains_token(text: str, tokens: Tuple[str, ...]) -> bool:
+        compact = re.sub(r"\s+", "", str(text or "").lower())
+        lowered = str(text or "").lower()
+        return any(token.lower() in lowered or re.sub(r"\s+", "", token.lower()) in compact for token in tokens)
+
+    @staticmethod
+    def _frame_change_ratio(prev_frame, frame) -> float:
+        if prev_frame is None or frame is None:
+            return 0.0
+        try:
+            h, w = prev_frame.shape[:2]
+            y0 = int(h * 0.5)
+            x0 = int(w * 0.3)
+            prev_roi = prev_frame[y0:, x0:]
+            curr_roi = frame[y0:, x0:]
+            if prev_roi.size == 0 or curr_roi.size == 0:
+                prev_roi = prev_frame
+                curr_roi = frame
+            prev_gray = cv2.cvtColor(prev_roi, cv2.COLOR_BGR2GRAY)
+            curr_gray = cv2.cvtColor(curr_roi, cv2.COLOR_BGR2GRAY)
+            prev_small = cv2.resize(prev_gray, (96, 54), interpolation=cv2.INTER_AREA)
+            curr_small = cv2.resize(curr_gray, (96, 54), interpolation=cv2.INTER_AREA)
+            diff = cv2.absdiff(prev_small, curr_small)
+            return float(diff.mean() / 255.0)
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def _relative_visual_scores(values: List[float]) -> List[float]:
+        if not values:
+            return []
+        spread = max(values) - min(values)
+        if spread < 0.005:
+            return [0.0 for _ in values]
+        ordered = sorted((value, idx) for idx, value in enumerate(values))
+        ranks = [0.0 for _ in values]
+        denom = max(len(values) - 1, 1)
+        for rank, (_, idx) in enumerate(ordered):
+            ranks[idx] = rank / denom
+        return [round(rank * 25.0, 3) for rank in ranks]
+
+    @staticmethod
+    def _is_local_peak(values: List[float], index: int) -> bool:
+        value = values[index]
+        left = values[index - 1] if index > 0 else value
+        right = values[index + 1] if index + 1 < len(values) else value
+        return value >= left and value >= right and (value > left or value > right)
+
+    @classmethod
+    def _score_vlm_frame(
+        cls,
+        frame: Dict[str, Any],
+        prev_frame: Dict[str, Any],
+        position: int,
+        total: int,
+        target_keywords: List[str],
+    ) -> Tuple[float, Dict[str, Any]]:
+        text = str(frame.get("ocr_text", "") or "")
+        frame_type = str(frame.get("type", "") or "")
+        score = 0.0
+        reasons: List[str] = []
+
+        if frame_type == "key_event":
+            score += 20.0
+            reasons.append("ocr_key_event")
+        else:
+            score += 8.0
+            reasons.append("context_frame")
+
+        ocr_score = float(frame.get("ocr_score", 0) or 0)
+        if ocr_score:
+            score += min(35.0, ocr_score * 0.35)
+            reasons.append(f"ocr_match:{int(ocr_score)}")
+
+        completion_tokens = (
+            "sent", "send success", "sent successfully", "submitted", "posted",
+            "published", "uploaded", "upload complete", "upload successful",
+            "shared", "delivered", "done", "completed", "success",
+            "\u5df2\u53d1\u9001", "\u53d1\u9001\u6210\u529f", "\u5df2\u63d0\u4ea4",
+            "\u63d0\u4ea4\u6210\u529f", "\u4e0a\u4f20\u6210\u529f", "\u5df2\u4e0a\u4f20",
+            "\u5df2\u53d1\u5e03", "\u53d1\u5e03\u6210\u529f", "\u5b8c\u6210", "\u6210\u529f",
+        )
+        staging_tokens = (
+            "attach", "attachment", "selected file", "file selected", "choose file",
+            "upload", "send", "share", "paste", "clipboard", "compose",
+            "\u9644\u4ef6", "\u9009\u62e9\u6587\u4ef6", "\u5df2\u9009\u62e9", "\u4e0a\u4f20",
+            "\u53d1\u9001", "\u5206\u4eab", "\u7c98\u8d34", "\u526a\u8d34\u677f", "\u5199\u4fe1",
+        )
+        negative_tokens = (
+            "not sent", "not uploaded", "failed", "cancel", "cancelled", "draft",
+            "\u672a\u53d1\u9001", "\u672a\u4e0a\u4f20", "\u5931\u8d25", "\u53d6\u6d88", "\u8349\u7a3f",
+        )
+
+        if cls._contains_token(text, completion_tokens):
+            score += 60.0
+            reasons.append("completion_text")
+        if cls._contains_token(text, staging_tokens):
+            score += 20.0
+            reasons.append("staging_or_exfil_text")
+        if cls._contains_token(text, negative_tokens):
+            score += 25.0
+            reasons.append("negative_completion_text")
+
+        keyword_hits = []
+        compact_text = cls._compact_text(text)
+        for keyword in target_keywords[:24]:
+            compact_keyword = cls._compact_text(keyword)
+            if compact_keyword and compact_keyword in compact_text:
+                keyword_hits.append(str(keyword))
+        if keyword_hits:
+            score += 25.0
+            reasons.append("sensitive_keyword_visible")
+
+        change_ratio = float(frame.get("visual_change", 0.0) or 0.0)
+        if not change_ratio:
+            change_ratio = cls._frame_change_ratio((prev_frame or {}).get("frame"), frame.get("frame"))
+        visual_score = float(frame.get("visual_score", 0.0) or 0.0)
+        if visual_score:
+            reasons.append("relative_visual_change")
+        score += visual_score
+
+        recency = 0.0 if total <= 1 else position / max(total - 1, 1)
+        score += recency * 10.0
+        if recency >= 0.75:
+            reasons.append("late_window")
+
+        meta = {
+            "score": round(score, 3),
+            "reasons": reasons,
+            "ocr_score": ocr_score,
+            "visual_change": round(change_ratio, 4),
+            "keyword_hits": keyword_hits[:6],
+        }
+        return score, meta
+
+    @staticmethod
+    def _select_ranked_frames(
+        ranked_frames: List[Dict[str, Any]],
+        count: int,
+        min_gap: int,
+    ) -> List[Dict[str, Any]]:
+        selected: List[Dict[str, Any]] = []
+        for frame in sorted(ranked_frames, key=lambda item: item.get("vlm_score", 0), reverse=True):
+            if len(selected) >= count:
+                break
+            idx = int(frame.get("idx", 0) or 0)
+            if min_gap > 0 and any(abs(idx - int(item.get("idx", 0) or 0)) < min_gap for item in selected):
+                continue
+            selected.append(frame)
+        if len(selected) < count and min_gap > 0:
+            selected_indices = {item.get("idx") for item in selected}
+            for frame in sorted(ranked_frames, key=lambda item: item.get("vlm_score", 0), reverse=True):
+                if len(selected) >= count:
+                    break
+                if frame.get("idx") not in selected_indices:
+                    selected.append(frame)
+                    selected_indices.add(frame.get("idx"))
+        return selected
+
+    def _select_vlm_frames(
+        self,
+        hit_frames: List[Dict[str, Any]],
+        target_keywords: List[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         max_frames = self._get_int_env("DLD_VLM_MAX_FRAMES", 6)
+        target_keywords = target_keywords or []
         deduped = self._dedupe_frames(hit_frames)
+        frame_indices = [int(item.get("idx", 0) or 0) for item in deduped]
+        frame_span = max(frame_indices) - min(frame_indices) if frame_indices else 0
+        min_gap = max(0, int(frame_span / max(max_frames * 3, 1)))
+        for pos, frame in enumerate(deduped):
+            prev_frame = deduped[pos - 1] if pos > 0 else None
+            score, score_meta = self._score_vlm_frame(
+                frame,
+                prev_frame,
+                position=pos,
+                total=len(deduped),
+                target_keywords=target_keywords,
+            )
+            frame["vlm_score"] = score
+            frame["vlm_score_meta"] = score_meta
+
         key_frames = [item for item in deduped if item.get("type") == "key_event"]
         context_frames = [item for item in deduped if item.get("type") != "key_event"]
 
-        selected_context = context_frames[-3:]
-        key_budget = max_frames - len(selected_context)
-        if key_budget < 1 and key_frames:
-            selected_context = selected_context[-max(0, max_frames - 1):]
-            key_budget = max_frames - len(selected_context)
+        completion_frames = [
+            item for item in deduped
+            if "completion_text" in item.get("vlm_score_meta", {}).get("reasons", [])
+            or "negative_completion_text" in item.get("vlm_score_meta", {}).get("reasons", [])
+        ]
+        late_context = context_frames[-2:]
 
-        selected = self._pick_evenly(key_frames, key_budget) + selected_context
-        if len(selected) > max_frames:
-            selected = selected[:max_frames]
+        reserved: List[Dict[str, Any]] = []
+        reserved_indices = set()
+        for group in (completion_frames, late_context):
+            for item in sorted(group, key=lambda frame: frame.get("vlm_score", 0), reverse=True):
+                idx = item.get("idx")
+                if idx not in reserved_indices:
+                    reserved.append(item)
+                    reserved_indices.add(idx)
+                if len(reserved) >= min(max_frames, 3):
+                    break
+
+        remaining_budget = max(0, max_frames - len(reserved))
+        ranked_pool = [item for item in deduped if item.get("idx") not in reserved_indices]
+        selected = reserved + self._select_ranked_frames(ranked_pool, remaining_budget, min_gap)
+        if len(selected) < max_frames:
+            selected_indices = {item.get("idx") for item in selected}
+            fallback = [
+                item
+                for item in self._pick_evenly(key_frames or deduped, max_frames)
+                if item.get("idx") not in selected_indices
+            ]
+            selected.extend(fallback[: max_frames - len(selected)])
+        selected = selected[:max_frames]
         selected = self._dedupe_frames(selected)
 
         meta = {
@@ -109,7 +310,26 @@ class VideoFileOperationAgent:
             "deduped_hit_frames": len(deduped),
             "vlm_sent_frames": len(selected),
             "max_vlm_frames": max_frames,
-            "selection_strategy": "ocr_hits_evenly_sampled_plus_tail_context",
+            "min_frame_gap": min_gap,
+            "selection_strategy": "integrated_frame_score_completion_sensitive_visual_change",
+            "score_top_frames": [
+                {
+                    "idx": item.get("idx"),
+                    "time": item.get("time"),
+                    "type": item.get("type"),
+                    **item.get("vlm_score_meta", {}),
+                }
+                for item in sorted(deduped, key=lambda frame: frame.get("vlm_score", 0), reverse=True)[:10]
+            ],
+            "selected_frame_scores": [
+                {
+                    "idx": item.get("idx"),
+                    "time": item.get("time"),
+                    "type": item.get("type"),
+                    **item.get("vlm_score_meta", {}),
+                }
+                for item in selected
+            ],
         }
         return selected, meta
 
@@ -476,19 +696,89 @@ class VideoFileOperationAgent:
     def context_extension_node(self, state: AgentState) -> AgentState:
         last_idx = state.final_report.get('_last_hit_idx', -1)
         if last_idx == -1: return state
-        logger.info("Step 3: 正在针对命中帧提取后续上下文时间节点的补充画面...")
+        logger.info("Step 3: 正在基于后续窗口的相对视觉变化选择补充画面...")
         cap = cv2.VideoCapture(state.video_path)
-        for sec in [3, 8, 15]: 
-            ext_idx = last_idx + int(sec * state.fps)
-            if ext_idx < state.total_frames:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, ext_idx)
-                ret, frame = cap.read()
-                if ret:
-                    wall_time = (state.time_range['rec_start'] + timedelta(seconds=ext_idx / state.fps)).strftime("%Y-%m-%d %H:%M:%S")
-                    state.hit_frames.append({
-                        'idx': ext_idx, 'frame': frame, 'time': wall_time, 'type': 'context'
-                    })
+        baseline = next(
+            (item for item in reversed(state.hit_frames) if item.get("idx") == last_idx),
+            state.hit_frames[-1] if state.hit_frames else None,
+        )
+        baseline_frame = (baseline or {}).get("frame")
+        if baseline_frame is None:
+            cap.release()
+            return state
+
+        search_end_idx = min(
+            int((state.time_range['search_end'] - state.time_range['rec_start']).total_seconds() * state.fps),
+            state.total_frames - 1,
+        )
+        start_idx = last_idx + max(1, int(state.fps))
+        if start_idx > search_end_idx:
+            cap.release()
+            return state
+
+        sample_step = max(1, int(round(state.fps)))
+        max_samples = 120
+        sample_count = max(1, ((search_end_idx - start_idx) // sample_step) + 1)
+        if sample_count > max_samples:
+            sample_step *= int((sample_count + max_samples - 1) // max_samples)
+
+        samples: List[Dict[str, Any]] = []
+        prev_frame = baseline_frame
+        for ext_idx in range(start_idx, search_end_idx + 1, sample_step):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, ext_idx)
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            change_from_baseline = self._frame_change_ratio(baseline_frame, frame)
+            change_from_prev = self._frame_change_ratio(prev_frame, frame)
+            visual_change = max(change_from_baseline, change_from_prev)
+            wall_time = (state.time_range['rec_start'] + timedelta(seconds=ext_idx / state.fps)).strftime("%Y-%m-%d %H:%M:%S")
+            samples.append({
+                'idx': ext_idx,
+                'frame': frame,
+                'time': wall_time,
+                'type': 'context',
+                'visual_change': visual_change,
+                'change_from_baseline': change_from_baseline,
+                'change_from_prev': change_from_prev,
+            })
+            prev_frame = frame
         cap.release()
+
+        if not samples:
+            return state
+
+        values = [float(item.get("visual_change", 0.0) or 0.0) for item in samples]
+        relative_scores = self._relative_visual_scores(values)
+        for index, item in enumerate(samples):
+            item["visual_score"] = relative_scores[index]
+            item["visual_local_peak"] = self._is_local_peak(values, index)
+
+        context_budget = max(4, min(12, self._get_int_env("DLD_VLM_MAX_FRAMES", 6) * 2))
+        peak_samples = [item for item in samples if item.get("visual_local_peak")]
+        ranked = sorted(
+            peak_samples or samples,
+            key=lambda item: (item.get("visual_score", 0.0), item.get("idx", 0)),
+            reverse=True,
+        )
+        selected = ranked[:context_budget]
+        tail = samples[-1]
+        if tail.get("idx") not in {item.get("idx") for item in selected}:
+            selected.append(tail)
+
+        existing = {item.get("idx") for item in state.hit_frames}
+        for item in sorted(selected, key=lambda frame: frame.get("idx", 0)):
+            if item.get("idx") not in existing:
+                state.hit_frames.append(item)
+                existing.add(item.get("idx"))
+
+        state.final_report["_context_sampling"] = {
+            "sampled_frames": len(samples),
+            "selected_context_frames": len(selected),
+            "strategy": "relative_visual_change_local_peaks",
+            "visual_change_min": round(min(values), 4),
+            "visual_change_max": round(max(values), 4),
+        }
         return state
 
     def behavior_analysis_node(self, state: AgentState) -> AgentState:
@@ -518,7 +808,7 @@ class VideoFileOperationAgent:
             os.makedirs(save_dir)
         # ---------------------------
         state.hit_frames.sort(key=lambda x: x['idx'])
-        vlm_frames, optimization_meta = self._select_vlm_frames(state.hit_frames)
+        vlm_frames, optimization_meta = self._select_vlm_frames(state.hit_frames, state.target_keywords)
         optimization_meta.update({
             "candidate_frames": len(state.candidate_frames),
             "ocr_hit_frames": len([item for item in state.hit_frames if item.get("type") == "key_event"]),
@@ -540,11 +830,13 @@ class VideoFileOperationAgent:
         table_rows = [
             (
                 f"{i+1:^8} | {f['idx']:^10} | {f['time']:^20} | "
-                f"{f['type']:^10} | {self._ocr_snippet(f.get('ocr_text', ''))}"
+                f"{f['type']:^10} | {f.get('vlm_score', 0):^6.1f} | "
+                f"{','.join(f.get('vlm_score_meta', {}).get('reasons', [])[:4]):^32} | "
+                f"{self._ocr_snippet(f.get('ocr_text', ''))}"
             )
             for i, f in enumerate(vlm_frames)
         ]
-        table_str = "输入顺序 | 原始帧索引 | 现实时间戳(%Y-%m-%d %H:%M:%S) | 类型 | OCR摘要\n" + "-"*95 + "\n" + "\n".join(table_rows)
+        table_str = "输入顺序 | 原始帧索引 | 现实时间戳(%Y-%m-%d %H:%M:%S) | 类型 | 分数 | 选中原因 | OCR摘要\n" + "-"*135 + "\n" + "\n".join(table_rows)
 
         final_prompt = PROMPTS.RETRIEVE_FRAMES_PROMPT.format(
             frame_count=len(vlm_frames),

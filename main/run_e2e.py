@@ -339,33 +339,6 @@ AMBIGUOUS_EXFIL_TOKENS = (
     "\u53ef\u79fb\u52a8",
 )
 
-NO_LOG_ANCHOR_REVIEW_TOKENS = (
-    "teams",
-    "zoom",
-    "meeting",
-    "screen share",
-    "share screen",
-    "vmware",
-    "virtualbox",
-    "hyper-v",
-    "ubuntu - vmware",
-    "openeuler",
-    "virtual machine",
-    "remote desktop",
-    "mstsc",
-    "anydesk",
-    "todesk",
-    "sunlogin",
-    "\u4f1a\u8bae",
-    "\u5f00\u4f1a",
-    "\u901a\u8bdd",
-    "\u5171\u4eab\u5c4f\u5e55",
-    "\u5c4f\u5e55\u5171\u4eab",
-    "\u865a\u62df\u673a",
-    "\u8fdc\u7a0b\u684c\u9762",
-)
-
-
 def _flatten_log_text(value: Any) -> str:
     if isinstance(value, dict):
         return " ".join(_flatten_log_text(item) for item in value.values())
@@ -402,13 +375,13 @@ def _should_use_vlm_fallback(
     """
     Decide whether spending VLM tokens is justified after log-first analysis.
 
-    Deterministic log evidence always wins. VLM is reserved for cases where a
-    sensitive file is present but logs only show ambiguous AI/chat/clipboard
-    context that needs visual semantics.
+    Logs stay in the triage lane: they identify sensitive anchors, lineage, and
+    risky time windows. VLM is reserved for cases where a sensitive object is
+    actually present in the logs and visual state is needed to confirm whether
+    an upload/send/share/AI-submit completed.
     """
     meta = log_first_result.get("log_first", {}) if isinstance(log_first_result, dict) else {}
     sensitive_count = int(meta.get("sensitive_events", 0) or 0)
-    configured_sensitive_count = int(meta.get("configured_sensitive_files", 0) or 0)
     decision = {
         "enabled": True,
         "used": False,
@@ -445,37 +418,6 @@ def _should_use_vlm_fallback(
         return True, decision
 
     if sensitive_count <= 0:
-        if configured_sensitive_count > 0:
-            try:
-                from frontend_app_classifier import classify_log_context
-            except Exception:
-                classify_log_context = None
-
-            for log in logs:
-                if classify_log_context:
-                    context = classify_log_context(log)
-                    should_review = bool(context.get("visual_review"))
-                    categories = context.get("categories", [])
-                else:
-                    text = _flatten_log_text(log)
-                    should_review = _contains_any(text, NO_LOG_ANCHOR_REVIEW_TOKENS)
-                    categories = []
-                if not should_review:
-                    continue
-                reason = "configured_sensitive_file_with_visual_review_context"
-                decision["used"] = True
-                decision["decision"] = "run"
-                decision["reasons"].append(reason)
-                decision["candidate_events"].append(
-                    {
-                        "timestamp": log.get("timestamp", ""),
-                        "event_type": log.get("event_type", ""),
-                        "app_name": log.get("app_name") or log.get("process_info", {}).get("process_name", ""),
-                        "reason": reason,
-                        "frontend_categories": categories,
-                    }
-                )
-                return True, decision
         decision["reasons"].append("no_sensitive_log_context")
         return False, decision
 
@@ -636,16 +578,11 @@ def run_module3_pipeline(log_file: str, video_path: str,
         log_first_meta = log_first_result.get("log_first", {})
         print(f"      - sensitive log events: {log_first_meta.get('sensitive_events', 0)}")
         print(f"      - file mappings: {log_first_meta.get('direct_mappings', 0)}")
-        print(f"      - confident upload events: {upload_count}")
-
-        if upload_count > 0:
-            print("      [OK] log evidence is sufficient; skipping VLM analysis")
-            log_first_result["sensitive_files"] = sensitive_files
-            return log_first_result
+        print(f"      - log risk/attempt signals: {upload_count}")
 
         enable_vlm_fallback = os.getenv("DLD_ENABLE_VLM_FALLBACK", "1").strip().lower() not in {"0", "false", "no", "off"}
         if not enable_vlm_fallback:
-            print("      [INFO] no confident upload chain and VLM fallback is disabled")
+            print("      [INFO] VLM fallback is disabled; keeping log-only risk signals")
             log_first_result["vlm_fallback"] = {
                 "enabled": False,
                 "used": False,
