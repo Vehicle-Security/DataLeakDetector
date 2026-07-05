@@ -55,6 +55,8 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
         self.assertTrue(decision["risk_positive"])
         self.assertFalse(decision["confirmed_leak"])
         self.assertNotIn("file_selected", bm.LOG_RULE_LEAK_RULES)
+        self.assertNotIn("upload_event", bm.LOG_RULE_LEAK_RULES)
+        self.assertNotIn("screen_capture", bm.LOG_RULE_LEAK_RULES)
         self.assertFalse(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
 
     def test_completed_upload_can_confirm_leak(self) -> None:
@@ -353,6 +355,29 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
         self.assertFalse(decision["confirmed_leak"])
         self.assertFalse(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
 
+    def test_cancelled_upload_log_action_is_not_confirmed(self) -> None:
+        bm = self.benchmark
+        sensitive_files = ["C:/secret/plan.pdf"]
+        actions = [
+            {
+                "action_id": "case-cancelled:log_rule_upload_event_0",
+                "action_type": "upload_complete",
+                "risk_level": "completed",
+                "time": "2026-07-05T10:00:00",
+                "app": "file_upload",
+                "app_category": "log_rule",
+                "source_file": "C:/secret/plan.pdf",
+                "description": "log rule upload_event: upload dialog opened but cancelled before send",
+                "evidence_source": "log_rule",
+            }
+        ]
+
+        decision = bm._run_datalog_on_audit_actions("case-cancelled", actions, sensitive_files)
+
+        self.assertTrue(decision["risk_positive"])
+        self.assertFalse(decision["confirmed_leak"])
+        self.assertFalse(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
+
 
 class EvidenceDecisionTest(unittest.TestCase):
     def test_risk_positive_does_not_make_final_positive(self) -> None:
@@ -368,7 +393,7 @@ class EvidenceDecisionTest(unittest.TestCase):
         self.assertFalse(decision.final_positive)
         self.assertEqual(decision.final_semantics, "confirmed_leak")
 
-    def test_confirmed_log_rule_makes_final_positive(self) -> None:
+    def test_upload_log_rule_is_risk_not_confirmed(self) -> None:
         decision = decide_evidence_outcome(
             datalog_risk_positive=False,
             datalog_confirmed=False,
@@ -377,11 +402,11 @@ class EvidenceDecisionTest(unittest.TestCase):
         )
 
         self.assertTrue(decision.risk_positive)
-        self.assertTrue(decision.confirmed_leak)
-        self.assertTrue(decision.final_positive)
-        self.assertEqual(decision.reasoning_source, "log_rule")
+        self.assertFalse(decision.confirmed_leak)
+        self.assertFalse(decision.final_positive)
+        self.assertEqual(decision.reasoning_source, "none")
 
-    def test_screen_capture_log_rule_makes_final_positive(self) -> None:
+    def test_screen_capture_log_rule_is_risk_not_confirmed(self) -> None:
         decision = decide_evidence_outcome(
             datalog_risk_positive=False,
             datalog_confirmed=False,
@@ -389,8 +414,9 @@ class EvidenceDecisionTest(unittest.TestCase):
             log_rule_rules=["screen_capture"],
         )
 
-        self.assertTrue(decision.confirmed_leak)
-        self.assertTrue(decision.final_positive)
+        self.assertTrue(decision.risk_positive)
+        self.assertFalse(decision.confirmed_leak)
+        self.assertFalse(decision.final_positive)
 
 
 if __name__ == "__main__":

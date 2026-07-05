@@ -4026,9 +4026,9 @@ LOG_RULE_ACTION_SPECS = {
     "screen_capture": ("screenshot", "content_exposed", False),
 }
 
-# Rules with a completed/exposed outcome that can confirm a leak from logs alone.
-# Selection and upload-staging rules remain risk support; they do not prove that
-# the external party received or saw the sensitive object.
+# Log rules are risk support only. Even explicit upload/capture/share events can
+# represent a cancelled or local-only flow, so confirmation must come from the
+# evidence graph rather than a log rule shortcut.
 LOG_RULE_LEAK_RULES = CONFIRMED_LOG_RULES
 
 
@@ -4285,6 +4285,7 @@ def _audit_actions_to_datalog_facts(
         action_leak_allowed = False
         if (
             evidence_source != "event_correlator"
+            and evidence_source != "log_rule"
             and not _action_has_hard_negative_context(action)
             and not _action_has_historical_or_inbound_context(action)
             and not _action_has_cloud_editor_read_context(action)

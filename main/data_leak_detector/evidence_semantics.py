@@ -14,7 +14,7 @@ RISK_LEVELS = {
 
 CONFIRMED_RISK_LEVELS = {"content_exposed", "completed"}
 
-CONFIRMED_LOG_RULES = {"upload_event", "screen_share", "screen_capture"}
+CONFIRMED_LOG_RULES: set[str] = set()
 
 
 @dataclass(frozen=True)
