@@ -838,16 +838,39 @@ def _parse_dt(value: str) -> Optional[datetime]:
     return None
 
 
-def _recording_start(groundtruth: Any, logs: List[Dict[str, Any]]) -> Optional[datetime]:
-    if isinstance(groundtruth, dict):
-        dt = _parse_dt(groundtruth.get("recording_start_time", ""))
-        if dt:
-            return dt
+def _recording_start_from_video_name(video_path: Optional[Path]) -> Optional[datetime]:
+    if not video_path:
+        return None
+    match = re.search(r"recording_(\d{8})_(\d{6})", video_path.stem)
+    if not match:
+        return None
+    try:
+        return datetime.strptime("".join(match.groups()), "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+
+
+def _first_log_time(logs: List[Dict[str, Any]]) -> Optional[datetime]:
     for log in logs:
         dt = _parse_dt(log.get("timestamp", ""))
         if dt:
             return dt
     return None
+
+
+def _recording_start(
+    groundtruth: Any,
+    logs: List[Dict[str, Any]],
+    video_path: Optional[Path] = None,
+) -> Optional[datetime]:
+    video_dt = _recording_start_from_video_name(video_path)
+    log_dt = _first_log_time(logs)
+    reference_dt = video_dt or log_dt
+    if isinstance(groundtruth, dict):
+        dt = _parse_dt(groundtruth.get("recording_start_time", ""))
+        if dt and (not reference_dt or abs((dt - reference_dt).total_seconds()) <= 3600):
+            return dt
+    return video_dt or log_dt
 
 
 def _choose_video_file(case_dir: Path) -> Optional[Path]:
@@ -3160,7 +3183,7 @@ def _live_vlm_review_case(
     max_frames: int,
 ) -> Dict[str, Any]:
     video_path = _choose_video_file(case_dir)
-    rec_start = _recording_start(groundtruth, logs)
+    rec_start = _recording_start(groundtruth, logs, video_path)
     if not video_path or not rec_start:
         return {
             "status": "skipped",

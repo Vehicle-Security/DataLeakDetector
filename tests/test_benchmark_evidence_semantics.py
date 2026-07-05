@@ -259,6 +259,16 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
         self.assertNotIn("completion_keyword", monitor_flags)
         self.assertIn("completion_keyword", upload_flags)
 
+    def test_recording_start_ignores_stale_groundtruth_when_video_matches_logs(self) -> None:
+        bm = self.benchmark
+        start = bm._recording_start(
+            {"recording_start_time": "2026-03-22 17:40:18"},
+            [{"timestamp": "2026-03-25T12:11:48.401"}],
+            Path("recording_20260325_121148.mp4"),
+        )
+
+        self.assertEqual(start, bm._parse_dt("2026-03-25 12:11:48"))
+
 
 class EvidenceDecisionTest(unittest.TestCase):
     def test_risk_positive_does_not_make_final_positive(self) -> None:
