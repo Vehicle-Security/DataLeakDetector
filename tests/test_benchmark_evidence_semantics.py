@@ -269,6 +269,63 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
 
         self.assertEqual(start, bm._parse_dt("2026-03-25 12:11:48"))
 
+    def test_segment_scoring_prefers_strong_transfer_window(self) -> None:
+        bm = self.benchmark
+        early_segment = (bm._parse_dt("2026-03-25 12:11:48"), bm._parse_dt("2026-03-25 12:12:33"))
+        late_segment = (bm._parse_dt("2026-03-25 12:12:23"), bm._parse_dt("2026-03-25 12:13:08"))
+        logs = [
+            {
+                "timestamp": "2026-03-25T12:11:50",
+                "event_type": "modified",
+                "app_name": "Edge",
+                "file_path": f"C:/noise/{index}.tmp",
+                "window_info": {"window_title": "Win Monitor"},
+            }
+            for index in range(24)
+        ]
+        logs.append(
+            {
+                "timestamp": "2026-03-25T12:12:56",
+                "event_type": "modified",
+                "app_name": "wpspdf",
+                "file_path": "C:/Users/clhcl/Desktop/客户联系方式.pdf",
+                "window_info": {"window_title": "发送文件"},
+            }
+        )
+        fallback = {"candidate_events": logs}
+
+        early_score, early_meta = bm._segment_signal_score(early_segment, fallback, logs)
+        late_score, late_meta = bm._segment_signal_score(late_segment, fallback, logs)
+
+        self.assertGreater(late_score, early_score)
+        self.assertGreater(late_meta["strong_transfer_hits"], early_meta["strong_transfer_hits"])
+
+    def test_remote_vlm_send_dialog_attachment_is_risk_not_confirmed(self) -> None:
+        bm = self.benchmark
+        sensitive_files = ["C:/Users/clhcl/Desktop/客户联系方式.pdf"]
+        actions = [
+            {
+                "action_id": "case-send-dialog:vlm_action_0",
+                "action_type": "attach_file",
+                "risk_level": "selected_or_attached",
+                "time": "2026-03-25T12:12:49",
+                "app": "WPS PDF",
+                "app_category": "desktop_app",
+                "source_file": "C:/Users/clhcl/Desktop/客户联系方式.pdf",
+                "description": (
+                    "The sensitive file is visible in the Send File dialog, "
+                    "selected or attached for sending, but no final send confirmation is visible."
+                ),
+                "evidence_source": "remote_vlm",
+            }
+        ]
+
+        decision = bm._run_datalog_on_audit_actions("case-send-dialog", actions, sensitive_files)
+
+        self.assertTrue(decision["risk_positive"])
+        self.assertFalse(decision["confirmed_leak"])
+        self.assertFalse(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
+
 
 class EvidenceDecisionTest(unittest.TestCase):
     def test_risk_positive_does_not_make_final_positive(self) -> None:

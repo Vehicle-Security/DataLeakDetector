@@ -162,6 +162,18 @@ EXTRA_LOG_TOKENS = (
     "\u8fdc\u7a0b\u684c\u9762",
 )
 
+TRANSFER_WINDOW_TOKENS = (
+    "send file",
+    "sending file",
+    "file transfer",
+    "upload file",
+    "attach file",
+    "\u53d1\u9001\u6587\u4ef6",
+    "\u4f20\u8f93\u6587\u4ef6",
+    "\u4e0a\u4f20\u6587\u4ef6",
+    "\u6dfb\u52a0\u9644\u4ef6",
+)
+
 COMPLETION_OCR_TOKENS = (
     "sent",
     "uploaded",
@@ -973,6 +985,7 @@ def _segment_signal_score(
     padded_end = end + timedelta(seconds=3)
     score = 0.0
     hit_events = 0
+    strong_transfer_hits = 0
     matched_tokens = set()
 
     candidate_events = fallback_meta.get("candidate_events", []) or []
@@ -983,6 +996,9 @@ def _segment_signal_score(
         hit_events += 1
         score += 2.0
         text = _event_text(event).lower()
+        if any(token.lower() in text for token in TRANSFER_WINDOW_TOKENS):
+            strong_transfer_hits += 1
+            score += 64.0
         for token in EXTRA_LOG_TOKENS + COMPLETION_OCR_TOKENS:
             if token.lower() in text:
                 matched_tokens.add(token)
@@ -994,6 +1010,9 @@ def _segment_signal_score(
         if not dt or not (padded_start <= dt <= padded_end):
             continue
         text = _event_text(log).lower()
+        if any(token.lower() in text for token in TRANSFER_WINDOW_TOKENS):
+            strong_transfer_hits += 1
+            score += 16.0
         if any(token.lower() in text for token in EXTRA_LOG_TOKENS):
             log_hits += 1
             score += 0.5
@@ -1006,6 +1025,7 @@ def _segment_signal_score(
         "duration_seconds": round(duration, 3),
         "candidate_events": hit_events,
         "log_hits": log_hits,
+        "strong_transfer_hits": strong_transfer_hits,
         "matched_tokens": sorted(str(token) for token in matched_tokens)[:12],
         "score": round(score, 3),
     }
@@ -2777,6 +2797,13 @@ def _action_has_staging_context(action: Dict[str, Any]) -> bool:
         "selected",
         "file selection",
         "file_selected",
+        "send file",
+        "sending file",
+        "selected for sending",
+        "selected or attached for sharing",
+        "selected or attached for sending",
+        "share dialog",
+        "send dialog",
         "upload complete",
         "upload completed",
         "uploading",
@@ -4336,11 +4363,11 @@ def _audit_action_supports_risk(action: Dict[str, Any], sensitive_files: List[st
         if evidence_source in {"remote_vlm", "local_positive"}:
             # Staging-stage visual claims repeatedly misfire on cancelled
             # uploads and file-picker browsing; accept them only when the VLM
-            # explicitly saw the transfer running or being submitted.
+            # explicitly saw the transfer running, being submitted, or a
+            # sensitive attachment in a send/share dialog.
             return (
                 evidence_source == "remote_vlm"
-                and _action_has_upload_progress_context(action)
-                and not _action_has_unfinished_context(action)
+                and (_action_has_upload_progress_context(action) or _action_has_staging_context(action))
             )
         text = _action_text(action)
         if not _external_sink_action_context(action) or not _action_has_staging_context(action):
