@@ -2722,6 +2722,10 @@ CRITICAL: Distinguish between staging and completion states carefully:
 Return both a completed-action verdict and a risk-stage verdict:
 - is_violation=true only when the evidence shows completed leakage or direct exposure of sensitive content in an external sink.
 - risk_level must be one of: none, preparation, selected_or_attached, in_progress, content_exposed, completed.
+- transfer_direction must be one of: outbound, inbound, local, unknown.
+- terminal_state must be one of: completed, staged, in_progress, failed, canceled, none, unknown.
+- artifact_state must be one of: new_remote_artifact, existing_remote_artifact, local_download, file_picker_only, draft_attachment, remote_input_content, active_screen_exposure, local_only, unknown.
+- completion_evidence and non_completion_evidence must contain short enum-like tokens, for example: message_sent_toast, upload_success_banner, generated_share_link, sent_message_visible, existing_remote_listing, selected_checkbox_only, download_bubble, file_picker_only, draft_not_sent, no_success_confirmation.
 - Identify frontend applications by category/capability, not by a fixed brand list. If the brand is unknown, infer the category from UI features.
 - Use selected_or_attached when a sensitive file is selected or attached in an external sink but not submitted yet.
 - Use in_progress when upload/send/share is visibly underway but completion is not shown.
@@ -2746,6 +2750,11 @@ Output exactly one JSON object and no markdown:
 {{
   "is_violation": true,
   "risk_level": "none|preparation|selected_or_attached|in_progress|content_exposed|completed",
+  "transfer_direction": "outbound|inbound|local|unknown",
+  "terminal_state": "completed|staged|in_progress|failed|canceled|none|unknown",
+  "artifact_state": "new_remote_artifact|existing_remote_artifact|local_download|file_picker_only|draft_attachment|remote_input_content|active_screen_exposure|local_only|unknown",
+  "completion_evidence": ["message_sent_toast"],
+  "non_completion_evidence": ["file_picker_only"],
   "confidence": 0.0,
   "completed_action": "send|upload|share|publish|commit|ai_input|screen_share|screenshot|vm_copy|none|unknown",
   "frontend_app": {{
@@ -2758,6 +2767,11 @@ Output exactly one JSON object and no markdown:
       "segment_id": {json.dumps(segment_id)},
       "action_type": "open_file|copy_content|paste_content|select_file|attach_file|upload_start|upload_complete|send_message|publish_content|screenshot|screen_record|screen_share|save_as|convert_file|compress_file|rename_file|vm_copy|external_exposure|none|unknown",
       "risk_level": "none|preparation|selected_or_attached|in_progress|content_exposed|completed",
+      "transfer_direction": "outbound|inbound|local|unknown",
+      "terminal_state": "completed|staged|in_progress|failed|canceled|none|unknown",
+      "artifact_state": "new_remote_artifact|existing_remote_artifact|local_download|file_picker_only|draft_attachment|remote_input_content|active_screen_exposure|local_only|unknown",
+      "completion_evidence": ["upload_success_banner"],
+      "non_completion_evidence": ["no_success_confirmation"],
       "time": "YYYY-MM-DD HH:MM:SS or empty",
       "app": "app or site",
       "app_category": "category",
@@ -2795,6 +2809,100 @@ def _normalize_risk_level(value: str) -> str:
         "completed",
     }
     return normalized if normalized in allowed else ""
+
+
+def _normalize_transfer_direction(value: str) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "upload": "outbound",
+        "send": "outbound",
+        "share": "outbound",
+        "publish": "outbound",
+        "download": "inbound",
+        "receive": "inbound",
+        "received": "inbound",
+        "none": "unknown",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in {"outbound", "inbound", "local", "unknown"} else "unknown"
+
+
+def _normalize_terminal_state(value: str) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "selected": "staged",
+        "attached": "staged",
+        "selected_or_attached": "staged",
+        "draft": "staged",
+        "started": "in_progress",
+        "uploading": "in_progress",
+        "sending": "in_progress",
+        "cancelled": "canceled",
+        "success": "completed",
+        "succeeded": "completed",
+        "done": "completed",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in {"completed", "staged", "in_progress", "failed", "canceled", "none", "unknown"} else "unknown"
+
+
+def _normalize_artifact_state(value: str) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "remote_listing": "existing_remote_artifact",
+        "existing_remote_listing": "existing_remote_artifact",
+        "download": "local_download",
+        "downloaded": "local_download",
+        "picker": "file_picker_only",
+        "file_picker": "file_picker_only",
+        "attachment_draft": "draft_attachment",
+        "draft": "draft_attachment",
+        "input_content": "remote_input_content",
+        "chat_input": "remote_input_content",
+        "screen_share": "active_screen_exposure",
+        "screenshot": "active_screen_exposure",
+    }
+    normalized = aliases.get(normalized, normalized)
+    allowed = {
+        "new_remote_artifact",
+        "existing_remote_artifact",
+        "local_download",
+        "file_picker_only",
+        "draft_attachment",
+        "remote_input_content",
+        "active_screen_exposure",
+        "local_only",
+        "unknown",
+    }
+    return normalized if normalized in allowed else "unknown"
+
+
+def _structured_evidence_list(value: Any) -> List[str]:
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, list):
+        values = value
+    else:
+        values = []
+    result = []
+    for item in values:
+        token = str(item or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if token:
+            result.append(token[:80])
+    return sorted(set(result))
+
+
+def _has_structured_state(value: Dict[str, Any]) -> bool:
+    return any(
+        key in value and value.get(key) not in (None, "", [], {})
+        for key in (
+            "transfer_direction",
+            "terminal_state",
+            "artifact_state",
+            "completion_evidence",
+            "non_completion_evidence",
+        )
+    )
 
 
 def _infer_risk_level_from_verdict(verdict: Dict[str, Any]) -> str:
@@ -3517,6 +3625,30 @@ def _remote_vlm_action_supports_leak(action: Dict[str, Any]) -> bool:
         # too coarse to become confirmed leakage facts by themselves.
         return False
 
+    if _has_structured_state(action):
+        direction = _normalize_transfer_direction(str(action.get("transfer_direction", "") or ""))
+        terminal = _normalize_terminal_state(str(action.get("terminal_state", "") or ""))
+        artifact = _normalize_artifact_state(str(action.get("artifact_state", "") or ""))
+        completion = _structured_evidence_list(action.get("completion_evidence"))
+        non_completion = _structured_evidence_list(action.get("non_completion_evidence"))
+        if direction != "outbound":
+            return False
+        if terminal in {"failed", "canceled", "in_progress", "staged", "none"}:
+            return False
+        if _structured_non_completion_blocks_leak(non_completion, artifact):
+            return False
+        if terminal == "completed" and (
+            artifact in {"new_remote_artifact", "remote_input_content", "active_screen_exposure"}
+            or _structured_completion_evidence_supports_leak(completion)
+        ):
+            return True
+        if (
+            _normalize_risk_level(str(action.get("risk_level", "") or "")) == "content_exposed"
+            and artifact in {"remote_input_content", "active_screen_exposure"}
+        ):
+            return True
+        return False
+
     action_type = _normalize_action_type(str(action.get("action_type", "") or ""))
     risk_level = _normalize_risk_level(str(action.get("risk_level", "") or ""))
     if action_type not in {
@@ -3746,11 +3878,156 @@ def _non_outbound_downgrade_level(text: str) -> str:
     return "none"
 
 
+def _structured_completion_evidence_supports_leak(evidence: List[str]) -> bool:
+    positive = {
+        "message_sent_toast",
+        "message_sent",
+        "sent_message_visible",
+        "email_sent",
+        "upload_success_banner",
+        "upload_complete",
+        "upload_completed",
+        "uploaded_successfully",
+        "generated_share_link",
+        "share_link_generated",
+        "public_link_copied",
+        "publish_success",
+        "commit_success",
+        "push_success",
+        "recipient_visible_artifact",
+        "screen_share_active",
+        "screenshot_captured",
+        "remote_copy_completed",
+    }
+    return bool(set(evidence) & positive)
+
+
+def _structured_non_completion_blocks_leak(evidence: List[str], artifact_state: str) -> bool:
+    blockers = {
+        "existing_remote_listing",
+        "selected_checkbox_only",
+        "download_bubble",
+        "download_attachment",
+        "download_bar",
+        "file_picker_only",
+        "draft_not_sent",
+        "attachment_not_sent",
+        "no_success_confirmation",
+        "upload_not_confirmed",
+        "send_not_confirmed",
+        "progress_incomplete",
+        "canceled",
+        "failed",
+        "local_editor_opened",
+    }
+    blocker_artifacts = {
+        "existing_remote_artifact",
+        "local_download",
+        "file_picker_only",
+        "draft_attachment",
+        "local_only",
+    }
+    return bool(set(evidence) & blockers) or artifact_state in blocker_artifacts
+
+
+def _structured_verdict_supports_positive(verdict: Dict[str, Any]) -> Optional[bool]:
+    if not _has_structured_state(verdict):
+        action_votes = [
+            _structured_action_supports_positive(action)
+            for action in verdict.get("observed_actions", []) or []
+            if isinstance(action, dict) and _has_structured_state(action)
+        ]
+        if not action_votes:
+            return None
+        return any(vote is True for vote in action_votes)
+    direction = _normalize_transfer_direction(str(verdict.get("transfer_direction", "") or ""))
+    terminal = _normalize_terminal_state(str(verdict.get("terminal_state", "") or ""))
+    artifact = _normalize_artifact_state(str(verdict.get("artifact_state", "") or ""))
+    risk_level = _normalize_risk_level(str(verdict.get("risk_level", "") or ""))
+    completion = _structured_evidence_list(verdict.get("completion_evidence"))
+    non_completion = _structured_evidence_list(verdict.get("non_completion_evidence"))
+
+    verdict["transfer_direction"] = direction
+    verdict["terminal_state"] = terminal
+    verdict["artifact_state"] = artifact
+    verdict["completion_evidence"] = completion
+    verdict["non_completion_evidence"] = non_completion
+
+    if direction in {"inbound", "local"}:
+        return False
+    if terminal in {"failed", "canceled", "in_progress", "staged", "none"}:
+        return False
+    if _structured_non_completion_blocks_leak(non_completion, artifact):
+        return False
+    if direction != "outbound":
+        return False
+    if terminal == "completed" and (
+        artifact in {"new_remote_artifact", "remote_input_content", "active_screen_exposure"}
+        or _structured_completion_evidence_supports_leak(completion)
+    ):
+        return True
+    if risk_level == "content_exposed" and artifact in {"remote_input_content", "active_screen_exposure"}:
+        return True
+    return False
+
+
+def _structured_action_supports_positive(action: Dict[str, Any]) -> Optional[bool]:
+    if not _has_structured_state(action):
+        return None
+    direction = _normalize_transfer_direction(str(action.get("transfer_direction", "") or ""))
+    terminal = _normalize_terminal_state(str(action.get("terminal_state", "") or ""))
+    artifact = _normalize_artifact_state(str(action.get("artifact_state", "") or ""))
+    risk_level = _normalize_risk_level(str(action.get("risk_level", "") or ""))
+    completion = _structured_evidence_list(action.get("completion_evidence"))
+    non_completion = _structured_evidence_list(action.get("non_completion_evidence"))
+    if direction != "outbound":
+        return False
+    if terminal in {"failed", "canceled", "in_progress", "staged", "none"}:
+        return False
+    if _structured_non_completion_blocks_leak(non_completion, artifact):
+        return False
+    if terminal == "completed" and (
+        artifact in {"new_remote_artifact", "remote_input_content", "active_screen_exposure"}
+        or _structured_completion_evidence_supports_leak(completion)
+    ):
+        return True
+    if risk_level == "content_exposed" and artifact in {"remote_input_content", "active_screen_exposure"}:
+        return True
+    return False
+
+
 def _postprocess_vlm_verdict(verdict: Dict[str, Any]) -> None:
     risk_level = _normalize_risk_level(str(verdict.get("risk_level", "") or ""))
     verdict["risk_level"] = risk_level or _infer_risk_level_from_verdict(verdict)
+    structured_positive = _structured_verdict_supports_positive(verdict)
+    if structured_positive is False:
+        verdict["raw_is_violation"] = verdict.get("is_violation")
+        verdict["raw_risk_level"] = verdict.get("risk_level")
+        verdict["is_violation"] = False
+        if verdict.get("terminal_state") in {"staged", "in_progress"}:
+            verdict["risk_level"] = "in_progress" if verdict.get("terminal_state") == "in_progress" else "selected_or_attached"
+        elif verdict.get("artifact_state") in {"file_picker_only", "draft_attachment"}:
+            verdict["risk_level"] = "selected_or_attached"
+        else:
+            verdict["risk_level"] = "none"
+        verdict["completed_action"] = "none"
+        verdict["postprocess_reason"] = "downgraded_structured_non_outbound_or_unfinished"
+        for action in verdict.get("observed_actions", []) or []:
+            if not isinstance(action, dict):
+                continue
+            action_risk = _normalize_risk_level(str(action.get("risk_level", "") or ""))
+            if action_risk in {"content_exposed", "completed"}:
+                action["raw_risk_level"] = action.get("risk_level", "")
+                action["risk_level"] = verdict["risk_level"]
+                action["consistency_warning"] = "downgraded_structured_non_outbound_or_unfinished"
+        return
+    if structured_positive is True:
+        verdict["raw_is_violation"] = verdict.get("is_violation")
+        verdict["is_violation"] = True
+        if verdict["risk_level"] not in {"content_exposed", "completed"}:
+            verdict["risk_level"] = "content_exposed" if verdict.get("artifact_state") in {"remote_input_content", "active_screen_exposure"} else "completed"
     text = _vlm_verdict_text(verdict)
-    if _has_hard_non_outbound_text(text) and not _has_strong_outbound_completion_text(text):
+    if structured_positive is None and _has_hard_non_outbound_text(text) and not _has_strong_outbound_completion_text(text):
         verdict["raw_is_violation"] = verdict.get("is_violation")
         verdict["raw_risk_level"] = verdict.get("risk_level")
         verdict["is_violation"] = False
@@ -3817,6 +4094,8 @@ def _action_description_consistent_with_completion(
         False: 不一致，应该降级或跳过
     """
     description = str(action.get("description", "") or "").lower()
+    if str(action.get("evidence_source", "") or "") == "remote_vlm" or _has_structured_state(action):
+        return original_action_type, original_risk_level
 
     if not description:
         return True  # 没有description，无法判断，保守通过
@@ -4074,6 +4353,11 @@ def _normalize_observed_actions(
             {
                 "action_type": action_type,
                 "risk_level": verdict.get("risk_level", ""),
+                "transfer_direction": verdict.get("transfer_direction", ""),
+                "terminal_state": verdict.get("terminal_state", ""),
+                "artifact_state": verdict.get("artifact_state", ""),
+                "completion_evidence": verdict.get("completion_evidence", []),
+                "non_completion_evidence": verdict.get("non_completion_evidence", []),
                 "time": frame_times.get(evidence_frames[0], "") if evidence_frames else _verdict_timestamp({}, logs or []),
                 "app": frontend.get("name", ""),
                 "app_category": frontend.get("category", "unknown"),
@@ -4100,12 +4384,32 @@ def _normalize_observed_actions(
         action_time = str(action.get("time", "") or "")
         if not action_time and evidence_frames:
             action_time = frame_times.get(evidence_frames[0], "")
+        transfer_direction = _normalize_transfer_direction(
+            str(action.get("transfer_direction") or verdict.get("transfer_direction") or "")
+        )
+        terminal_state = _normalize_terminal_state(
+            str(action.get("terminal_state") or verdict.get("terminal_state") or "")
+        )
+        artifact_state = _normalize_artifact_state(
+            str(action.get("artifact_state") or verdict.get("artifact_state") or "")
+        )
+        completion_evidence = _structured_evidence_list(
+            action.get("completion_evidence") or verdict.get("completion_evidence")
+        )
+        non_completion_evidence = _structured_evidence_list(
+            action.get("non_completion_evidence") or verdict.get("non_completion_evidence")
+        )
         normalized.append(
             {
                 "action_id": f"vlm_action_{index}",
                 "segment_id": str(action.get("segment_id") or verdict.get("segment_id") or ""),
                 "action_type": _normalize_action_type(str(action.get("action_type", "") or "")),
                 "risk_level": risk_level or "none",
+                "transfer_direction": transfer_direction,
+                "terminal_state": terminal_state,
+                "artifact_state": artifact_state,
+                "completion_evidence": completion_evidence,
+                "non_completion_evidence": non_completion_evidence,
                 "time": action_time,
                 "app": str(action.get("app") or frontend.get("name") or ""),
                 "app_category": str(action.get("app_category") or frontend.get("category") or "unknown"),
