@@ -8,6 +8,11 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BENCHMARK_PATH = REPO_ROOT / "tools" / "benchmark_nas_samples.py"
+MAIN_DIR = REPO_ROOT / "main"
+if str(MAIN_DIR) not in sys.path:
+    sys.path.insert(0, str(MAIN_DIR))
+
+from data_leak_detector.evidence_semantics import decide_evidence_outcome  # noqa: E402
 
 
 def load_benchmark_module():
@@ -184,6 +189,34 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
         )
 
         self.assertEqual(actions, [])
+
+
+class EvidenceDecisionTest(unittest.TestCase):
+    def test_risk_positive_does_not_make_final_positive(self) -> None:
+        decision = decide_evidence_outcome(
+            datalog_risk_positive=True,
+            datalog_confirmed=False,
+            log_rule_positive=True,
+            log_rule_rules=["file_selected", "upload_staging"],
+        )
+
+        self.assertTrue(decision.risk_positive)
+        self.assertFalse(decision.confirmed_leak)
+        self.assertFalse(decision.final_positive)
+        self.assertEqual(decision.final_semantics, "confirmed_leak")
+
+    def test_confirmed_log_rule_makes_final_positive(self) -> None:
+        decision = decide_evidence_outcome(
+            datalog_risk_positive=False,
+            datalog_confirmed=False,
+            log_rule_positive=True,
+            log_rule_rules=["upload_event"],
+        )
+
+        self.assertTrue(decision.risk_positive)
+        self.assertTrue(decision.confirmed_leak)
+        self.assertTrue(decision.final_positive)
+        self.assertEqual(decision.reasoning_source, "log_rule")
 
 
 if __name__ == "__main__":

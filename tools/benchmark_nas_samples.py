@@ -43,6 +43,11 @@ try:
 except Exception:
     pass
 
+from data_leak_detector.evidence_semantics import (  # noqa: E402
+    CONFIRMED_LOG_RULES,
+    decide_evidence_outcome,
+)
+
 RISK_LABEL_PREFIXES = (
     "\u76f4\u63a5\u5916\u53d1",
     "\u76f4\u63a5\u4e0a\u4f20",
@@ -3829,7 +3834,7 @@ LOG_RULE_ACTION_SPECS = {
 # Rules with a completed/exposed outcome that can confirm a leak from logs alone.
 # Selection and upload-staging rules remain risk support; they do not prove that
 # the external party received or saw the sensitive object.
-LOG_RULE_LEAK_RULES = {"upload_event", "screen_share"}
+LOG_RULE_LEAK_RULES = CONFIRMED_LOG_RULES
 
 
 def _log_rule_actions(
@@ -4756,14 +4761,17 @@ def run_benchmark(
         _log_datalog_trace(case_id, datalog_decision)
         evidence_sources = _audit_evidence_sources(audit_actions)
         log_rule_positive = bool(log_rule_signal.get("positive"))
-        log_rule_leak = any(
-            rule in LOG_RULE_LEAK_RULES for rule in log_rule_signal.get("rules", []) or []
-        )
         datalog_positive = bool(datalog_decision.get("risk_positive"))
         datalog_confirmed = bool(datalog_decision.get("confirmed_leak"))
-        risk_positive = datalog_positive or log_rule_positive
-        confirmed_leak = datalog_confirmed or log_rule_leak
-        final_positive = confirmed_leak
+        evidence_decision = decide_evidence_outcome(
+            datalog_risk_positive=datalog_positive,
+            datalog_confirmed=datalog_confirmed,
+            log_rule_positive=log_rule_positive,
+            log_rule_rules=log_rule_signal.get("rules", []) or [],
+        )
+        risk_positive = evidence_decision.risk_positive
+        confirmed_leak = evidence_decision.confirmed_leak
+        final_positive = evidence_decision.final_positive
 
         triage_bucket = result.triage.add(expected, triage_positive)
         deterministic_bucket = result.deterministic.add(expected, deterministic_positive)
@@ -4830,17 +4838,11 @@ def run_benchmark(
                 "risk_positive": risk_positive,
                 "confirmed_leak": confirmed_leak,
                 "confirmed_bucket": confirmed_bucket,
-                "final_semantics": "confirmed_leak",
+                "final_semantics": evidence_decision.final_semantics,
                 "review_source": review_source,
                 "log_rule_signal": log_rule_signal,
-                "risk_reasoning_source": (
-                    "log_rule" if log_rule_positive and not datalog_positive
-                    else ("datalog" if risk_positive else "none")
-                ),
-                "reasoning_source": (
-                    "log_rule" if log_rule_leak and not datalog_confirmed
-                    else ("datalog" if datalog_confirmed else "none")
-                ),
+                "risk_reasoning_source": evidence_decision.risk_reasoning_source,
+                "reasoning_source": evidence_decision.reasoning_source,
                 "evidence_sources": evidence_sources,
                 "datalog_decision": datalog_decision,
                 "datalog_facts": datalog_decision.get("facts", []),
