@@ -381,6 +381,12 @@ class BenchmarkSummary:
     datalog_positive: int = 0
     datalog_confirmed: int = 0
     datalog_fallbacks: int = 0
+    frame_coverage_cases: int = 0
+    frame_coverage_completion: int = 0
+    frame_coverage_content_exposed: int = 0
+    frame_coverage_staging: int = 0
+    frame_coverage_external_sink: int = 0
+    frame_coverage_sensitive_object: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -404,6 +410,14 @@ class BenchmarkSummary:
                 "datalog_positive": self.datalog_positive,
                 "datalog_confirmed": self.datalog_confirmed,
                 "datalog_fallbacks": self.datalog_fallbacks,
+                "keyframe_coverage": {
+                    "cases": self.frame_coverage_cases,
+                    "completion_anchor": self.frame_coverage_completion,
+                    "content_exposed_anchor": self.frame_coverage_content_exposed,
+                    "staging_anchor": self.frame_coverage_staging,
+                    "external_sink_anchor": self.frame_coverage_external_sink,
+                    "sensitive_object_anchor": self.frame_coverage_sensitive_object,
+                },
                 "skipped_cases": len(self.skipped),
             },
             "cases": self.cases,
@@ -3591,6 +3605,76 @@ def _vlm_only_confirmed_positive(vlm_verdict: Optional[Dict[str, Any]]) -> bool:
     return bool(vlm_verdict.get("is_violation")) and is_confirmed_risk_level(risk_level)
 
 
+def _semantic_frame_coverage(vlm_verdict: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(vlm_verdict, dict) or not vlm_verdict:
+        return {
+            "available": False,
+            "sampled_frames": 0,
+            "image_frames_sent": 0,
+            "ocr_frames": 0,
+            "ocr_risk_frames": 0,
+            "completion_anchor": False,
+            "content_exposed_anchor": False,
+            "staging_anchor": False,
+            "external_sink_anchor": False,
+            "sensitive_object_anchor": False,
+        }
+
+    frames = [frame for frame in vlm_verdict.get("frame_selection", []) or [] if isinstance(frame, dict)]
+    actions = [action for action in vlm_verdict.get("observed_actions", []) or [] if isinstance(action, dict)]
+    action_text = " ".join(_action_text(action) for action in actions)
+    reason_text = str(vlm_verdict.get("reason", "") or "").lower()
+    semantic_text = f"{reason_text} {action_text}"
+    frame_text = " ".join(
+        " ".join(
+            str(frame.get(key, "") or "").lower()
+            for key in ("selection_reason", "ocr_text")
+        )
+        for frame in frames
+    )
+    combined_context = f"{semantic_text} {frame_text}"
+
+    content_markers = (
+        "content_exposed",
+        "sensitive content is visible",
+        "visible in the input",
+        "pasted into",
+        "appears in the conversation",
+        "external_exposure",
+    )
+    staging_markers = (
+        "selected_or_attached",
+        "in_progress",
+        "selected",
+        "attached",
+        "file picker",
+        "uploading",
+        "upload_start",
+    )
+    sensitive_object_anchor = any(
+        str(action.get(key, "") or "").strip()
+        for action in actions
+        for key in ("source_file", "derived_file", "shared_data", "clipboard_data")
+    ) or "sensitive file" in semantic_text or "sensitive content" in semantic_text
+
+    return {
+        "available": bool(frames or actions or vlm_verdict.get("reason")),
+        "sampled_frames": len(frames),
+        "image_frames_sent": sum(1 for frame in frames if frame.get("image_sent")),
+        "ocr_frames": sum(1 for frame in frames if frame.get("ocr_ran")),
+        "ocr_risk_frames": sum(1 for frame in frames if frame.get("ocr_flags")),
+        "completion_anchor": _completion_evidence_from_text(semantic_text),
+        "content_exposed_anchor": any(marker in semantic_text for marker in content_markers),
+        "staging_anchor": any(marker in semantic_text for marker in staging_markers),
+        "external_sink_anchor": any(marker in combined_context for marker in EXTERNAL_SINK_TOKENS)
+        or any(
+            str(action.get("app_category", "") or "") in {"ai_service", "cloud_storage", "messaging", "email", "meeting"}
+            for action in actions
+        ),
+        "sensitive_object_anchor": sensitive_object_anchor,
+    }
+
+
 def _audit_evidence_sources(actions: List[Dict[str, Any]]) -> List[str]:
     return sorted(
         {
@@ -4785,6 +4869,7 @@ def run_benchmark(
             log_rule_signal.get("rules", []) or []
         )
         vlm_only_positive = _vlm_only_confirmed_positive(vlm_verdict)
+        frame_coverage = _semantic_frame_coverage(vlm_verdict)
         evidence_decision = decide_evidence_outcome(
             datalog_risk_positive=datalog_positive,
             datalog_confirmed=datalog_confirmed,
@@ -4814,6 +4899,13 @@ def run_benchmark(
             result.datalog_confirmed += 1
         if str(datalog_decision.get("engine", "")) == "rule_fallback":
             result.datalog_fallbacks += 1
+        if frame_coverage.get("available"):
+            result.frame_coverage_cases += 1
+            result.frame_coverage_completion += int(bool(frame_coverage.get("completion_anchor")))
+            result.frame_coverage_content_exposed += int(bool(frame_coverage.get("content_exposed_anchor")))
+            result.frame_coverage_staging += int(bool(frame_coverage.get("staging_anchor")))
+            result.frame_coverage_external_sink += int(bool(frame_coverage.get("external_sink_anchor")))
+            result.frame_coverage_sensitive_object += int(bool(frame_coverage.get("sensitive_object_anchor")))
 
         vlm_status = "none"
         frames_sent = 0
@@ -4885,6 +4977,7 @@ def run_benchmark(
                 "vlm_reasons": fallback_meta.get("reasons", []),
                 "vlm_live_queued": record["vlm_live_queued"],
                 "vlm_gate": record["vlm_gate"],
+                "keyframe_coverage": frame_coverage,
                 "adaptive_vlm_frames": record["adaptive_vlm_frames"],
                 "vlm_frame_budget": record["vlm_frame_budget"],
                 "live_vlm_verdict": vlm_verdict,
@@ -4926,6 +5019,16 @@ def _print_report(report: Dict[str, Any]) -> None:
         f"datalog_confirmed={report['summary'].get('datalog_confirmed', 0)} "
         f"datalog_fallbacks={report['summary'].get('datalog_fallbacks', 0)} "
         f"skipped={report['summary']['skipped_cases']}"
+    )
+    coverage = report["summary"].get("keyframe_coverage", {}) or {}
+    print(
+        "keyframe_coverage="
+        f"cases={coverage.get('cases', 0)} "
+        f"completion={coverage.get('completion_anchor', 0)} "
+        f"content_exposed={coverage.get('content_exposed_anchor', 0)} "
+        f"staging={coverage.get('staging_anchor', 0)} "
+        f"external_sink={coverage.get('external_sink_anchor', 0)} "
+        f"sensitive_object={coverage.get('sensitive_object_anchor', 0)}"
     )
     failures = [case for case in report["cases"] if case["final_bucket"] in {"fp", "fn"}]
     confirmed_failures = [case for case in report["cases"] if case["confirmed_bucket"] in {"fp", "fn"}]

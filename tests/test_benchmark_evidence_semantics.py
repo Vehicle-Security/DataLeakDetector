@@ -212,6 +212,38 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
         self.assertIn("vlm_only", summary)
         self.assertEqual(summary["final_semantics"], "confirmed_leak")
 
+    def test_semantic_frame_coverage_extracts_vlm_anchors(self) -> None:
+        bm = self.benchmark
+        coverage = bm._semantic_frame_coverage(
+            {
+                "reason": "Sensitive content is visible in the input of an external AI service.",
+                "frame_selection": [
+                    {
+                        "index": 1,
+                        "image_sent": True,
+                        "ocr_ran": True,
+                        "ocr_flags": ["sensitive_file"],
+                        "selection_reason": "event_anchor_transfer",
+                    }
+                ],
+                "observed_actions": [
+                    {
+                        "action_type": "external_exposure",
+                        "risk_level": "content_exposed",
+                        "app_category": "ai_service",
+                        "source_file": "C:/secret/plan.pdf",
+                        "description": "pasted into the external input",
+                    }
+                ],
+            }
+        )
+
+        self.assertTrue(coverage["available"])
+        self.assertTrue(coverage["content_exposed_anchor"])
+        self.assertTrue(coverage["external_sink_anchor"])
+        self.assertTrue(coverage["sensitive_object_anchor"])
+        self.assertEqual(coverage["sampled_frames"], 1)
+
 
 class EvidenceDecisionTest(unittest.TestCase):
     def test_risk_positive_does_not_make_final_positive(self) -> None:
