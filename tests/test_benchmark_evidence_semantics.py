@@ -239,7 +239,8 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
         self.assertFalse(bm._final_positive_for_expected_level("confirmed", True, False))
         self.assertTrue(bm._final_positive_for_expected_level("confirmed", True, True))
         self.assertFalse(bm._final_positive_for_expected_level("normal", False, False))
-        self.assertTrue(bm._final_positive_for_expected_level("normal", True, False))
+        self.assertFalse(bm._final_positive_for_expected_level("normal", True, False))
+        self.assertTrue(bm._final_positive_for_expected_level("normal", True, True))
 
     def test_semantic_frame_coverage_extracts_vlm_anchors(self) -> None:
         bm = self.benchmark

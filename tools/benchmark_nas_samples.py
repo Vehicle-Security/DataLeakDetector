@@ -755,7 +755,7 @@ def _final_positive_for_expected_level(expected_level: str, risk_positive: bool,
         return confirmed_leak
     if expected_level == "risk":
         return risk_positive
-    return risk_positive or confirmed_leak
+    return confirmed_leak
 
 
 def _groundtruth_is_event_log(groundtruth: Any) -> bool:
