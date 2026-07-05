@@ -210,7 +210,34 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
 
         self.assertIn("rules_only", summary)
         self.assertIn("vlm_only", summary)
-        self.assertEqual(summary["final_semantics"], "confirmed_leak")
+        self.assertEqual(summary["final_semantics"], "groundtruth_aligned")
+        self.assertEqual(summary["confirmed_semantics"], "confirmed_leak")
+
+    def test_groundtruth_aligned_final_metric_uses_label_level(self) -> None:
+        bm = self.benchmark
+
+        self.assertEqual(
+            bm._expected_level({"operations": [{"operation": "正常操作-选择后终止上传"}]}),
+            "normal",
+        )
+        self.assertEqual(
+            bm._expected_level({"operations": [{"operation": "潜在隐藏行为-文档复制-粘贴"}]}),
+            "risk",
+        )
+        self.assertEqual(
+            bm._expected_level({"operations": [{"operation": "直接外发-聊天发送"}]}),
+            "confirmed",
+        )
+        self.assertEqual(
+            bm._expected_level({"operations": [{"operation": "成功外发-聊天发送"}]}),
+            "confirmed",
+        )
+
+        self.assertTrue(bm._final_positive_for_expected_level("risk", True, False))
+        self.assertFalse(bm._final_positive_for_expected_level("confirmed", True, False))
+        self.assertTrue(bm._final_positive_for_expected_level("confirmed", True, True))
+        self.assertFalse(bm._final_positive_for_expected_level("normal", False, False))
+        self.assertTrue(bm._final_positive_for_expected_level("normal", True, False))
 
     def test_semantic_frame_coverage_extracts_vlm_anchors(self) -> None:
         bm = self.benchmark

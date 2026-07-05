@@ -51,14 +51,17 @@ from data_leak_detector.evidence_semantics import (  # noqa: E402
 )
 
 RISK_LABEL_PREFIXES = (
-    "\u76f4\u63a5\u5916\u53d1",
-    "\u76f4\u63a5\u4e0a\u4f20",
     "\u6f5c\u5728\u9690\u85cf\u884c\u4e3a",
     "\u9690\u85cf\u884c\u4e3a",
-    "\u8fdd\u89c4",
     "\u654f\u611f\u64cd\u4f5c",
     "\u526a\u8d34\u677f\u64cd\u4f5c",
     "\u5e94\u7528\u5207\u6362",
+)
+CONFIRMED_LABEL_PREFIXES = (
+    "\u6210\u529f\u5916\u53d1",
+    "\u76f4\u63a5\u5916\u53d1",
+    "\u76f4\u63a5\u4e0a\u4f20",
+    "\u8fdd\u89c4\u4e0a\u4f20",
 )
 BENIGN_LABEL_PREFIXES = ("\u6b63\u5e38\u64cd\u4f5c",)
 
@@ -410,7 +413,8 @@ class BenchmarkSummary:
                 "risk": self.risk.to_dict(),
                 "final": self.final.to_dict(),
                 "confirmed": self.confirmed.to_dict(),
-                "final_semantics": "confirmed_leak",
+                "final_semantics": "groundtruth_aligned",
+                "confirmed_semantics": "confirmed_leak",
                 "risk_semantics": "staging_or_attempted_or_confirmed",
                 "deterministic_hits": self.deterministic_hits,
                 "vlm_reviews": self.vlm_reviews,
@@ -718,8 +722,40 @@ def _is_risk_label(label: str) -> bool:
     return any(text.startswith(prefix) for prefix in RISK_LABEL_PREFIXES)
 
 
+def _is_confirmed_label(label: str) -> bool:
+    text = str(label or "").strip()
+    if not text:
+        return False
+    if any(text.startswith(prefix) for prefix in BENIGN_LABEL_PREFIXES):
+        return False
+    return any(text.startswith(prefix) for prefix in CONFIRMED_LABEL_PREFIXES)
+
+
+def _expected_level(groundtruth: Any) -> str:
+    levels = []
+    for item in _operation_items(groundtruth):
+        label = str(item.get("operation", "") or "")
+        if _is_confirmed_label(label):
+            levels.append("confirmed")
+        elif _is_risk_label(label):
+            levels.append("risk")
+    if "confirmed" in levels:
+        return "confirmed"
+    if "risk" in levels:
+        return "risk"
+    return "normal"
+
+
 def _expected_positive(groundtruth: Any) -> bool:
-    return any(_is_risk_label(item.get("operation", "")) for item in _operation_items(groundtruth))
+    return _expected_level(groundtruth) != "normal"
+
+
+def _final_positive_for_expected_level(expected_level: str, risk_positive: bool, confirmed_leak: bool) -> bool:
+    if expected_level == "confirmed":
+        return confirmed_leak
+    if expected_level == "risk":
+        return risk_positive
+    return risk_positive or confirmed_leak
 
 
 def _groundtruth_is_event_log(groundtruth: Any) -> bool:
@@ -4685,7 +4721,8 @@ def run_benchmark(
         should_run_vlm, fallback_meta = run_e2e._should_use_vlm_fallback(logs, detection)
         frontend_context = _frontend_context_from_logs(logs)
 
-        expected = _expected_positive(groundtruth)
+        expected_level = _expected_level(groundtruth)
+        expected = expected_level != "normal"
         log_rule_signal = log_rules.extract_deterministic_signals(
             logs, sensitive_files, log_first.is_sensitive_name
         )
@@ -4781,6 +4818,7 @@ def run_benchmark(
             "fallback_meta": fallback_meta,
             "frontend_context": frontend_context,
             "expected": expected,
+            "expected_level": expected_level,
             "deterministic_positive": deterministic_positive,
             "log_rule_signal": log_rule_signal,
             "triage_positive": triage_positive,
@@ -4881,6 +4919,7 @@ def run_benchmark(
         fallback_meta = record["fallback_meta"]
         frontend_context = record["frontend_context"]
         expected = record["expected"]
+        expected_level = record["expected_level"]
         deterministic_positive = record["deterministic_positive"]
         triage_positive = record["triage_positive"]
         should_run_vlm = record["should_run_vlm"]
@@ -4935,7 +4974,8 @@ def run_benchmark(
         )
         risk_positive = evidence_decision.risk_positive
         confirmed_leak = evidence_decision.confirmed_leak
-        final_positive = evidence_decision.final_positive
+        final_positive = _final_positive_for_expected_level(expected_level, risk_positive, confirmed_leak)
+        final_semantics = f"groundtruth_aligned:{expected_level}"
 
         triage_bucket = result.triage.add(expected, triage_positive)
         deterministic_bucket = result.deterministic.add(expected, deterministic_positive)
@@ -4987,7 +5027,7 @@ def run_benchmark(
 
         _progress(
             f"[CASE {case_index}/{total_cases}] {final_bucket.upper()} "
-            f"case={case_id} expected={int(expected)} final={int(final_positive)} "
+            f"case={case_id} expected={int(expected)} expected_level={expected_level} final={int(final_positive)} "
             f"risk={int(risk_positive)} confirmed={int(confirmed_leak)} "
             f"rules={int(rules_only_positive)} vlm_only={int(vlm_only_positive)} "
             f"det={int(deterministic_positive)} triage={int(triage_positive)} "
@@ -5002,6 +5042,7 @@ def run_benchmark(
                 "case": case_id,
                 "log_file": record["log_source_name"],
                 "expected_positive": expected,
+                "expected_level": expected_level,
                 "triage_positive": triage_positive,
                 "deterministic_positive": deterministic_positive,
                 "triage_bucket": triage_bucket,
@@ -5016,7 +5057,7 @@ def run_benchmark(
                 "risk_positive": risk_positive,
                 "confirmed_leak": confirmed_leak,
                 "confirmed_bucket": confirmed_bucket,
-                "final_semantics": evidence_decision.final_semantics,
+                "final_semantics": final_semantics,
                 "review_source": review_source,
                 "log_rule_signal": log_rule_signal,
                 "risk_reasoning_source": evidence_decision.risk_reasoning_source,
