@@ -252,6 +252,11 @@ EXTERNAL_SINK_TOKENS = (
     "lark",
     "teams",
     "zoom",
+    "online tool",
+    "web tool",
+    "online converter",
+    "base64",
+    "toolshu",
     "\u90ae\u7bb1",
     "\u4e91\u76d8",
     "\u7f51\u76d8",
@@ -2380,6 +2385,16 @@ def _completion_evidence_from_text(text: str) -> bool:
         "content exposed",
         "pasted into",
         "visible in the input",
+        "visible in the chat input",
+        "visible in the message input",
+        "visible in the compose window",
+        "attached to the message",
+        "attached to the email",
+        "file chip is visible",
+        "mail sent notification",
+        "sent notification",
+        "message sent",
+        "mail sent",
         "remote listing",
         "shareable link",
         "commit successful",
@@ -2547,14 +2562,30 @@ def _action_has_hard_negative_context(action: Dict[str, Any]) -> bool:
         "is not present in the segment",
         "does not match the sensitive",
         "no evidence",
+        "no visual or log evidence",
         "no visual evidence",
         "no log activity",
         "no leakage",
+        "no completed leakage",
+        "no direct exposure",
+        "no direct visual evidence",
         "not observed",
+        "not pasted into",
+        "not uploaded",
+        "not opened",
+        "not attached",
+        "not selected",
         "unrelated",
+        "unrelated image",
         "likely unrelated",
         "likely the sensitive",
         "matching the visual content",
+        "do not match the sensitive",
+        "does not match the sensitive",
+        "normal browsing",
+        "local save",
+        "local file operation",
+        "local save/overwrite",
         "monitoring dashboard",
         "monitor application's",
         "monitor app",
@@ -2577,6 +2608,10 @@ def _action_has_historical_or_inbound_context(action: Dict[str, Any]) -> bool:
         "appears in the sent folder, indicating completed",
         "completed transmission",
         "successfully sent",
+        "mail sent notification",
+        "sent notification",
+        "message sent",
+        "mail sent",
         "send success",
         "upload successful",
         "uploaded successfully",
@@ -2622,7 +2657,15 @@ def _action_has_historical_or_inbound_context(action: Dict[str, Any]) -> bool:
         "save as dialog",
         "print dialog",
         "print preview",
+        "deleted from the chat",
+        "message deleted",
+        "recalled",
+        "recall message",
+        "cancelled",
+        "canceled",
         "\u6253\u5370\u9884\u89c8",
+        "\u64a4\u56de",
+        "\u53d6\u6d88",
     )
     if any(marker in text for marker in historical_markers):
         return True
@@ -2867,6 +2910,7 @@ def _action_has_vlm_contradiction(action: Dict[str, Any]) -> bool:
         "not yet uploaded",
         "not completed",
         "no visual confirmation",
+        "no visual or log evidence",
         "no completion confirmation",
         "no sent confirmation",
         "no upload confirmation",
@@ -2874,6 +2918,12 @@ def _action_has_vlm_contradiction(action: Dict[str, Any]) -> bool:
         "no sensitive content exposed",
         "no sensitive file is exposed",
         "no sensitive content is exposed",
+        "no completed leakage",
+        "no direct exposure",
+        "not pasted into",
+        "do not match the sensitive",
+        "does not match the sensitive",
+        "local save/overwrite",
         "draft",
         "cancelled",
         "canceled",
@@ -2941,7 +2991,17 @@ def _content_exposure_action_supports_leak(action: Dict[str, Any]) -> bool:
         return False
     if risk_level not in {"content_exposed", "completed"}:
         return False
-    if action_type == "attach_file":
+    if action_type in {"attach_file", "upload_start"}:
+        if not _external_sink_action_context(action):
+            return False
+        if _action_has_unfinished_context(action):
+            return False
+        return (
+            _action_has_completion_context(action)
+            or _action_has_upload_ingest_context(action)
+            or _action_has_upload_progress_context(action)
+        )
+    if action_type == "select_file":
         return False
     if action_type in {"paste_content", "copy_content"}:
         text = _action_text(action)
@@ -4396,6 +4456,12 @@ def _audit_action_supports_risk(action: Dict[str, Any], sensitive_files: List[st
         return False
     if _action_has_hard_negative_context(action):
         return False
+    if (
+        evidence_source == "log_rule"
+        and action_type in {"upload_complete", "send_message", "publish_content"}
+        and risk_level == "completed"
+    ):
+        return True
     if _action_has_historical_or_inbound_context(action):
         return False
     if _action_has_cloud_editor_read_context(action):

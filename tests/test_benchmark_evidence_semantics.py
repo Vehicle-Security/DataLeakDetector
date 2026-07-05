@@ -356,6 +356,75 @@ class BenchmarkEvidenceSemanticsTest(unittest.TestCase):
         self.assertFalse(decision["confirmed_leak"])
         self.assertFalse(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
 
+    def test_remote_vlm_completed_attachment_can_confirm_leak(self) -> None:
+        bm = self.benchmark
+        sensitive_files = ["C:/secret/plan.pdf"]
+        actions = [
+            {
+                "action_id": "case-attachment-completed:vlm_action_0",
+                "action_type": "attach_file",
+                "risk_level": "completed",
+                "time": "2026-07-05T10:00:00",
+                "app": "gmail",
+                "app_category": "email",
+                "source_file": "C:/secret/plan.pdf",
+                "description": "plan.pdf is attached to the email and a mail sent notification is visible in the inbox view.",
+                "evidence_source": "remote_vlm",
+            }
+        ]
+
+        decision = bm._run_datalog_on_audit_actions("case-attachment-completed", actions, sensitive_files)
+
+        self.assertTrue(decision["risk_positive"])
+        self.assertTrue(decision["confirmed_leak"])
+        self.assertTrue(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
+
+    def test_remote_vlm_content_visible_attachment_can_confirm_leak(self) -> None:
+        bm = self.benchmark
+        sensitive_files = ["C:/secret/plan.pdf"]
+        actions = [
+            {
+                "action_id": "case-attachment-exposed:vlm_action_0",
+                "action_type": "attach_file",
+                "risk_level": "content_exposed",
+                "time": "2026-07-05T10:00:00",
+                "app": "chatgpt",
+                "app_category": "ai_service",
+                "source_file": "C:/secret/plan.pdf",
+                "description": "plan.pdf is attached to the message and the file chip is visible in the chat input.",
+                "evidence_source": "remote_vlm",
+            }
+        ]
+
+        decision = bm._run_datalog_on_audit_actions("case-attachment-exposed", actions, sensitive_files)
+
+        self.assertTrue(decision["risk_positive"])
+        self.assertTrue(decision["confirmed_leak"])
+        self.assertTrue(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
+
+    def test_remote_vlm_deleted_or_recalled_message_is_not_confirmed(self) -> None:
+        bm = self.benchmark
+        sensitive_files = ["C:/secret/plan.pdf"]
+        actions = [
+            {
+                "action_id": "case-recalled-message:vlm_action_0",
+                "action_type": "send_message",
+                "risk_level": "completed",
+                "time": "2026-07-05T10:00:00",
+                "app": "dingtalk",
+                "app_category": "messaging",
+                "source_file": "C:/secret/plan.pdf",
+                "description": "the message containing plan.pdf was deleted from the chat and recalled",
+                "evidence_source": "remote_vlm",
+            }
+        ]
+
+        decision = bm._run_datalog_on_audit_actions("case-recalled-message", actions, sensitive_files)
+
+        self.assertFalse(decision["risk_positive"])
+        self.assertFalse(decision["confirmed_leak"])
+        self.assertFalse(any(fact["relation"] == "LeakFile" for fact in decision["facts"]))
+
     def test_cancelled_upload_log_action_is_not_confirmed(self) -> None:
         bm = self.benchmark
         sensitive_files = ["C:/secret/plan.pdf"]
