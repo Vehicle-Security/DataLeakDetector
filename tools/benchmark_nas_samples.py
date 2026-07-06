@@ -853,15 +853,96 @@ def _is_valid_sensitive_file_ref(path: str) -> bool:
     return True
 
 
+def _is_derivative_operation(operation: str) -> bool:
+    """判断操作是否为衍生操作（产生新文件/内容的操作）"""
+    operation_lower = str(operation or "").lower()
+    derivative_keywords = [
+        "重命名", "rename",
+        "另存", "save as", "save_as",
+        "导出", "export",
+        "输出", "output",
+        "格式转换", "convert",
+        "截图", "screenshot", "screen capture",
+        "录屏", "screen record",
+        "复制", "copy",
+        "ocr",
+        "扫描", "scan",
+        "提取", "extract",
+        "生成", "generate",
+        "转换", "transform",
+        "分片", "split",
+    ]
+    return any(keyword in operation_lower for keyword in derivative_keywords)
+
+
 def _sensitive_files_from_groundtruth(groundtruth: Any) -> List[str]:
+    """从 groundtruth 中提取原始敏感文件（排除衍生文件）"""
     seen = set()
     files = []
+    file_first_operation = {}  # 记录每个文件第一次出现的操作
+
+    # 第一遍：收集所有文件及其首次操作
     for item in _operation_items(groundtruth):
         path = str(item.get("sensitive_file_path", "") or "").strip()
-        if path and _is_valid_sensitive_file_ref(path) and path.lower() not in seen:
-            seen.add(path.lower())
-            files.append(path)
+        operation = str(item.get("operation", "") or "")
+        if path and _is_valid_sensitive_file_ref(path):
+            path_key = path.lower()
+            if path_key not in file_first_operation:
+                file_first_operation[path_key] = {
+                    "path": path,
+                    "operation": operation,
+                    "is_derivative": _is_derivative_operation(operation)
+                }
+
+    # 第二遍：只添加非衍生操作首次出现的文件
+    for path_key, info in file_first_operation.items():
+        if not info["is_derivative"] and path_key not in seen:
+            seen.add(path_key)
+            files.append(info["path"])
+
     return files
+
+
+def _all_sensitive_files_from_groundtruth(groundtruth: Any) -> tuple[List[str], List[str]]:
+    """从 groundtruth 中提取所有敏感文件，区分原始文件和衍生文件
+
+    Returns:
+        (original_files, derived_files): 原始敏感文件列表和衍生文件列表
+    """
+    seen = set()
+    file_first_operation = {}
+
+    # 收集所有文件及其首次操作
+    for item in _operation_items(groundtruth):
+        path = str(item.get("sensitive_file_path", "") or "").strip()
+        operation = str(item.get("operation", "") or "")
+        if path and _is_valid_sensitive_file_ref(path):
+            path_key = path.lower()
+            if path_key not in file_first_operation:
+                file_first_operation[path_key] = {
+                    "path": path,
+                    "operation": operation,
+                    "is_derivative": _is_derivative_operation(operation)
+                }
+
+    original_files = []
+    derived_files = []
+
+    for path_key, info in file_first_operation.items():
+        if path_key not in seen:
+            seen.add(path_key)
+            if info["is_derivative"]:
+                derived_files.append(info["path"])
+            else:
+                original_files.append(info["path"])
+
+    return original_files, derived_files
+
+
+def _sensitive_files_from_groundtruth(groundtruth: Any) -> List[str]:
+    """从 groundtruth 中提取原始敏感文件（排除衍生文件）"""
+    original_files, _ = _all_sensitive_files_from_groundtruth(groundtruth)
+    return original_files
 
 
 def _looks_like_file_reference(value: str) -> bool:
@@ -6820,6 +6901,8 @@ def run_benchmark(
             continue
 
         sensitive_files = _sensitive_files_from_groundtruth(groundtruth)
+        original_files_from_gt, derived_files_from_gt = _all_sensitive_files_from_groundtruth(groundtruth)
+
         for path in _sensitive_files_from_logs(logs, log_first):
             if path.lower() not in {item.lower() for item in sensitive_files}:
                 sensitive_files.append(path)
@@ -6957,6 +7040,8 @@ def run_benchmark(
             "groundtruth": groundtruth,
             "logs": logs,
             "sensitive_files": sensitive_files,
+            "original_files_from_gt": original_files_from_gt,
+            "derived_files_from_gt": derived_files_from_gt,
             "detection": detection,
             "fallback_meta": fallback_meta,
             "frontend_context": frontend_context,
@@ -7229,6 +7314,8 @@ def run_benchmark(
                 "upload_events": len(detection.get("upload_events", [])),
                 "operation_records": len(detection.get("operation_records", [])),
                 "sensitive_files": len(sensitive_files),
+                "original_files_from_gt": record["original_files_from_gt"],
+                "derived_files_from_gt": record["derived_files_from_gt"],
                 "frontend_context": frontend_context,
                 "audit_actions": audit_actions,
                 "vlm_decision": fallback_meta.get("decision"),
@@ -7263,6 +7350,7 @@ def _build_datalog_report(report: Dict[str, Any]) -> Dict[str, Any]:
             "total_cases": len(report["cases"]),
             "cases_with_datalog_facts": 0,
             "cases_with_leak_paths": 0,
+            "cases_with_derived_files_in_gt": 0,
             "total_openfile_facts": 0,
             "total_transferfile_facts": 0,
             "total_leakfile_facts": 0,
@@ -7276,6 +7364,9 @@ def _build_datalog_report(report: Dict[str, Any]) -> Dict[str, Any]:
         datalog_decision = case.get("datalog_decision", {})
         facts = datalog_decision.get("facts", [])
         leak_paths = datalog_decision.get("leak_paths", [])
+
+        original_files_from_gt = case.get("original_files_from_gt", [])
+        derived_files_from_gt = case.get("derived_files_from_gt", [])
 
         # 按关系类型分类事实
         facts_by_relation = {
@@ -7321,12 +7412,15 @@ def _build_datalog_report(report: Dict[str, Any]) -> Dict[str, Any]:
                         sensitive_files_info["derived_files"].append(dst_file)
 
         # 只记录有 datalog 事实的案例
-        if facts or leak_paths:
+        if facts or leak_paths or derived_files_from_gt:
             datalog_report["summary"]["cases_with_datalog_facts"] += 1
 
             if leak_paths:
                 datalog_report["summary"]["cases_with_leak_paths"] += 1
                 datalog_report["summary"]["total_leak_paths"] += len(leak_paths)
+
+            if derived_files_from_gt:
+                datalog_report["summary"]["cases_with_derived_files_in_gt"] += 1
 
             datalog_report["summary"]["total_openfile_facts"] += len(facts_by_relation["OpenFile"])
             datalog_report["summary"]["total_transferfile_facts"] += len(facts_by_relation["TransferFile"])
@@ -7342,6 +7436,11 @@ def _build_datalog_report(report: Dict[str, Any]) -> Dict[str, Any]:
                 "fact_count": datalog_decision.get("fact_count", 0),
                 "engine": datalog_decision.get("engine", "none"),
                 "reason": datalog_decision.get("reason", ""),
+                "groundtruth_files": {
+                    "original_files": original_files_from_gt,
+                    "derived_files": derived_files_from_gt,
+                    "note": "original_files在初始敏感文件列表中，derived_files不在"
+                },
                 "sensitive_files_info": sensitive_files_info,
                 "openfile_facts": facts_by_relation["OpenFile"],
                 "transferfile_facts": facts_by_relation["TransferFile"],
