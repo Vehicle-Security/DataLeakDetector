@@ -4201,7 +4201,7 @@ def _action_description_consistent_with_completion(
     """
     description = str(action.get("description", "") or "").lower()
     if str(action.get("evidence_source", "") or "") == "remote_vlm" or _has_structured_state(action):
-        return original_action_type, original_risk_level
+        return True  # 信任VLM的结构化判断
 
     if not description:
         return True  # 没有description，无法判断，保守通过
@@ -6800,6 +6800,7 @@ def run_benchmark(
         if not isinstance(evaluation, dict):
             evaluation = _evaluate_case_record_decision(record, log_trace=True)
             record["live_evaluation"] = evaluation
+        correlation_bundle = evaluation["correlation_bundle"]
         review_source = evaluation["review_source"]
         log_rule_signal = evaluation["log_rule_signal"]
         audit_actions = evaluation["audit_actions"]
