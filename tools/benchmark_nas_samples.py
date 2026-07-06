@@ -2752,6 +2752,99 @@ def _encode_frame_image(
     }
 
 
+def _save_frame_debug_images(
+    selected: List[Dict[str, Any]],
+    case_id: str,
+    segment_id: str,
+    output_dir: Path,
+) -> None:
+    """Save selected frame thumbnails to debug directory for visual inspection."""
+    import cv2
+
+    # Check if frame debug is enabled
+    if not os.getenv("DLD_SAVE_FRAME_DEBUG", "0") in {"1", "true", "yes"}:
+        return
+
+    # Create debug directory
+    case_safe_name = case_id.replace("\\", "__").replace("/", "__").replace(":", "_")
+    debug_dir = output_dir / "frame_debug" / case_safe_name
+    debug_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save each frame
+    for item in selected:
+        frame = item.get("frame")
+        if frame is None:
+            continue
+
+        frame_index = item["frame_index"]
+        timestamp = item["timestamp"].replace(":", "-").replace(" ", "_")
+        selection_hint = item.get("selection_hint", "unknown")
+        image_sent = item.get("image_sent", False)
+
+        # Filename: segment_id + frame_index + hint + sent_status
+        hint_short = selection_hint.split(":")[0] if ":" in selection_hint else selection_hint
+        sent_mark = "_SENT" if image_sent else "_CONTEXT"
+        filename = f"{segment_id}_frame_{frame_index:05d}_{hint_short}{sent_mark}.jpg"
+        filepath = debug_dir / filename
+
+        # Resize to 800px max edge for storage efficiency
+        height, width = frame.shape[:2]
+        max_edge = 800
+        if max(height, width) > max_edge:
+            scale = max_edge / max(height, width)
+            frame = cv2.resize(
+                frame,
+                (max(1, int(width * scale)), max(1, int(height * scale))),
+                interpolation=cv2.INTER_AREA,
+            )
+
+        # Save with metadata overlay (optional, controlled by env var)
+        if os.getenv("DLD_FRAME_DEBUG_OVERLAY", "1") in {"1", "true", "yes"}:
+            frame_copy = frame.copy()
+            # Add text overlay with selection info
+            text_lines = [
+                f"Frame: {frame_index}",
+                f"Time: {item['timestamp']}",
+                f"Hint: {hint_short}",
+                f"Priority: {item.get('image_priority', 0):.1f}",
+                f"Scene: {item.get('scene_score', 0):.2f}",
+            ]
+            y_offset = 20
+            for line in text_lines:
+                cv2.putText(
+                    frame_copy, line, (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA
+                )
+                y_offset += 18
+            frame = frame_copy
+
+        cv2.imwrite(str(filepath), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+    # Save selection timeline as text file
+    timeline_file = debug_dir / f"{segment_id}_timeline.txt"
+    with open(timeline_file, "w", encoding="utf-8") as f:
+        f.write(f"Segment: {segment_id}\n")
+        f.write(f"Case: {case_id}\n")
+        f.write(f"Total frames: {len(selected)}\n")
+        f.write(f"Sent to VLM: {sum(1 for x in selected if x.get('image_sent'))}\n")
+        f.write("\n" + "="*80 + "\n\n")
+
+        for idx, item in enumerate(selected, 1):
+            f.write(f"Frame {idx}/{len(selected)}:\n")
+            f.write(f"  Index: {item['frame_index']}\n")
+            f.write(f"  Timestamp: {item['timestamp']}\n")
+            f.write(f"  Selection Hint: {item.get('selection_hint', 'N/A')}\n")
+            f.write(f"  Selection Reason: {item.get('selection_reason', 'N/A')}\n")
+            f.write(f"  Image Priority: {item.get('image_priority', 0):.2f}\n")
+            f.write(f"  Scene Score: {item.get('scene_score', 0):.4f}\n")
+            f.write(f"  Status Score: {item.get('status_region_score', 0):.4f}\n")
+            f.write(f"  Sent to VLM: {item.get('image_sent', False)}\n")
+            f.write(f"  OCR Ran: {item.get('ocr_ran', False)}\n")
+            if item.get('ocr_flags'):
+                f.write(f"  OCR Flags: {', '.join(item['ocr_flags'])}\n")
+            f.write("\n")
+
+
 def _extract_representative_frame_images(
     video_path: Path,
     recording_start: datetime,
@@ -2763,6 +2856,8 @@ def _extract_representative_frame_images(
     max_frames: int,
     max_edge: int = 960,
     jpeg_quality: int = 65,
+    case_id: str = "",
+    output_dir: Optional[Path] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     import cv2
 
@@ -2813,6 +2908,11 @@ def _extract_representative_frame_images(
 
     selected = _select_representative_frames(candidates, max_frames)
     selected, prefilter_meta = _annotate_and_limit_image_frames(selected, sensitive_files, max_frames)
+
+    # Save debug images if enabled
+    if output_dir and case_id:
+        _save_frame_debug_images(selected, case_id, segment_id, output_dir)
+
     images = []
     for idx, item in enumerate(selected, 1):
         frame = item.pop("frame")
@@ -4903,6 +5003,7 @@ def _live_vlm_review_case(
     sensitive_files: List[str],
     fallback_meta: Dict[str, Any],
     max_frames: int,
+    output_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     video_path = _choose_video_file(case_dir)
     rec_start = _recording_start(groundtruth, logs, video_path)
@@ -4992,6 +5093,8 @@ def _live_vlm_review_case(
             segment_frame_budget,
             max_edge=IMAGE_MAX_EDGE,
             jpeg_quality=JPEG_QUALITY,
+            case_id=str(case_dir.name),
+            output_dir=output_dir,
         )
         frame_plan["segment_index"] = segment_index
         frame_plan["sink_sessions"] = _sessions_for_segment(sink_sessions, segment)
@@ -6616,6 +6719,7 @@ def run_benchmark(
     vlm_workers: int = 1,
     vlm_gate_mode: str = "all",
     replay_vlm_report: Optional[Path] = None,
+    output_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     from data_leak_detector.legacy_paths import RISK_HUNTER_IMPL
 
@@ -6878,6 +6982,7 @@ def run_benchmark(
                     sensitive_files=record["sensitive_files"],
                     fallback_meta=record["fallback_meta"],
                     max_frames=record["adaptive_vlm_frames"],
+                    output_dir=output_dir,
                 )
                 future_to_record[future] = record
 
@@ -7253,6 +7358,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             vlm_workers=args.vlm_workers,
             vlm_gate_mode=args.vlm_gate_mode,
             replay_vlm_report=args.replay_vlm_report,
+            output_dir=args.json_output.parent if args.json_output else None,
         )
     finally:
         _PROGRESS_LOG_HANDLE = None
