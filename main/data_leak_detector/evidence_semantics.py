@@ -12,7 +12,9 @@ RISK_LEVELS = {
     "completed",
 }
 
-CONFIRMED_RISK_LEVELS = {"content_exposed", "completed"}
+# Risky behavior detection: Any attempt to transfer sensitive data is considered positive
+# This includes preparation stages (selected_or_attached) as they indicate intent
+CONFIRMED_RISK_LEVELS = {"selected_or_attached", "in_progress", "content_exposed", "completed"}
 
 CONFIRMED_LOG_RULES: set[str] = set()
 

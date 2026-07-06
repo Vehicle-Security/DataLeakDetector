@@ -350,6 +350,7 @@ ATTEMPT_ACTION_TOKENS = (
 
 POSITIVE_RISK_LEVELS = {
     "attempted",
+    "selected_or_attached",  # Risky behavior: file attached/selected for external transfer
     "in_progress",
     "content_exposed",
     "completed",
@@ -3046,88 +3047,109 @@ Outbound-direction rules:
 - A selected checkbox in a remote listing only means the object is selected; it is not a completed upload/share by itself.
 - Reading or editing an existing remote document is not completed leakage unless the user newly pasted/uploaded/shared sensitive local content into that external service.
 
-CRITICAL: Distinguish between staging and completion states carefully:
+CRITICAL: RISKY BEHAVIOR DETECTION - Any attempt to transfer sensitive data is a security risk:
 
-❌ STAGING (selected_or_attached / preparation):
-- File appears in file picker or attachment list
-- Upload dialog is open but not submitted
-- Compose window with attachment visible but not sent
-- "Send" button highlighted but not clicked
-- Form filled but not submitted
-- Browser on compose/upload page WITHOUT completion evidence in later frames
+🔴 RISKY BEHAVIORS (All are positive violations):
 
-✅ COMPLETION (completed / content_exposed):
-- "发送成功" / "Send Success" / "已发送" / "Sent" status visible
-- "上传完成" / "Upload Complete" / "已上传" / "Uploaded" confirmation
-- Progress bar shows 100% completion
-- Message appears in sent messages list or conversation history
-- File newly appears in remote cloud storage listing immediately after an observed outbound upload/save action
-- Commit/push success in git interface
-- Content visible in external AI chat history (content_exposed)
-- Screenshot captured or screen share active with sensitive content visible
-- **Persistent artifacts: file in remote listing, message in sent folder, URL changed to success page**
+1. **CONTENT EXPOSED** (content_exposed):
+   - Sensitive file content visible in external app's input/editor area
+   - Sensitive text pasted into AI chat, email body, IM message box
+   - Sensitive content in external service's preview window
+   - Content visible in active screen share or captured screenshot
 
-⚠️ IN PROGRESS (in_progress):
-- Progress bar visible but < 100%
-- "正在上传" / "Uploading..." / "Sending..." status
-- Transfer dialog with incomplete progress
+2. **TRANSFER PREPARED** (selected_or_attached):
+   - Sensitive file attached to email/chat/IM attachment area
+   - Sensitive file selected in file picker targeting external service (web upload, cloud client)
+   - Sensitive file dragged to external application window
+   - Compose window with sensitive file attachment visible (even if not sent yet)
 
-🛡️ FALSE POSITIVE PREVENTION:
-To avoid incorrect completion judgments:
-- ❌ DO NOT judge as completed if you ONLY see preparation (file picker, compose window, upload dialog)
-- ❌ DO NOT assume completion from AI context or ambiguous logs alone
-- ❌ DO NOT judge as completed if the sensitive file is merely visible on desktop near an external app
-- ✅ REQUIRE at least ONE of: success message, remote listing appearance, sent folder entry, URL transition, persistent artifact
-- ✅ If uncertain, prefer "selected_or_attached" or "in_progress" over "completed"
-- ✅ For email: Must see message in sent list OR success toast OR URL change to /sent
-- ✅ For cloud: Must see file in remote listing OR share link generated OR upload success banner
-- ✅ For AI: Must see content in chat history with AI response OR in external input field
+3. **TRANSFER IN PROGRESS** (in_progress):
+   - Upload/send progress bar visible (any percentage < 100%)
+   - "正在上传" / "Uploading..." / "Sending..." status indicator
+   - Network transmission indicator active
+   - File in external service's "transferring" list
+
+4. **TRANSFER COMPLETED** (completed):
+   - "发送成功" / "Send Success" / "已发送" / "Sent" confirmation visible
+   - "上传完成" / "Upload Complete" / "已上传" / "Uploaded" success message
+   - Progress bar shows 100% completion
+   - Message appears in sent messages list or conversation history
+   - File newly appears in remote cloud storage listing after observed upload
+   - Commit/push success in git interface
+   - **Persistent artifacts: file in remote listing, message in sent folder, URL changed to success page**
+
+🟢 NON-RISKY (Negative):
+- **PREPARATION** (preparation): Opening a sink page, browsing, right-clicking without sensitive data interaction
+- **NONE** (none): No sensitive-object interaction at all
+- **LOCAL ONLY**: Viewing/editing sensitive files locally without external service involvement
+
+⚠️ DETECTION PHILOSOPHY:
+- **OLD APPROACH (WRONG)**: Only flag "completed" transfers → Misses 70-80% of risky behaviors
+- **NEW APPROACH (CORRECT)**: Flag ANY risky behavior including attempts → Catches behavior during 5-60 second windows
+- From a DLP perspective: "User ATTEMPTED to leak data" is as important as "User SUCCEEDED"
+- Attaching a file to email = risky behavior (even if never sent)
+- File in upload dialog = risky behavior (even if canceled later)
+- Content in AI chat input = risky behavior (even if not submitted)
+
+🛡️ JUDGMENT RULES:
+- ✅ Mark is_violation=true for ANY of: selected_or_attached, in_progress, content_exposed, completed
+- ✅ Only mark is_violation=false for: preparation, none, or pure local viewing
+- ✅ Don't require completion proof - seeing the attempt is enough
+- ✅ If uncertain between selected_or_attached and completed, choose selected_or_attached (still positive)
+- ❌ DO NOT require success confirmation for positive detection
+- ❌ DO NOT mark as negative just because "not completed" - check if there's risky behavior
 
 Return both a completed-action verdict and a risk-stage verdict:
-- is_violation=true only when the evidence shows completed leakage or direct exposure of sensitive content in an external sink.
+- is_violation=true when ANY risky behavior is observed (selected_or_attached, in_progress, content_exposed, or completed).
 - risk_level must be one of: none, preparation, selected_or_attached, in_progress, content_exposed, completed.
 - transfer_direction must be one of: outbound, inbound, local, unknown.
 - terminal_state must be one of: completed, staged, in_progress, failed, canceled, none, unknown.
 - artifact_state must be one of: new_remote_artifact, existing_remote_artifact, local_download, file_picker_only, draft_attachment, remote_input_content, active_screen_exposure, local_only, unknown.
 - completion_evidence and non_completion_evidence must contain short enum-like tokens, for example: message_sent_toast, upload_success_banner, generated_share_link, sent_message_visible, existing_remote_listing, selected_checkbox_only, download_bubble, file_picker_only, draft_not_sent, no_success_confirmation.
 - Identify frontend applications by category/capability, not by a fixed brand list. If the brand is unknown, infer the category from UI features.
-- Use selected_or_attached when a sensitive file is selected or attached in an external sink but not submitted yet.
-- Use in_progress when upload/send/share is visibly underway but completion is not shown.
-- Use content_exposed when sensitive text/image content is newly entered or displayed in an external AI/chat/message input, conversation, active screen share, screenshot, or remote recipient-visible surface. Do not use content_exposed for a normal download, an existing remote listing, or merely opening an existing cloud document.
-- Use completed when upload/send/share/commit/publish success, remote listing, sent message, shared screen exposure, screenshot capture, or VM/remote copy completion is visible.
-- Use preparation for opening a sink page, browsing, right-clicking, or unrelated local editing without sensitive data entering the sink.
-- Use none when there is no sensitive-object interaction.
+- Use selected_or_attached when a sensitive file is selected or attached in an external sink (file picker, attachment area, compose window) - THIS IS A POSITIVE VIOLATION.
+- Use in_progress when upload/send/share is visibly underway (progress bar, "uploading" status) - THIS IS A POSITIVE VIOLATION.
+- Use content_exposed when sensitive text/image content is newly entered or displayed in an external AI/chat/message input, conversation, active screen share, screenshot, or remote recipient-visible surface. Do not use content_exposed for a normal download, an existing remote listing, or merely opening an existing cloud document - THIS IS A POSITIVE VIOLATION.
+- Use completed when upload/send/share/commit/publish success, remote listing, sent message, shared screen exposure, screenshot capture, or VM/remote copy completion is visible - THIS IS A POSITIVE VIOLATION.
+- Use preparation for opening a sink page, browsing, right-clicking, or unrelated local editing without sensitive data entering the sink - THIS IS NEGATIVE.
+- Use none when there is no sensitive-object interaction - THIS IS NEGATIVE.
 
 Strict completion rules:
 - Email/chat is completed only after sent/success, the message appears in the conversation, or the recipient-visible artifact is shown.
 - Cloud/Git/community upload is completed only after success, a newly-created remote listing tied to an outbound upload/save action, commit/publish success, or a generated remote attachment link.
 - Existing remote listing or selected checkbox is not enough for cloud completion; the listing must be tied to a preceding outbound upload/save/share action.
 - AI/chat input containing sensitive content is content_exposed even before a final submit if the content is visible in the external service.
-- A draft, file picker, highlighted send button, selected file, or upload page alone is not completed, but may be selected_or_attached or in_progress.
+- A draft, file picker, highlighted send button, selected file, or upload page with sensitive file IS selected_or_attached (POSITIVE), not preparation.
 - For observed_actions, emit one separate structured action for every sensitive-object interaction you can see or infer from the provided logs.
-- If a sensitive file is attached to an email/chat/cloud/community/AI sink, use attach_file or upload_start with source_file set to the exact sensitive file path/name even when the final verdict is not completed.
+- If a sensitive file is attached to an email/chat/cloud/community/AI sink, use attach_file or upload_start with source_file set to the exact sensitive file path/name and risk_level=selected_or_attached or higher - THIS IS POSITIVE.
 - If sensitive content or a sensitive file is visible inside an external input/editor/chat, use paste_content, attach_file, or external_exposure with risk_level content_exposed.
 - Do not output action_type none for a segment that contains a visible sensitive attachment, upload widget, sent message, external editor content, screen share, screenshot, VM copy, or cloud sync evidence.
 - source_file must be the sensitive source path/name; derived_file is only for renamed/exported/copied artifacts. Leave derived_file empty instead of inventing an unrelated system/cache file.
 
 MULTI-FRAME ANALYSIS STRATEGY:
 When analyzing a segment with multiple frames:
-1. First pass: Identify preparation actions (file selected, compose window open, upload dialog)
-2. Second pass: Look for completion evidence in LATER frames:
-   - Scan for "sent" / "已发送" folder/list views
-   - Check for remote file listings showing the sensitive file
-   - Look for URL changes from /compose to /sent or /message/id
-   - Check for success banners or completion toasts
-   - Verify if chat history shows the message/file
-3. Third pass: Correlate timeline - if preparation in early frames + completion evidence in later frames = COMPLETED
-4. If only preparation visible with NO completion evidence in any frame = selected_or_attached or in_progress
+1. First pass: Identify risky behaviors (file selected/attached, content in input, upload dialog with sensitive file)
+   - ANY of these = POSITIVE detection (selected_or_attached or higher)
+2. Second pass: Look for progression evidence in LATER frames:
+   - Scan for progress indicators ("uploading", progress bars)
+   - Check for completion evidence ("sent" folder, success messages, remote listings)
+3. Third pass: Determine the highest risk level:
+   - If completion evidence exists = completed
+   - If progress indicators exist = in_progress
+   - If only preparation/attachment visible = selected_or_attached
+   - All three are POSITIVE violations
+4. Only mark as NEGATIVE if: pure preparation without sensitive file, or no sensitive interaction
 
-Example reasoning patterns:
-✅ CORRECT: "Frame 1-3 show email compose window with file attached. Frame 6-8 show the sent messages folder with this email listed. Verdict: completed"
-✅ CORRECT: "Frame 2 shows upload dialog. Frame 7 shows cloud file listing with the file (timestamp: just now). Verdict: completed"
-✅ CORRECT: "Frame 4 shows compose window. No later frames show sent folder or success message. Verdict: selected_or_attached"
-❌ WRONG: "Email compose window is empty, so no leakage" - Must check sent folder in later frames
-❌ WRONG: "File selected in upload dialog, verdict: completed" - Must verify file appears in remote listing
+Example reasoning patterns (NEW APPROACH - Risky Behavior Detection):
+✅ CORRECT: "Frame 2 shows email compose window with sensitive file attached. No send action visible. Verdict: selected_or_attached (POSITIVE - risky behavior detected)"
+✅ CORRECT: "Frame 1-3 show email compose window with file attached. Frame 6-8 show the sent messages folder with this email listed. Verdict: completed (POSITIVE)"
+✅ CORRECT: "Frame 2 shows upload dialog with sensitive file selected. Frame 5 shows progress bar at 60%. Verdict: in_progress (POSITIVE)"
+✅ CORRECT: "Frame 4 shows file picker with sensitive file selected, targeting cloud upload page. Verdict: selected_or_attached (POSITIVE - attempt detected)"
+✅ CORRECT: "Frame 3 shows sensitive text pasted into AI chat input box (not yet sent). Verdict: content_exposed (POSITIVE)"
+❌ WRONG (OLD APPROACH): "File attached to email but not sent, so no violation" - Attachment itself is risky behavior
+❌ WRONG (OLD APPROACH): "Upload dialog visible but no completion, verdict: negative" - Should be selected_or_attached (POSITIVE)
+✅ CORRECT: "User browsing email website, no sensitive file interaction. Verdict: preparation (NEGATIVE)"
+✅ CORRECT: "User viewing sensitive file locally in Notepad, no external service. Verdict: none (NEGATIVE)"
 
 Output exactly one JSON object and no markdown:
 {{
