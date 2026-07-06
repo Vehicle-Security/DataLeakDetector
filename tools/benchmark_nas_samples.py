@@ -1444,6 +1444,69 @@ def _segment_signal_score(
     }
 
 
+def _extend_segments_for_completion(
+    segments: List[Tuple[datetime, datetime]],
+    logs: List[Dict[str, Any]],
+    fallback_meta: Dict[str, Any],
+) -> List[Tuple[datetime, datetime]]:
+    """Extend segments to ensure they cover completion states after transfer actions.
+
+    Problem: VLM sees preparation (file selected, compose window) but misses completion
+    evidence (sent folder, remote listing) because sampling stops too early.
+
+    Solution: For segments containing preparation actions, extend the end time to cover
+    the period where completion UI updates appear (sent lists, success banners, etc.)
+    """
+    if not segments:
+        return segments
+
+    # Get completion buffer from environment (default 30 seconds)
+    try:
+        completion_buffer = int(os.getenv("DLD_COMPLETION_BUFFER_SECONDS", "30"))
+    except (TypeError, ValueError):
+        completion_buffer = 30
+
+    completion_buffer = max(15, min(60, completion_buffer))  # Clamp to 15-60s
+
+    extended_segments = []
+
+    for segment_start, segment_end in segments:
+        # Find preparation actions in this segment
+        prep_events = []
+        for log in logs:
+            try:
+                log_time = _parse_log_timestamp(log.get("timestamp", ""))
+                if not log_time:
+                    continue
+                if segment_start <= log_time <= segment_end:
+                    event_type = str(log.get("event_type", "") or "")
+                    # Detect preparation/staging actions
+                    if event_type in {
+                        "file_selected", "browser_file_access", "attach_file",
+                        "upload_start", "clipboard_copy", "clipboard_paste"
+                    }:
+                        prep_events.append(log_time)
+            except Exception:
+                continue
+
+        # If segment has preparation actions, extend to cover completion period
+        if prep_events:
+            last_prep_time = max(prep_events)
+            # Extend to: last preparation + buffer seconds
+            # This ensures we capture the "sent folder" / "remote listing" UI that appears after
+            min_end_time = last_prep_time + timedelta(seconds=completion_buffer)
+
+            if segment_end < min_end_time:
+                extended_segments.append((segment_start, min_end_time))
+            else:
+                extended_segments.append((segment_start, segment_end))
+        else:
+            # No preparation actions, keep original
+            extended_segments.append((segment_start, segment_end))
+
+    return extended_segments
+
+
 def _prepare_review_segments(
     windows: List[Tuple[datetime, datetime]],
     fallback_meta: Dict[str, Any],
@@ -1516,6 +1579,9 @@ def _prepare_review_segments(
     else:
         kept_segments = merged[:max_segments]
         kept_meta = []
+
+    # Extend segments to cover completion states (post-action persistent evidence)
+    kept_segments = _extend_segments_for_completion(kept_segments, logs, fallback_meta)
 
     return kept_segments, {
         "raw_windows": len(windows),
@@ -2215,8 +2281,18 @@ def _event_anchor_times(
 
         event_type = str(event.get("event_type", "") or "").lower()
         if any(token in text for token in ("upload", "\u4e0a\u4f20", "send", "\u53d1\u9001", "attach", "\u9644\u4ef6", "commit")):
-            offsets = (-3, 0, 3, 5, 8, 12, 18, 25, 35, 45)
-            reason = f"event_anchor_transfer:{event_type or 'unknown'}"
+            # Check if this is a completion event (upload_complete, send_message, etc.)
+            is_completion = event_type in {
+                "upload_complete", "send_message", "message_sent", "upload_success",
+                "commit_success", "push_success", "publish_success"
+            }
+            if is_completion:
+                # Dense sampling around completion moment (critical for persistent state detection)
+                offsets = (-5, -3, -1, 0, 1, 3, 5, 8, 12, 18, 25, 35)
+                reason = f"completion_anchor_transfer:{event_type}"
+            else:
+                offsets = (-3, 0, 3, 5, 8, 12, 18, 25, 35, 45)
+                reason = f"event_anchor_transfer:{event_type or 'unknown'}"
         elif any(token in text for token in ("file_selected", "clipboard", "paste", "\u526a\u8d34", "\u590d\u5236", "\u7c98\u8d34")):
             offsets = (0, 3, 8, 12, 15, 19, 25, 30, 45)
             reason = f"event_anchor_precursor:{event_type or 'unknown'}"
@@ -2248,6 +2324,8 @@ def _frame_time_candidates(
     total_duration = sum(durations) or float(len(windows))
     def anchor_priority(item: Tuple[datetime, str]) -> Tuple[int, datetime]:
         reason = item[1]
+        if "completion_anchor" in reason:
+            return (-1, item[0])  # Highest priority
         if "terminal_" in reason:
             return (0, item[0])
         if "tracking_end" in reason:
@@ -2373,6 +2451,7 @@ def _select_representative_frames(candidates: List[Dict[str, Any]], max_frames: 
         return any(
             token in hint
             for token in (
+                "completion_anchor",  # NEW: Completion event anchors (highest priority)
                 "terminal_",
                 "tracking_end",
                 "session_tracking",
@@ -2395,7 +2474,9 @@ def _select_representative_frames(candidates: List[Dict[str, Any]], max_frames: 
 
     def critical_priority(item: Dict[str, Any]) -> Tuple[int, int]:
         hint = str(item.get("selection_hint", "") or "")
-        if "terminal_" in hint:
+        if "completion_anchor" in hint:
+            rank = -1  # Highest priority
+        elif "terminal_" in hint:
             rank = 0
         elif "tracking_end" in hint:
             rank = 1
@@ -2514,6 +2595,9 @@ def _annotate_and_limit_image_frames(
         scene_score = float(item.get("scene_score", 0.0) or 0.0)
         image_priority = 0.0
         image_reasons: List[str] = []
+        if "completion_anchor" in reason:
+            image_priority += 10.0  # Highest priority for completion anchors
+            image_reasons.append("completion_anchor")
         if "window_start" in reason or "window_end" in reason:
             image_priority += 3.0
             image_reasons.append("boundary_context")
@@ -2617,6 +2701,22 @@ def _annotate_and_limit_image_frames(
         "scene_threshold": scene_threshold,
         "image_frames": sum(1 for item in selected if item.get("image_sent")),
         "text_only_frames": sum(1 for item in selected if not item.get("image_sent")),
+        # NEW: Detailed frame selection debug info
+        "frame_selection_details": [
+            {
+                "frame_index": int(item["frame_index"]),
+                "timestamp": item["timestamp"],
+                "selection_reason": item.get("selection_reason", ""),
+                "selection_hint": item.get("selection_hint", ""),
+                "image_priority": round(float(item.get("image_priority", 0.0)), 4),
+                "scene_score": round(float(item.get("scene_score", 0.0)), 4),
+                "status_region_score": round(float(item.get("status_region_score", 0.0)), 4),
+                "image_sent": item.get("image_sent", False),
+                "ocr_ran": item.get("ocr_ran", False),
+                "ocr_flags": item.get("ocr_flags", []),
+            }
+            for item in sorted(selected, key=lambda x: int(x["frame_index"]))
+        ],
     }
 
 
@@ -2794,6 +2894,51 @@ Terminal-state rules:
 - In progress: visible progress bar below 100%, "Uploading...", "Sending...", spinner/progress without success.
 - Do not mark failed/canceled/in-progress sessions as completed leakage.
 
+CRITICAL - Persistent State Detection:
+When judging completion, prioritize PERSISTENT STATE EVIDENCE over momentary actions:
+
+Email/Messaging completion evidence:
+✅ Sensitive file/message appears in "Sent" / "已发送" folder or sent message list
+✅ Email/message visible in conversation history with "sent" / "delivered" status
+✅ Page URL changes from /compose or /draft to /sent or /message/[id]
+✅ Attachment icon/thumbnail visible in sent message view
+✅ Success banner followed by message appearing in the list
+❌ Empty compose window alone is NOT evidence of non-completion - check sent folder
+❌ Draft window without send button clicked is NOT completion - but check if already sent
+
+Cloud/Drive completion evidence:
+✅ Sensitive file appears in remote file list with recent timestamp ("刚刚" / "just now" / recent date)
+✅ File visible in cloud folder listing after upload UI was shown
+✅ Share link or QR code generated for the file
+✅ Storage space increased matching file size
+✅ File appears in "Recent uploads" or activity feed
+❌ Upload dialog alone is NOT completion - check if file appears in listing
+❌ File picker with file selected is NOT completion - check remote listing
+
+Git/Code Repository completion evidence:
+✅ Sensitive file visible in remote repository file tree
+✅ Commit history shows the file in recent commits
+✅ Terminal shows "push successful" or equivalent
+✅ Remote branch updated indicator
+❌ Local commit without push is NOT remote leakage
+❌ Git add/commit dialog alone is NOT completion - check push status
+
+AI/Chat Service completion evidence:
+✅ Sensitive content visible in chat history with AI response
+✅ File attachment shown in conversation with AI analysis/summary
+✅ Content visible in external service's input/editor area
+❌ Empty chat window is NOT evidence of non-completion - check history
+
+IMPORTANT - Look beyond the preparation moment:
+- If you see upload/send/attach UI early in the segment, CHECK LATER FRAMES for:
+  → Did the file appear in remote listing?
+  → Did the URL change to a success/sent page?
+  → Is there a sent message in conversation history?
+  → Does the file show up in cloud storage listing?
+- Large files may take 30-120 seconds to upload - completion evidence appears AFTER the action
+- Success states are persistent - they remain visible in listings, history, folders
+- Even if you don't see the "sending" moment, persistent artifacts prove completion
+
 Outbound-direction rules:
 - Downloading a sensitive file from email/cloud/drive to the local computer is not leakage.
 - A browser download bubble, "download attachment" URL, download bar, or local editor opening a downloaded file is not outbound leakage.
@@ -2809,6 +2954,7 @@ CRITICAL: Distinguish between staging and completion states carefully:
 - Compose window with attachment visible but not sent
 - "Send" button highlighted but not clicked
 - Form filled but not submitted
+- Browser on compose/upload page WITHOUT completion evidence in later frames
 
 ✅ COMPLETION (completed / content_exposed):
 - "发送成功" / "Send Success" / "已发送" / "Sent" status visible
@@ -2819,11 +2965,23 @@ CRITICAL: Distinguish between staging and completion states carefully:
 - Commit/push success in git interface
 - Content visible in external AI chat history (content_exposed)
 - Screenshot captured or screen share active with sensitive content visible
+- **Persistent artifacts: file in remote listing, message in sent folder, URL changed to success page**
 
 ⚠️ IN PROGRESS (in_progress):
 - Progress bar visible but < 100%
 - "正在上传" / "Uploading..." / "Sending..." status
 - Transfer dialog with incomplete progress
+
+🛡️ FALSE POSITIVE PREVENTION:
+To avoid incorrect completion judgments:
+- ❌ DO NOT judge as completed if you ONLY see preparation (file picker, compose window, upload dialog)
+- ❌ DO NOT assume completion from AI context or ambiguous logs alone
+- ❌ DO NOT judge as completed if the sensitive file is merely visible on desktop near an external app
+- ✅ REQUIRE at least ONE of: success message, remote listing appearance, sent folder entry, URL transition, persistent artifact
+- ✅ If uncertain, prefer "selected_or_attached" or "in_progress" over "completed"
+- ✅ For email: Must see message in sent list OR success toast OR URL change to /sent
+- ✅ For cloud: Must see file in remote listing OR share link generated OR upload success banner
+- ✅ For AI: Must see content in chat history with AI response OR in external input field
 
 Return both a completed-action verdict and a risk-stage verdict:
 - is_violation=true only when the evidence shows completed leakage or direct exposure of sensitive content in an external sink.
@@ -2851,6 +3009,25 @@ Strict completion rules:
 - If sensitive content or a sensitive file is visible inside an external input/editor/chat, use paste_content, attach_file, or external_exposure with risk_level content_exposed.
 - Do not output action_type none for a segment that contains a visible sensitive attachment, upload widget, sent message, external editor content, screen share, screenshot, VM copy, or cloud sync evidence.
 - source_file must be the sensitive source path/name; derived_file is only for renamed/exported/copied artifacts. Leave derived_file empty instead of inventing an unrelated system/cache file.
+
+MULTI-FRAME ANALYSIS STRATEGY:
+When analyzing a segment with multiple frames:
+1. First pass: Identify preparation actions (file selected, compose window open, upload dialog)
+2. Second pass: Look for completion evidence in LATER frames:
+   - Scan for "sent" / "已发送" folder/list views
+   - Check for remote file listings showing the sensitive file
+   - Look for URL changes from /compose to /sent or /message/id
+   - Check for success banners or completion toasts
+   - Verify if chat history shows the message/file
+3. Third pass: Correlate timeline - if preparation in early frames + completion evidence in later frames = COMPLETED
+4. If only preparation visible with NO completion evidence in any frame = selected_or_attached or in_progress
+
+Example reasoning patterns:
+✅ CORRECT: "Frame 1-3 show email compose window with file attached. Frame 6-8 show the sent messages folder with this email listed. Verdict: completed"
+✅ CORRECT: "Frame 2 shows upload dialog. Frame 7 shows cloud file listing with the file (timestamp: just now). Verdict: completed"
+✅ CORRECT: "Frame 4 shows compose window. No later frames show sent folder or success message. Verdict: selected_or_attached"
+❌ WRONG: "Email compose window is empty, so no leakage" - Must check sent folder in later frames
+❌ WRONG: "File selected in upload dialog, verdict: completed" - Must verify file appears in remote listing
 
 Output exactly one JSON object and no markdown:
 {{
@@ -6717,6 +6894,22 @@ def run_benchmark(
                         "max_frames_requested": record["adaptive_vlm_frames"],
                     }
                 record["live_vlm_verdict"] = verdict
+                # Extract frame selection debug info from verdict
+                if verdict.get("frame_plan"):
+                    frame_plan = verdict["frame_plan"]
+                    segments = frame_plan.get("segments", [])
+                    record["frame_selection_debug"] = {
+                        "segment_plan": frame_plan.get("segment_plan"),
+                        "segments": [
+                            {
+                                "segment_id": seg.get("segment_id"),
+                                "window": seg.get("window"),
+                                "frame_details": seg.get("frame_plan", {}).get("frame_selection_details", []),
+                            }
+                            for seg in segments
+                            if isinstance(seg, dict)
+                        ],
+                    }
                 live_eval_text = "eval=unavailable"
                 try:
                     live_evaluation = _evaluate_case_record_decision(record, log_trace=True)
@@ -6918,6 +7111,7 @@ def run_benchmark(
                 "keyframe_coverage": frame_coverage,
                 "adaptive_vlm_frames": record["adaptive_vlm_frames"],
                 "vlm_frame_budget": record["vlm_frame_budget"],
+                "frame_selection_debug": record.get("frame_selection_debug"),  # NEW: Detailed frame selection info
                 "live_vlm_verdict": vlm_verdict,
                 "correlation_bundle": correlation_bundle,
             }
