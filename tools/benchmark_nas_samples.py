@@ -7292,6 +7292,34 @@ def _build_datalog_report(report: Dict[str, Any]) -> Dict[str, Any]:
             if relation in facts_by_relation:
                 facts_by_relation[relation].append(fact)
 
+        # 提取敏感文件和衍生文件的映射关系
+        sensitive_files_info = {
+            "source_files": [],  # 原始敏感文件（来自 OpenFile）
+            "derived_files": [],  # 衍生文件（来自 TransferFile）
+            "file_lineage": []   # 文件血缘关系（source -> derived）
+        }
+
+        # 从 OpenFile 提取原始敏感文件
+        for fact in facts_by_relation["OpenFile"]:
+            args = fact.get("args", [])
+            if len(args) >= 3:
+                file_path = args[2]  # OpenFile(id, process, file, timestamp)
+                if file_path not in sensitive_files_info["source_files"]:
+                    sensitive_files_info["source_files"].append(file_path)
+
+        # 从 TransferFile 提取衍生文件和血缘关系
+        for fact in facts_by_relation["TransferFile"]:
+            args = fact.get("args", [])
+            if len(args) >= 4:
+                src_file = args[2]  # TransferFile(id, process, src, dst, timestamp)
+                dst_file = args[3]
+                if src_file != dst_file:
+                    lineage = {"source": src_file, "derived": dst_file}
+                    if lineage not in sensitive_files_info["file_lineage"]:
+                        sensitive_files_info["file_lineage"].append(lineage)
+                    if dst_file not in sensitive_files_info["derived_files"]:
+                        sensitive_files_info["derived_files"].append(dst_file)
+
         # 只记录有 datalog 事实的案例
         if facts or leak_paths:
             datalog_report["summary"]["cases_with_datalog_facts"] += 1
@@ -7314,6 +7342,7 @@ def _build_datalog_report(report: Dict[str, Any]) -> Dict[str, Any]:
                 "fact_count": datalog_decision.get("fact_count", 0),
                 "engine": datalog_decision.get("engine", "none"),
                 "reason": datalog_decision.get("reason", ""),
+                "sensitive_files_info": sensitive_files_info,
                 "openfile_facts": facts_by_relation["OpenFile"],
                 "transferfile_facts": facts_by_relation["TransferFile"],
                 "leakfile_facts": facts_by_relation["LeakFile"],
