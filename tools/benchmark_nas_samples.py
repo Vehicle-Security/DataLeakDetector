@@ -7256,6 +7256,78 @@ def run_benchmark(
     return report
 
 
+def _build_datalog_report(report: Dict[str, Any]) -> Dict[str, Any]:
+    """构建 datalog 专用报告，记录 OpenFile/LeakFile 等关系和泄露路径"""
+    datalog_report = {
+        "summary": {
+            "total_cases": len(report["cases"]),
+            "cases_with_datalog_facts": 0,
+            "cases_with_leak_paths": 0,
+            "total_openfile_facts": 0,
+            "total_transferfile_facts": 0,
+            "total_leakfile_facts": 0,
+            "total_clipboardwrite_facts": 0,
+            "total_leak_paths": 0,
+        },
+        "cases": []
+    }
+
+    for case in report["cases"]:
+        datalog_decision = case.get("datalog_decision", {})
+        facts = datalog_decision.get("facts", [])
+        leak_paths = datalog_decision.get("leak_paths", [])
+
+        # 按关系类型分类事实
+        facts_by_relation = {
+            "OpenFile": [],
+            "TransferFile": [],
+            "LeakFile": [],
+            "ClipboardWrite": [],
+            "ClipboardRead": [],
+            "CrossProcessTransfer": [],
+        }
+
+        for fact in facts:
+            relation = fact.get("relation", "")
+            if relation in facts_by_relation:
+                facts_by_relation[relation].append(fact)
+
+        # 只记录有 datalog 事实的案例
+        if facts or leak_paths:
+            datalog_report["summary"]["cases_with_datalog_facts"] += 1
+
+            if leak_paths:
+                datalog_report["summary"]["cases_with_leak_paths"] += 1
+                datalog_report["summary"]["total_leak_paths"] += len(leak_paths)
+
+            datalog_report["summary"]["total_openfile_facts"] += len(facts_by_relation["OpenFile"])
+            datalog_report["summary"]["total_transferfile_facts"] += len(facts_by_relation["TransferFile"])
+            datalog_report["summary"]["total_leakfile_facts"] += len(facts_by_relation["LeakFile"])
+            datalog_report["summary"]["total_clipboardwrite_facts"] += len(facts_by_relation["ClipboardWrite"])
+
+            case_entry = {
+                "case": case["case"],
+                "expected_positive": case.get("expected_positive"),
+                "expected_level": case.get("expected_level"),
+                "datalog_positive": datalog_decision.get("risk_positive", False),
+                "datalog_confirmed": datalog_decision.get("confirmed_leak", False),
+                "fact_count": datalog_decision.get("fact_count", 0),
+                "engine": datalog_decision.get("engine", "none"),
+                "reason": datalog_decision.get("reason", ""),
+                "openfile_facts": facts_by_relation["OpenFile"],
+                "transferfile_facts": facts_by_relation["TransferFile"],
+                "leakfile_facts": facts_by_relation["LeakFile"],
+                "clipboardwrite_facts": facts_by_relation["ClipboardWrite"],
+                "clipboardread_facts": facts_by_relation["ClipboardRead"],
+                "crossprocesstransfer_facts": facts_by_relation["CrossProcessTransfer"],
+                "leak_paths": leak_paths,
+            }
+
+            datalog_report["cases"].append(case_entry)
+
+    return datalog_report
+
+
 def _print_report(report: Dict[str, Any]) -> None:
     print("\nNAS Sample Benchmark")
     print("=" * 40)
@@ -7398,6 +7470,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             errors_path.write_text(json.dumps(errors_payload, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception as exc:
             _progress(f"[OUTPUT] failed_to_write_errors error={type(exc).__name__}:{exc}")
+
+        # 生成 datalog 专用报告
+        try:
+            datalog_report = _build_datalog_report(report)
+            datalog_path = args.json_output.with_name("datalog_report.json")
+            datalog_path.write_text(json.dumps(datalog_report, ensure_ascii=False, indent=2), encoding="utf-8")
+            _progress(f"[OUTPUT] datalog_report written to {datalog_path}")
+        except Exception as exc:
+            _progress(f"[OUTPUT] failed_to_write_datalog_report error={type(exc).__name__}:{exc}")
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
