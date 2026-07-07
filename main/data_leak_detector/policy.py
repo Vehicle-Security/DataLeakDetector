@@ -1,8 +1,7 @@
-"""Central policy vocabulary for sensitivity, transfer, and sink detection.
+"""敏感性、传输和汇聚点检测的核心策略词汇。
 
-The detector intentionally keeps its keyword policy in one file. That makes the
-heuristics easy to audit, tune, or replace with a learned policy later without
-scattering product assumptions across FrameAnalyzer and EventCorrelator.
+检测器刻意把关键字策略集中在一个文件里。这样一来，启发式规则更容易审计、调优，
+或者在以后替换成学习型策略，而不会把产品假设散落到 FrameAnalyzer 和 EventCorrelator 各处。
 """
 
 from __future__ import annotations

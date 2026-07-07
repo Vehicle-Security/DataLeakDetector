@@ -1,8 +1,7 @@
-"""Shared dataclasses that define the pipeline's internal data contract.
+"""定义流水线内部数据契约的共享数据类。
 
-Every stage imports these models instead of passing loosely shaped dictionaries
-around. This keeps the single-package rewrite modular without reintroducing the
-old duplicated stage directories.
+每个阶段都导入这些模型，而不是到处传递形状松散的字典。这样可以让单包重写保持模块化，
+同时避免重新引入旧的重复阶段目录。
 """
 
 from __future__ import annotations
@@ -13,7 +12,7 @@ from typing import Any
 
 @dataclass(frozen=True)
 class LogEvent:
-    """A normalized event from a desktop monitor or imported audit log."""
+    """来自桌面监控或导入审计日志的规范化事件。"""
 
     event_id: str
     timestamp: str
@@ -32,7 +31,7 @@ class LogEvent:
 
 @dataclass(frozen=True)
 class FrameObservation:
-    """Structured visual or log-anchored behavior evidence."""
+    """结构化的视觉证据或日志锚定行为证据。"""
 
     observation_id: str
     start_ms: int
@@ -53,7 +52,7 @@ class FrameObservation:
 
 @dataclass(frozen=True)
 class CorrelatedEvent:
-    """A sensitive object bound to log and optional frame evidence."""
+    """与日志以及可选帧证据绑定的敏感对象。"""
 
     event_id: str
     timestamp: str
@@ -74,7 +73,7 @@ class CorrelatedEvent:
 
 @dataclass(frozen=True)
 class UploadCandidate:
-    """Potential external sink interaction involving sensitive data."""
+    """涉及敏感数据的潜在外部汇聚点交互。"""
 
     candidate_id: str
     timestamp: str
@@ -94,7 +93,7 @@ class UploadCandidate:
 
 @dataclass(frozen=True)
 class DatalogFact:
-    """Symbolic fact consumed by the leak reasoner."""
+    """泄露推理器消费的符号事实。"""
 
     relation: str
     args: tuple[Any, ...]
@@ -105,7 +104,7 @@ class DatalogFact:
 
 @dataclass(frozen=True)
 class LeakPath:
-    """Reasoned taint path from sensitive source to external sink."""
+    """从敏感源到外部汇聚点的推理污点路径。"""
 
     start_op: str
     end_op: str
@@ -130,7 +129,7 @@ class LeakPath:
 
 @dataclass(frozen=True)
 class DetectionReport:
-    """Final report returned by the end-to-end pipeline."""
+    """端到端流水线返回的最终报告。"""
 
     report_id: str
     generated_at: str

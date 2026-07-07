@@ -1,8 +1,7 @@
-"""Environment-backed Neo4j configuration.
+"""由环境变量驱动的 Neo4j 配置。
 
-Neo4j is a side-effecting output, not a required detection dependency. This
-module reads .env and process variables in one place so CLI flags, tests, and
-local helper scripts share the same configuration contract.
+Neo4j 是带副作用的输出，而不是必需的检测依赖。本模块在一个地方读取 .env 和进程变量，
+这样 CLI 参数、测试和本地辅助脚本就能共享同一套配置契约。
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class Neo4jConfig:
-    """Runtime configuration for the optional Neo4j graph sink."""
+    """可选 Neo4j 图汇聚点的运行时配置。"""
 
     enabled: bool = False
     uri: str = "bolt://localhost:7687"

@@ -1,9 +1,7 @@
-"""Deterministic taint-propagation engine for confirmed leak paths.
+"""用于已确认泄露路径的确定性污点传播引擎。
 
-The original project had heavier reasoning scaffolding. This rewrite keeps the
-core semantics in pure Python so single-developer iteration, tests, and local
-debugging stay fast while still modeling source, transfer, process crossing,
-clipboard, and sink relations.
+原始项目带有更重的推理脚手架。本重写把核心语义保留在纯 Python 中，以便单人迭代、测试和本地调试
+保持快速，同时仍然建模源、传输、进程跨越、剪贴板和汇聚点关系。
 """
 
 from __future__ import annotations
@@ -17,11 +15,9 @@ from .relations import SUPPORTED_RELATIONS, Taint
 
 class DatalogEngine:
     """
-    Small Datalog-style taint engine.
+    小型 Datalog 风格的污点引擎。
 
-    It implements the relations described in the root README in pure Python,
-    which keeps single-developer iteration fast and makes unit tests
-    deterministic.
+    它用纯 Python 实现了根 README 中描述的关系，这样既能让单人迭代保持快速，也能让单元测试具备确定性。
     """
 
     def __init__(self, *_: Any, **__: Any):

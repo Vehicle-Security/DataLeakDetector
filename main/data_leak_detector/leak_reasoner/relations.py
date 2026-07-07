@@ -1,7 +1,6 @@
-"""Supported symbolic relations and internal taint state.
+"""支持的符号关系与内部污点状态。
 
-The engine imports this module as its vocabulary. Centralizing relation names
-keeps generated facts, tests, and future prompt output aligned.
+引擎把本模块作为自己的词汇表。把关系名称集中管理，可以让生成的事实、测试和未来的提示输出保持一致。
 """
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ SUPPORTED_RELATIONS = {
 
 @dataclass(frozen=True)
 class Taint:
-    """Internal taint state carried during symbolic propagation."""
+    """符号传播过程中携带的内部污点状态。"""
 
     process: str
     data: str

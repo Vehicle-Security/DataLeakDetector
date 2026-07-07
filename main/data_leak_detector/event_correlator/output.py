@@ -1,7 +1,7 @@
-"""Report-shaping helpers for EventCorrelator output.
+"""EventCorrelator 输出的报告整形辅助函数。
 
-The correlator works with typed objects internally. These helpers convert those
-objects into stable JSON sections used by CLI output, tests, and Neo4j writes.
+关联器内部使用的是强类型对象。这些辅助函数会把这些对象转换成稳定的 JSON 分区，供 CLI 输出、
+测试和 Neo4j 写入使用。
 """
 
 from __future__ import annotations

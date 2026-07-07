@@ -1,9 +1,7 @@
-"""Neo4j persistence adapter for detection reports.
+"""用于检测报告的 Neo4j 持久化适配器。
 
-The graph store is intentionally outside the detection stages. It translates a
-finished JSON report into nodes and relationships after reasoning is complete,
-which keeps graph-writing failures from polluting the core analysis path unless
-strict mode is requested.
+图存储刻意放在检测阶段之外。它会在推理完成后把一份 JSON 报告转换成节点和关系，
+这样除非请求严格模式，否则图写入失败不会污染核心分析路径。
 """
 
 from __future__ import annotations
@@ -21,13 +19,13 @@ class TransactionLike(Protocol):
 
 
 class Neo4jGraphStore:
-    """Persist pipeline evidence into a Neo4j graph."""
+    """将流水线证据持久化到 Neo4j 图中。"""
 
     def __init__(self, config: Neo4jConfig):
         self.config = config
 
     def write_report(self, report: dict[str, Any]) -> dict[str, Any]:
-        """Write a report graph and return a small write summary."""
+        """写入报告图并返回一份简要写入摘要。"""
 
         from neo4j import GraphDatabase
 
@@ -97,7 +95,7 @@ class Neo4jGraphStore:
 
 
 def write_report_to_neo4j(report: dict[str, Any], config: Neo4jConfig | None = None) -> dict[str, Any]:
-    """Write report to Neo4j if enabled; otherwise return a skipped summary."""
+    """如果启用则将报告写入 Neo4j；否则返回跳过摘要。"""
 
     config = config or Neo4jConfig.from_env()
     if not config.enabled:

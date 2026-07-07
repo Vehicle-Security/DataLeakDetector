@@ -1,8 +1,7 @@
-"""Classification helpers used while binding raw events to behaviors.
+"""用于将原始事件绑定到行为的分类辅助函数。
 
-The correlator calls these small functions for app type, source metadata,
-operation labels, and likely source-file guesses. Keeping them here prevents
-the workflow object from becoming a bag of unrelated string rules.
+关联器会调用这些小函数来判断应用类型、源元数据、操作标签以及可能的源文件猜测。把它们
+放在这里，可以避免工作流对象变成一堆互不相关的字符串规则。
 """
 
 from __future__ import annotations

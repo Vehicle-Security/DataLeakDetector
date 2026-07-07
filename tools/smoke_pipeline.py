@@ -1,8 +1,7 @@
-"""Quick local health check for the canonical pipeline.
+"""规范流水线的本地快速健康检查。
 
-This helper is intentionally smaller than the E2E CLI: it runs the sample leak
-fixture and prints only the summary and graph status. It exists so a developer
-can verify the environment quickly after dependency or Neo4j changes.
+这个辅助脚本刻意比端到端 CLI 更小：它运行样例泄露 fixture，只打印摘要和图状态。这样开发者就能在
+依赖或 Neo4j 变更后快速验证环境。
 """
 
 from __future__ import annotations

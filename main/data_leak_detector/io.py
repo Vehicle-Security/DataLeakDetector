@@ -1,8 +1,7 @@
-"""Input loading and normalization helpers for monitor logs.
+"""监控日志的输入加载与规范化辅助工具。
 
-The rest of the pipeline should not need to know whether a log came from JSON,
-JSON Lines, UTF-8, GB18030, nested process metadata, or inconsistent path
-separators. This module isolates those edge cases at the project boundary.
+流水线的其他部分不需要关心日志来自 JSON、JSON Lines、UTF-8、GB18030、
+嵌套进程元数据还是不一致的路径分隔符。本模块在项目边界处隔离这些边缘情况。
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ from .policy import SENSITIVE_TOKENS
 
 
 def read_text(path: str | Path) -> str:
-    """Read collected logs with the encodings usually seen on Windows hosts."""
+    """按 Windows 主机上常见的编码读取采集到的日志。"""
 
     target = Path(path)
     for encoding in ("utf-8-sig", "utf-8", "gb18030"):
@@ -30,7 +29,7 @@ def read_text(path: str | Path) -> str:
 
 
 def load_json_records(path: str | Path) -> list[dict[str, Any]]:
-    """Load either a JSON array or JSON Lines file."""
+    """读取 JSON 数组或 JSON Lines 文件。"""
 
     text = read_text(path).strip()
     if not text:
@@ -50,7 +49,7 @@ def load_json_records(path: str | Path) -> list[dict[str, Any]]:
 
 
 def normalize_logs(records: list[dict[str, Any]]) -> list[LogEvent]:
-    """Project heterogeneous raw log records into the pipeline event shape."""
+    """把异构的原始日志记录映射成流水线事件结构。"""
 
     events: list[LogEvent] = []
     for index, record in enumerate(records):
@@ -99,7 +98,7 @@ def basename(value: object) -> str:
 
 
 def same_file(left: object, right: object) -> bool:
-    """Compare by normalized full path, then by basename as a pragmatic fallback."""
+    """先按规范化后的完整路径比较，再按文件名作务实的兜底比较。"""
 
     lhs = normalize_path(left).lower()
     rhs = normalize_path(right).lower()

@@ -1,8 +1,7 @@
-"""Conversion from correlated evidence to symbolic LeakReasoner facts.
+"""将已关联证据转换为符号化 LeakReasoner 事实。
 
-This module is the bridge between event correlation and taint propagation. It
-keeps relation generation deterministic and reviewable, instead of hiding it in
-the reasoner or graph writer.
+本模块是事件关联与污点传播之间的桥梁。它把关系生成保持为确定性且可审阅的逻辑，
+而不是把它隐藏到推理器或图写入器里。
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ def build_datalog_facts(
     uploads: list[UploadCandidate],
     lineage: Lineage,
 ) -> list[DatalogFact]:
-    """Convert bound evidence into symbolic facts for LeakReasoner."""
+    """将绑定后的证据转换为 LeakReasoner 的符号事实。"""
 
     facts: list[DatalogFact] = []
     opened: set[tuple[str, str]] = set()

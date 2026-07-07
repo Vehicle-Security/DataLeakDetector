@@ -1,8 +1,7 @@
-"""Contract tests for the canonical pipeline and Neo4j graph adapter.
+"""规范流水线和 Neo4j 图适配器的契约测试。
 
-These tests cover the behavior that must stay stable while the internals remain
-small and modular: frame observation extraction, event correlation, lineage
-reasoning, report writing, and graph Cypher generation.
+这些测试覆盖了在内部保持小而模块化时仍必须稳定的行为：帧观察提取、事件关联、谱系推理、
+报告写入以及图 Cypher 生成。
 """
 
 from __future__ import annotations

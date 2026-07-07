@@ -1,8 +1,7 @@
-"""Outcome semantics for risk signals versus confirmed leak conclusions.
+"""风险信号与已确认泄露结论的结果语义。
 
-The project distinguishes suspicious behavior from confirmed taint-to-sink
-paths. This file keeps that decision policy explicit so tests, reports, and
-future UI code can agree on what "positive" means.
+项目需要区分可疑行为和已确认的污点到泄露路径。本文件将该决策策略显式化，
+以便测试、报告和未来的 UI 代码对“阳性”的含义保持一致。
 """
 
 from __future__ import annotations
@@ -40,8 +39,7 @@ def decide_evidence_outcome(
     log_rule_positive: bool,
     log_rule_rules: Iterable[object],
 ) -> EvidenceDecision:
-    # Log rules are risk signals. Confirmation should come from symbolic leak
-    # reasoning or explicit future confirmation rules.
+    # 日志规则只代表风险信号。确认应来自符号泄露推理或未来显式的确认规则。
     _ = list(log_rule_rules)
     risk_positive = bool(datalog_risk_positive or log_rule_positive)
     confirmed = bool(datalog_confirmed)

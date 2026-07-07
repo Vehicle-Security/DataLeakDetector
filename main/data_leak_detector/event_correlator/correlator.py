@@ -1,9 +1,8 @@
-"""Workflow object for binding logs, observations, lineage, and sink evidence.
+"""用于绑定日志、观察、谱系和汇聚点证据的工作流对象。
 
-EventCorrelator is the middle stage of the pipeline: it turns normalized raw
-activity into correlated events, upload candidates, lineage records, and
-Datalog facts. Its dependencies are split into sibling modules so this file can
-remain a readable workflow rather than a monolith.
+EventCorrelator 是流水线的中间阶段：它把规范化后的原始活动转换成已关联事件、上传候选项、
+谱系记录和 Datalog 事实。其依赖被拆分到兄弟模块中，这样本文件就能保持为可读的工作流，
+而不是一个大一统的单体。
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ from .output import lineage_payload, operation_record
 
 
 class EventCorrelator:
-    """Bind logs, visual observations, file lineage, and upload candidates."""
+    """绑定日志、视觉观察、文件谱系和上传候选项。"""
 
     def __init__(self, config: EventCorrelatorConfig | None = None):
         self.config = config or EventCorrelatorConfig()

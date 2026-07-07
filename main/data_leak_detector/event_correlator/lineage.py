@@ -1,8 +1,7 @@
-"""File lineage model for source-to-derived artifact tracking.
+"""用于源到派生产物跟踪的文件谱系模型。
 
-Leak reasoning needs to know that an uploaded derivative may still originate
-from a sensitive source. This module keeps that graph compact and local before
-it is converted into Datalog facts or persisted to Neo4j.
+泄露推理需要知道：一个已上传的派生产物仍可能源自敏感文件。本模块在转换为 Datalog 事实
+或持久化到 Neo4j 之前，先把这张图保持得紧凑且本地化。
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from ..io import normalize_path, same_file
 
 @dataclass
 class Lineage:
-    """Source-to-derived file mapping used before symbolic reasoning."""
+    """符号推理前使用的源到派生文件映射。"""
 
     direct: dict[str, str] = field(default_factory=dict)
 

@@ -1,8 +1,7 @@
-"""Command-line entry point for the canonical DataLeakDetector pipeline.
+"""DataLeakDetector 规范流水线的命令行入口。
 
-This file exists so operators can run the project without importing Python
-objects directly. It deliberately stays thin: argument parsing and JSON output
-belong here, while detection logic remains in data_leak_detector.pipeline.
+这个文件的存在是为了让运维人员无需直接导入 Python 对象即可运行项目。
+它刻意保持轻量：参数解析和 JSON 输出放在这里，而检测逻辑保留在 data_leak_detector.pipeline 中。
 """
 
 from __future__ import annotations
@@ -16,14 +15,14 @@ from data_leak_detector import run_pipeline
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run DataLeakDetector end-to-end.")
-    parser.add_argument("--log", "-l", required=True, help="Path to a JSON/JSONL monitor log.")
-    parser.add_argument("--video", "-v", default="", help="Optional video path for report metadata.")
-    parser.add_argument("--output-dir", "-o", default="", help="Optional directory for the JSON report.")
-    parser.add_argument("--sensitive-file", action="append", default=[], help="Sensitive file path. Can be repeated.")
-    parser.add_argument("--observations", default="", help="Optional precomputed frame observation JSON.")
-    parser.add_argument("--neo4j", action="store_true", help="Write the report graph to Neo4j for this run.")
-    parser.add_argument("--neo4j-strict", action="store_true", help="Fail if Neo4j writing fails.")
+    parser = argparse.ArgumentParser(description="运行 DataLeakDetector 端到端流程。")
+    parser.add_argument("--log", "-l", required=True, help="JSON/JSONL 监控日志路径。")
+    parser.add_argument("--video", "-v", default="", help="用于报告元数据的可选视频路径。")
+    parser.add_argument("--output-dir", "-o", default="", help="用于 JSON 报告的可选输出目录。")
+    parser.add_argument("--sensitive-file", action="append", default=[], help="敏感文件路径，可重复传入。")
+    parser.add_argument("--observations", default="", help="可选的预计算帧观察 JSON。")
+    parser.add_argument("--neo4j", action="store_true", help="将本次运行的报告图写入 Neo4j。")
+    parser.add_argument("--neo4j-strict", action="store_true", help="Neo4j 写入失败时直接报错。")
     args = parser.parse_args(argv)
 
     report = run_pipeline(

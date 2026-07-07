@@ -1,8 +1,7 @@
-"""Frame-observation normalization and time-window matching.
+"""帧观察的规范化与时间窗口匹配。
 
-This file is the adapter between FrameAnalyzer output and EventCorrelator
-input. It accepts dictionaries or model objects and selects nearby evidence so
-the correlator does not need to know every observation shape.
+本文件是 FrameAnalyzer 输出与 EventCorrelator 输入之间的适配器。它接受字典或模型对象，
+并筛选邻近证据，这样关联器就不需要了解每一种观察形状。
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from ..models import FrameObservation
 
 
 def normalize_observations(items: list[Any]) -> list[FrameObservation]:
-    """Coerce frame segment dictionaries into FrameObservation objects."""
+    """将帧分段字典强制转换为 FrameObservation 对象。"""
 
     observations: list[FrameObservation] = []
     for index, item in enumerate(items):
@@ -45,7 +44,7 @@ def nearest_observation(
     observations: list[FrameObservation],
     tolerance_ms: int,
 ) -> FrameObservation | None:
-    """Return the closest visual observation within the configured window."""
+    """返回配置窗口内最近的视觉观察。"""
 
     if not timestamp_ms:
         return None

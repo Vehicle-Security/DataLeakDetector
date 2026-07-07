@@ -1,8 +1,7 @@
-"""Neo4j graph package boundary.
+"""Neo4j 图包边界。
 
-Graph persistence is optional and lives behind this export surface so the core
-detection pipeline can run without a database while deployments can still write
-the same report into Neo4j.
+图持久化是可选的，并被放在这个导出入口之后，这样核心检测流水线就能在没有数据库的情况下运行，
+而部署环境仍然可以把同一份报告写入 Neo4j。
 """
 
 from __future__ import annotations

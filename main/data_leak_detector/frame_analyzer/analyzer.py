@@ -1,8 +1,7 @@
-"""Deterministic FrameAnalyzer implementation.
+"""确定性的 FrameAnalyzer 实现。
 
-For now, the analyzer turns logs and optional precomputed visual observations
-into review windows. This keeps the pipeline runnable in local tests while
-preserving a clean insertion point for future OCR/VLM frame analysis.
+目前，分析器会把日志和可选的预计算视觉观察转换为审查窗口。这样既能让流水线在本地测试中运行，
+也保留了未来接入 OCR/VLM 帧分析的清晰切入点。
 """
 
 from __future__ import annotations
@@ -25,11 +24,10 @@ def analyze_video_behavior(
     **_: Any,
 ) -> dict[str, Any]:
     """
-    Produce frame-level behavior observations.
+    生成帧级行为观察。
 
-    The default implementation is deterministic: it accepts optional precomputed
-    OCR/VLM observations, then augments them with log-anchored review windows
-    around sensitive files, transfers, and external sinks.
+    默认实现是确定性的：先接收可选的预计算 OCR/VLM 观察，再用围绕敏感文件、传输和外部汇聚点
+    的日志锚定审查窗口进行补充。
     """
 
     observations: list[FrameObservation] = []

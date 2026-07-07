@@ -1,8 +1,7 @@
-"""Upload and external-sink candidate extraction.
+"""上传和外部汇聚点候选项提取。
 
-Correlated events are still generic evidence. This module narrows them into
-possible outbound leak actions, attaching sink type, risk level, and confidence
-for the reasoner and final report.
+已关联的事件仍然只是通用证据。本模块会把它们收窄为可能的外发泄露动作，并附上汇聚点类型、
+风险等级和置信度，供推理器和最终报告使用。
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ def build_upload_candidates(
     *,
     default_confidence: float,
 ) -> list[UploadCandidate]:
-    """Create external sink candidates from correlated sensitive events."""
+    """从已关联的敏感事件中创建外部汇聚点候选项。"""
 
     uploads: list[UploadCandidate] = []
     for event in correlated:

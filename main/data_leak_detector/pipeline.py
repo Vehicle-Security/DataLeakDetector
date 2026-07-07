@@ -1,9 +1,8 @@
-"""End-to-end orchestration for the single canonical detection pipeline.
+"""单一规范检测流水线的端到端编排。
 
-This module is the only place that wires FrameAnalyzer, EventCorrelator,
-LeakReasoner, report serialization, and optional Neo4j persistence together.
-Keeping orchestration here makes each stage independently testable and prevents
-the old three-directory structure from returning as hidden compatibility code.
+本模块是唯一把 FrameAnalyzer、EventCorrelator、LeakReasoner、报告序列化和可选 Neo4j 持久化
+串联起来的地方。把编排逻辑保留在这里，可以让各阶段独立可测，并防止旧的三目录结构
+以隐藏兼容代码的形式回归。
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ def run_pipeline(
     neo4j_enabled: bool | None = None,
     neo4j_strict: bool | None = None,
 ) -> dict[str, Any]:
-    """Run the canonical FrameAnalyzer -> EventCorrelator -> LeakReasoner flow."""
+    """运行规范的 FrameAnalyzer -> EventCorrelator -> LeakReasoner 流程。"""
 
     log_path = Path(log_file)
     video_text = str(video_file or "")
