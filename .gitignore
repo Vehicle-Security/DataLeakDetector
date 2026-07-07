@@ -5,6 +5,9 @@ __pycache__/
 **/.vs/
 **/*.pyc
 **/*.pyo
+*.egg-info/
+**/*.egg-info/
+.runtime/
 **/.idea/
 *.swp
 *.swo
@@ -34,6 +37,8 @@ __pycache__/
 **/C++ETW/bin/logs/
 **/test/
 **/tests/
+!tests/
+!tests/**
 **/checkMemory.py
 
 #忽略配置文件

@@ -1,0 +1,53 @@
+"""Classification helpers used while binding raw events to behaviors.
+
+The correlator calls these small functions for app type, source metadata,
+operation labels, and likely source-file guesses. Keeping them here prevents
+the workflow object from becoming a bag of unrelated string rules.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from ..io import normalize_path
+from ..policy import SINK_TOKENS, TRANSFER_TOKENS, contains_any
+
+
+def classify_frontend_app(app_name: str, window_title: str = "") -> str:
+    text = f"{app_name} {window_title}"
+    if contains_any(text, SINK_TOKENS):
+        return "external_sink"
+    return "local_app"
+
+
+def original_file_from_metadata(record: dict[str, Any]) -> str:
+    upload = record.get("upload_detection") if isinstance(record.get("upload_detection"), dict) else {}
+    return normalize_path(record.get("source_file") or record.get("original_file") or upload.get("original_file") or "")
+
+
+def behavior_category(text: str) -> str:
+    if contains_any(text, SINK_TOKENS):
+        return "data_exfiltration_candidate"
+    if contains_any(text, TRANSFER_TOKENS):
+        return "hidden_transformation_candidate"
+    return "sensitive_access"
+
+
+def operation_from_text(text: str, fallback: str) -> str:
+    if contains_any(text, SINK_TOKENS):
+        return "external_sink_interaction"
+    if contains_any(text, TRANSFER_TOKENS):
+        return "file_or_content_transfer"
+    return fallback or "sensitive_access"
+
+
+def guess_source_by_stem(file_path: str, known_files: list[str]) -> str:
+    stem = Path(normalize_path(file_path)).stem.lower()
+    if not stem:
+        return ""
+    for known in known_files:
+        known_stem = Path(normalize_path(known)).stem.lower()
+        if known_stem and (stem.startswith(known_stem) or known_stem.startswith(stem)):
+            return known
+    return ""

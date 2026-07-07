@@ -1,6 +1,0 @@
-# Python dependencies
-neo4j>=5.0.0
-openai>=1.0.0
-python-dotenv>=1.0.0
-
-# Note: asyncio is built-in for Python 3.7+

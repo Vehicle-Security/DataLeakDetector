@@ -1,0 +1,29 @@
+[project]
+name = "data-leak-detector"
+version = "0.1.0"
+description = "Readable three-stage data leak detection pipeline."
+requires-python = ">=3.10"
+dependencies = [
+  "neo4j>=5.28,<6",
+  "python-dotenv>=1.0,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-dir]
+"" = "main"
+
+[tool.setuptools.packages.find]
+where = ["main"]
+
+[tool.pytest.ini_options]
+pythonpath = ["main"]
+testpaths = ["tests"]
+addopts = "-q"

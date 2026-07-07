@@ -1,7 +1,0 @@
-Flask>=3.0.0
-flask-cors>=4.0.0
-watchdog>=3.0.0
-pywin32>=306
-psutil>=5.9.0
-PyYAML>=6.0
-pywintrace @ git+https://github.com/fireeye/pywintrace.git
