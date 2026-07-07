@@ -19,6 +19,7 @@ import json
 import os
 import re
 import sys
+import time
 from threading import Lock
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -4146,9 +4147,14 @@ def _remote_vlm_action_supports_leak(action: Dict[str, Any]) -> bool:
         "screenshot",
         "screen_record",
         "vm_copy",
+        "attach_file",        # NEW: Allow attach_file for selected_or_attached
+        "select_file",        # NEW: Allow select_file for selected_or_attached
+        "upload_start",       # NEW: Allow upload_start for in_progress
     }:
         return False
-    if risk_level not in {"content_exposed", "completed"}:
+    # NEW APPROACH: Allow selected_or_attached and in_progress as risky behaviors
+    # These represent attempts to leak data, which should generate LeakFile facts
+    if risk_level not in {"content_exposed", "completed", "selected_or_attached", "in_progress"}:
         return False
 
     if _safe_float(action.get("confidence", 0.0)) < 0.9:
@@ -5172,7 +5178,15 @@ def _live_vlm_review_case(
         from langchain_openai import ChatOpenAI
 
         HumanMessage = LangchainHumanMessage
-        llm = ChatOpenAI(model=model, base_url=base_url or None, api_key=api_key)
+        # Configure retry and rate limiting for Token Plan API
+        llm = ChatOpenAI(
+            model=model,
+            base_url=base_url or None,
+            api_key=api_key,
+            max_retries=5,
+            timeout=120,
+            request_timeout=120,
+        )
     segment_verdicts: List[Dict[str, Any]] = []
     segment_plans: List[Dict[str, Any]] = []
     frames_remaining = max(1, int(max_frames))
@@ -5272,6 +5286,8 @@ def _live_vlm_review_case(
                 contents.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image['b64']}"}})
 
         response = llm.invoke([HumanMessage(content=contents)])
+        # Add delay to avoid rate limiting
+        time.sleep(float(os.getenv("DLD_VLM_REQUEST_DELAY", "0.5")))
         text = str(response.content or "").strip()
         match = re.search(r"\{.*\}", text, flags=re.S)
         if not match:
