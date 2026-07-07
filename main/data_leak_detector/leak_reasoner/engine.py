@@ -19,8 +19,8 @@ class DatalogEngine:
     """
     Small Datalog-style taint engine.
 
-    It implements the relations described in spec/ARCHITECTURE.md in pure
-    Python, which keeps single-developer iteration fast and makes unit tests
+    It implements the relations described in the root README in pure Python,
+    which keeps single-developer iteration fast and makes unit tests
     deterministic.
     """
 
