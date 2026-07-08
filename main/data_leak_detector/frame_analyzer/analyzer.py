@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,7 @@ def analyze_video_behavior(
     vision_enabled: bool | None = None,
     vision_mode: str | None = None,
     max_vlm_frames: int | None = None,
+    artifact_dir: str | Path | None = None,
     **_: Any,
 ) -> dict[str, Any]:
     """Produce frame-level behavior observations for downstream correlation.
@@ -73,6 +76,7 @@ def analyze_video_behavior(
             sensitive_files=sensitive_files,
             config=config,
             start_index=len(observations),
+            artifact_dir=artifact_dir,
         )
         observations.extend(vision_observations)
         warnings.extend(vision_warnings)
@@ -150,8 +154,8 @@ def _log_anchored_observations(
         observations.append(
             FrameObservation(
                 observation_id=f"obs_{start_index + len(observations)}",
-                start_ms=max(event.timestamp_ms - 2000, 0),
-                end_ms=event.timestamp_ms + 2000 if event.timestamp_ms else 0,
+                start_ms=max(event.video_time_ms - 2000, 0) if event.video_time_ms >= 0 else 0,
+                end_ms=event.video_time_ms + 2000 if event.video_time_ms >= 0 else 0,
                 app_name=event.app_name or event.process_name or app_identity.app_name,
                 operation_type=infer_operation(text, event.event_type),
                 resource=event.file_path,
@@ -171,6 +175,7 @@ def _run_vision_pipeline(
     sensitive_files: list[str],
     config: VisionConfig,
     start_index: int,
+    artifact_dir: str | Path | None,
 ) -> tuple[list[FrameObservation], dict[str, Any], list[str], list[str]]:
     observations: list[FrameObservation] = []
     warnings: list[str] = []
@@ -180,13 +185,21 @@ def _run_vision_pipeline(
     keyframes, frame_warnings = select_keyframes(video_path, windows, config)
     warnings.extend(frame_warnings)
 
-    ocr_results = run_ocr(keyframes, config) if keyframes else []
+    ocr_frames = _select_ocr_frames_for_ocr(keyframes)
+    raw_ocr_results = run_ocr(ocr_frames, config) if ocr_frames else []
+    ocr_results = _dedupe_ocr_results(raw_ocr_results, config)
     observations.extend(_ocr_observations(ocr_results, config, start_index=start_index))
 
     vlm_frames = choose_vlm_frames(
         ocr_results,
         min_confidence=config.ocr_min_confidence,
         max_frames=config.max_vlm_frames,
+    )
+    artifact_manifest = _export_vision_artifacts(
+        artifact_dir=artifact_dir,
+        keyframes=keyframes,
+        ocr_selected_frames=[item.frame for item in vlm_frames],
+        ocr_results=ocr_results,
     )
     vlm_events = 0
     if vlm_frames and config.mode.lower() in {"hybrid", "vlm"}:
@@ -210,11 +223,99 @@ def _run_vision_pipeline(
         "mode": config.mode,
         "analysis_windows": len(windows),
         "keyframes": len(keyframes),
+        "ocr_input_keyframes": len(ocr_frames),
         "ocr_frames": len(ocr_results),
+        "ocr_raw_frames": len(raw_ocr_results),
         "vlm_frames": len(vlm_frames),
         "vlm_events": vlm_events,
+        "artifacts": artifact_manifest,
     }
     return observations, stats, warnings, errors
+
+
+def _export_vision_artifacts(
+    *,
+    artifact_dir: str | Path | None,
+    keyframes: list[Any],
+    ocr_selected_frames: list[Any],
+    ocr_results: list[OcrResult],
+) -> dict[str, Any]:
+    if artifact_dir is None:
+        return {}
+
+    root = Path(artifact_dir)
+    raw_dir = root / "keyframes_raw"
+    selected_dir = root / "keyframes_ocr_selected"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    selected_dir.mkdir(parents=True, exist_ok=True)
+
+    raw_files = _copy_frame_images(keyframes, raw_dir)
+    selected_files = _copy_frame_images(ocr_selected_frames, selected_dir)
+    ocr_file = root / "ocr_results.json"
+    ocr_file.write_text(json.dumps([_ocr_result_to_dict(item) for item in ocr_results], ensure_ascii=False, indent=2), encoding="utf-8")
+
+    return {
+        "root_dir": str(root),
+        "keyframes_raw_dir": str(raw_dir),
+        "keyframes_ocr_selected_dir": str(selected_dir),
+        "ocr_results_file": str(ocr_file),
+        "keyframes_raw_files": raw_files,
+        "keyframes_ocr_selected_files": selected_files,
+    }
+
+
+def _copy_frame_images(frames: list[Any], target_dir: Path) -> list[str]:
+    copied: list[str] = []
+    for index, frame in enumerate(frames):
+        source = Path(str(getattr(frame, "image_path", "")))
+        if not source.exists():
+            continue
+        timestamp = int(getattr(frame, "timestamp_ms", 0))
+        reason = str(getattr(frame, "reason", "frame")).replace(":", "-").replace("/", "-").replace("\\", "-")
+        target = target_dir / f"{index:03d}_{timestamp}ms_{reason}{source.suffix or '.jpg'}"
+        shutil.copy2(source, target)
+        copied.append(str(target))
+    return copied
+
+
+def _ocr_result_to_dict(result: OcrResult) -> dict[str, Any]:
+    return {
+        "frame_id": result.frame.frame_id,
+        "timestamp_ms": result.frame.timestamp_ms,
+        "image_path": result.frame.image_path,
+        "reason": result.frame.reason,
+        "window_id": result.frame.window_id,
+        "text": result.text,
+        "confidence": result.confidence,
+        "provider": result.provider,
+    }
+
+
+def _select_ocr_frames_for_ocr(frames: list[Any]) -> list[Any]:
+    """OCR every keyframe that survived extraction and visual deduplication."""
+
+    return sorted(frames, key=lambda frame: int(getattr(frame, "timestamp_ms", 0)))
+
+
+def _dedupe_ocr_results(results: list[OcrResult], config: VisionConfig) -> list[OcrResult]:
+    kept: list[OcrResult] = []
+    texts_by_window: dict[str, list[str]] = {}
+    for result in results:
+        text = " ".join(result.text.split()).lower()
+        if not text:
+            kept.append(result)
+            continue
+        window_id = result.frame.window_id or "window_unknown"
+        previous = texts_by_window.setdefault(window_id, [])
+        if any(_text_similarity(text, item) >= config.ocr_text_similarity_threshold for item in previous):
+            continue
+        previous.append(text)
+        kept.append(result)
+    return kept
+
+
+def _text_similarity(left: str, right: str) -> float:
+    return SequenceMatcher(None, left, right).ratio()
 
 
 def _ocr_observations(

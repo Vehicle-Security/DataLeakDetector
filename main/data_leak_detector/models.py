@@ -17,6 +17,7 @@ class LogEvent:
     event_id: str
     timestamp: str
     timestamp_ms: int
+    video_time_ms: int
     event_type: str
     file_path: str = ""
     process_name: str = ""

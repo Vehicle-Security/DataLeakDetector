@@ -26,7 +26,7 @@ __pycache__/
 **/*debug*/
 **/records/
 **/recordings/
-
+artifacts/
 # 数据文件
 # 忽略数据文件
 **/data/*

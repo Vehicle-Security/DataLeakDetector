@@ -52,23 +52,35 @@ def normalize_logs(records: list[dict[str, Any]]) -> list[LogEvent]:
     """把异构的原始日志记录映射成流水线事件结构。"""
 
     events: list[LogEvent] = []
+    parsed_times = [parse_timestamp_ms(record.get("timestamp") or record.get("time") or "") for record in records]
+    session_start_ms = next((item for item in parsed_times if item), 0)
     for index, record in enumerate(records):
         process = record.get("process_info") if isinstance(record.get("process_info"), dict) else {}
         window = record.get("window_info") if isinstance(record.get("window_info"), dict) else {}
         upload = record.get("upload_detection") if isinstance(record.get("upload_detection"), dict) else {}
+        extra = record.get("extra") if isinstance(record.get("extra"), dict) else {}
 
         timestamp = str(record.get("timestamp") or record.get("time") or "")
-        file_path = normalize_path(record.get("file_path") or record.get("path") or upload.get("temp_file") or "")
+        timestamp_ms = parsed_times[index] if index < len(parsed_times) else parse_timestamp_ms(timestamp)
+        file_path = normalize_path(
+            record.get("file_path")
+            or record.get("path")
+            or record.get("destination_path")
+            or upload.get("temp_file")
+            or upload.get("original_file")
+            or ""
+        )
         process_name = str(record.get("process_name") or process.get("process_name") or "")
         app_name = str(record.get("app_name") or process.get("app_name") or process_name)
         window_title = str(record.get("window_title") or window.get("window_title") or "")
-        description = str(record.get("description") or upload.get("upload_type") or "")
+        description = _event_description(record, upload, extra)
 
         events.append(
             LogEvent(
                 event_id=str(record.get("event_id") or f"log_{index}"),
                 timestamp=timestamp,
-                timestamp_ms=parse_timestamp_ms(timestamp),
+                timestamp_ms=timestamp_ms,
+                video_time_ms=_video_time_ms(record, timestamp_ms, session_start_ms),
                 event_type=str(record.get("event_type") or record.get("type") or "").lower(),
                 file_path=file_path,
                 process_name=process_name,
@@ -79,6 +91,34 @@ def normalize_logs(records: list[dict[str, Any]]) -> list[LogEvent]:
             )
         )
     return events
+
+
+def _event_description(record: dict[str, Any], upload: dict[str, Any], extra: dict[str, Any]) -> str:
+    parts = [
+        record.get("description"),
+        record.get("operation"),
+        record.get("content_preview"),
+        upload.get("upload_type"),
+        upload.get("original_file"),
+        extra.get("category"),
+        extra.get("risk_level"),
+        extra.get("operation_detail"),
+        extra.get("source"),
+        extra.get("raw_operation"),
+    ]
+    return " ".join(str(item).strip() for item in parts if str(item or "").strip())
+
+
+def _video_time_ms(record: dict[str, Any], timestamp_ms: int, session_start_ms: int) -> int:
+    extra = record.get("extra") if isinstance(record.get("extra"), dict) else {}
+    relative = extra.get("relative_timestamp")
+    try:
+        return max(int(float(relative) * 1000), 0)
+    except (TypeError, ValueError):
+        pass
+    if timestamp_ms and session_start_ms:
+        return max(timestamp_ms - session_start_ms, 0)
+    return -1
 
 
 def flatten_text(value: Any) -> str:

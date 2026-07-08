@@ -1,175 +1,225 @@
-"""Policy vocabulary for sensitivity, transfer, and sink detection.
+"""策略配置加载与文本语义归一化。
 
-The defaults are intentionally small. Dataset-specific terms can be appended
-without code changes through comma-separated environment variables:
-
-- DLD_SENSITIVE_TOKENS
-- DLD_TRANSFER_TOKENS
-- DLD_SINK_TOKENS
+项目的主要判断证据来自日志、OCR 和 VLM/LLM 结构化输出。这里不把业务词表写死
+成代码逻辑，而是从 `spec/config/policy.json` 加载可替换策略；代码只保留最小兜底，
+负责统一大小写、全半角、空白和分类接口。
 """
 
 from __future__ import annotations
 
+import json
 import os
+import re
+import unicodedata
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
-DEFAULT_SENSITIVE_TOKENS = (
-    "salary",
-    "payroll",
-    "confidential",
-    "secret",
-    "contract",
-    "finance",
-    "customer",
-    "password",
-    "budget",
-    "strategy",
-    "internal",
-    "board",
-    "credential",
-    "\u5de5\u8d44",
-    "\u85aa\u8d44",
-    "\u85aa\u916c",
-    "\u6708\u85aa",
-    "\u673a\u5bc6",
-    "\u7edd\u5bc6",
-    "\u5408\u540c",
-    "\u8d22\u52a1",
-    "\u5ba2\u6237",
-    "\u5bc6\u7801",
-    "\u8d26\u53f7",
-    "\u8d26\u6237",
-    "\u9884\u7b97",
-    "\u6210\u672c",
-    "\u6218\u7565",
-    "\u5185\u90e8",
-    "\u8463\u4e8b\u4f1a",
-)
 
-DEFAULT_TRANSFER_TOKENS = (
-    "copy",
-    "copied",
-    "paste",
-    "pasted",
-    "clipboard",
-    "created",
-    "modified",
-    "rename",
-    "renamed",
-    "compress",
-    "compressed",
-    "convert",
-    "export",
-    "split",
-    "screenshot",
-    "screen recording",
-    "recording",
-    "\u590d\u5236",
-    "\u7c98\u8d34",
-    "\u526a\u8d34\u677f",
-    "\u521b\u5efa",
-    "\u4fee\u6539",
-    "\u91cd\u547d\u540d",
-    "\u538b\u7f29",
-    "\u8f6c\u6362",
-    "\u5bfc\u51fa",
-    "\u53e6\u5b58",
-    "\u622a\u56fe",
-    "\u622a\u5c4f",
-    "\u5f55\u5c4f",
-    "\u6d3e\u751f",
-)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_POLICY_PATH = REPO_ROOT / "spec" / "config" / "policy.json"
 
-DEFAULT_SINK_TOKENS = (
-    "upload",
-    "send",
-    "share",
-    "mail",
-    "email",
-    "attach",
-    "attachment",
-    "http_post",
-    "post ",
-    "network",
-    "cloud",
-    "drive",
-    "dropbox",
-    "onedrive",
-    "wechat",
-    "qq",
-    "feishu",
-    "lark",
-    "dingtalk",
-    "teams",
-    "zoom",
-    "chatgpt",
-    "claude",
-    "gemini",
-    "kimi",
-    "usb",
-    "removable",
-    "\u4e0a\u4f20",
-    "\u53d1\u9001",
-    "\u5206\u4eab",
-    "\u5916\u53d1",
-    "\u6cc4\u9732",
-    "\u9644\u4ef6",
-    "\u90ae\u4ef6",
-    "\u7f51\u76d8",
-    "\u4e91\u76d8",
-    "\u5171\u4eab",
-    "\u5c4f\u5e55\u5171\u4eab",
-    "\u53ef\u79fb\u52a8",
-    "\u5fae\u4fe1",
-    "\u98de\u4e66",
-    "\u9489\u9489",
-)
+FALLBACK_POLICY: dict[str, Any] = {
+    "sensitive_tokens": ("confidential", "secret", "salary", "customer", "机密", "工资", "客户"),
+    "transfer_tokens": ("copy", "paste", "export", "screenshot", "复制", "粘贴", "导出", "截图"),
+    "sink_tokens": ("upload", "send", "share", "email", "chatgpt", "上传", "发送", "分享", "邮件"),
+    "normal_activity_tokens": ("normal", "reading", "正常", "阅读", "浏览"),
+    "unknown_risk_tokens": ("外发", "泄露", "隐藏", "截图", "录屏", "共享", "粘贴"),
+    "sink_classification": [
+        {"type": "mail_attachment", "tokens": ("mail", "email", "attachment", "attach", "邮件", "附件")},
+        {"type": "cloud_sync", "tokens": ("cloud", "drive", "网盘", "云盘")},
+        {"type": "chat_upload", "tokens": ("wechat", "qq", "chatgpt", "chat", "微信")},
+        {"type": "removable_media", "tokens": ("usb", "removable", "可移动")},
+        {"type": "screen_share", "tokens": ("screen", "share", "共享", "屏幕共享")},
+    ],
+    "risk_levels": [
+        {"level": "completed", "tokens": ("complete", "sent", "success", "已发送", "完成", "成功")},
+        {"level": "content_exposed", "tokens": ("visible", "paste", "content", "粘贴", "可见", "共享")},
+        {"level": "selected_or_attached", "tokens": ("upload", "send", "attach", "选择", "附件", "上传", "发送")},
+    ],
+    "semantic_sensitive_aliases": {
+        "薪资": ("薪酬", "工资", "月薪"),
+        "工资": ("薪资", "薪酬", "月薪"),
+        "预算": ("成本", "财务", "budget"),
+        "账号": ("账户", "口令", "密码", "credential"),
+    },
+    "frontend_app_hints": {
+        "excel": "document_editor",
+        "word": "document_editor",
+        "chrome": "browser",
+        "edge": "browser",
+        "chatgpt": "ai_chat",
+        "wechat": "chat",
+        "qq": "chat",
+        "gmail": "mail",
+        "outlook": "mail",
+        "onedrive": "cloud_drive",
+        "zoom": "meeting",
+    },
+    "frontend_category_rules": [
+        {"category": "ai_chat", "tokens": ("prompt", "assistant", "chatbot", "大模型", "智能助手")},
+        {"category": "mail", "tokens": ("mail", "email", "inbox", "compose", "attachment", "邮箱", "收件箱", "附件")},
+        {"category": "cloud_drive", "tokens": ("cloud drive", "drive", "dropbox", "网盘", "云盘", "文件上传")},
+        {"category": "chat", "tokens": ("chat", "message", "messenger", "聊天", "群聊", "会话")},
+        {"category": "meeting", "tokens": ("meeting", "screen share", "屏幕共享", "会议")},
+        {"category": "browser", "tokens": ("browser", "chrome_widgetwin", "网页", "浏览器")},
+        {"category": "document_editor", "tokens": ("document", "spreadsheet", "office", "文档", "表格")},
+    ],
+    "risky_app_categories": ("browser", "ai_chat", "chat", "mail", "cloud_drive", "meeting"),
+}
 
-LOCAL_APP_TOKENS = ("excel", "word", "wps", "explorer", "finder", "notepad")
+
+@dataclass(frozen=True)
+class PolicyConfig:
+    sensitive_tokens: tuple[str, ...]
+    transfer_tokens: tuple[str, ...]
+    sink_tokens: tuple[str, ...]
+    normal_activity_tokens: tuple[str, ...]
+    unknown_risk_tokens: tuple[str, ...]
+    sink_classification: tuple[tuple[str, tuple[str, ...]], ...]
+    risk_levels: tuple[tuple[str, tuple[str, ...]], ...]
+    semantic_sensitive_aliases: dict[str, tuple[str, ...]]
+    frontend_app_hints: dict[str, str]
+    frontend_category_rules: tuple[tuple[str, tuple[str, ...]], ...]
+    risky_app_categories: frozenset[str]
+
+
+def load_policy_config(path: str | Path | None = None) -> PolicyConfig:
+    """加载策略配置；配置缺失时使用最小兜底，避免流水线直接不可用。"""
+
+    config_path = Path(path or os.getenv("DLD_POLICY_CONFIG") or DEFAULT_POLICY_PATH)
+    raw = dict(FALLBACK_POLICY)
+    if config_path.exists():
+        raw.update(json.loads(config_path.read_text(encoding="utf-8")))
+
+    sensitive = _tokens(raw, "sensitive_tokens", "DLD_SENSITIVE_TOKENS")
+    transfer = _tokens(raw, "transfer_tokens", "DLD_TRANSFER_TOKENS")
+    sink = _tokens(raw, "sink_tokens", "DLD_SINK_TOKENS")
+
+    return PolicyConfig(
+        sensitive_tokens=sensitive,
+        transfer_tokens=transfer,
+        sink_tokens=sink,
+        normal_activity_tokens=_tuple(raw.get("normal_activity_tokens")),
+        unknown_risk_tokens=_tuple(raw.get("unknown_risk_tokens")),
+        sink_classification=_classification(raw.get("sink_classification")),
+        risk_levels=_classification(raw.get("risk_levels"), label_key="level"),
+        semantic_sensitive_aliases=_alias_map(raw.get("semantic_sensitive_aliases")),
+        frontend_app_hints={normalize_text(key): str(value) for key, value in dict(raw.get("frontend_app_hints") or {}).items()},
+        frontend_category_rules=_classification(raw.get("frontend_category_rules"), label_key="category"),
+        risky_app_categories=frozenset(str(item) for item in _tuple(raw.get("risky_app_categories"))),
+    )
+
 
 CONFIRMED_RISK_LEVELS = {"content_exposed", "completed"}
 RISK_LEVELS = {"selected_or_attached", "in_progress", "content_exposed", "completed"}
 
-def _merge_env_tokens(defaults: tuple[str, ...], env_name: str) -> tuple[str, ...]:
-    tokens = list(defaults)
-    for token in os.getenv(env_name, "").split(","):
-        token = token.strip()
-        if token and token not in tokens:
-            tokens.append(token)
-    return tuple(tokens)
 
+def normalize_text(value: object) -> str:
+    """把文本统一为适合规则匹配的形式。"""
 
-SENSITIVE_TOKENS = _merge_env_tokens(DEFAULT_SENSITIVE_TOKENS, "DLD_SENSITIVE_TOKENS")
-TRANSFER_TOKENS = _merge_env_tokens(DEFAULT_TRANSFER_TOKENS, "DLD_TRANSFER_TOKENS")
-SINK_TOKENS = _merge_env_tokens(DEFAULT_SINK_TOKENS, "DLD_SINK_TOKENS")
+    text = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def contains_any(text: str, tokens: tuple[str, ...]) -> bool:
-    normalized = f" {text.lower()} "
-    compact = normalized.replace(" ", "")
-    return any(token.lower() in normalized or token.lower().replace(" ", "") in compact for token in tokens)
+    normalized = f" {normalize_text(text)} "
+    compact = re.sub(r"[\s_\-./\\:：,，。;；|]+", "", normalized)
+    for token in tokens:
+        normalized_token = normalize_text(token)
+        if not normalized_token:
+            continue
+        compact_token = re.sub(r"[\s_\-./\\:：,，。;；|]+", "", normalized_token)
+        if normalized_token in normalized or compact_token in compact:
+            return True
+    return False
 
 
 def classify_sink(text: str) -> str:
-    lowered = text.lower()
-    if contains_any(lowered, ("mail", "email", "attachment", "attach", "\u90ae\u4ef6", "\u9644\u4ef6")):
-        return "mail_attachment"
-    if contains_any(lowered, ("cloud", "drive", "dropbox", "onedrive", "\u7f51\u76d8", "\u4e91\u76d8")):
-        return "cloud_sync"
-    if contains_any(lowered, ("wechat", "qq", "feishu", "lark", "dingtalk", "chat", "\u5fae\u4fe1", "\u98de\u4e66", "\u9489\u9489")):
-        return "chat_upload"
-    if contains_any(lowered, ("usb", "removable", "\u53ef\u79fb\u52a8")):
-        return "removable_media"
-    if contains_any(lowered, ("screen", "share", "zoom", "teams", "\u5171\u4eab", "\u5c4f\u5e55\u5171\u4eab")):
-        return "screen_share"
+    for sink_type, tokens in POLICY.sink_classification:
+        if contains_any(text, tokens):
+            return sink_type
     return "network_upload"
 
 
 def risk_level_for_sink(text: str) -> str:
-    lowered = text.lower()
-    if contains_any(lowered, ("complete", "sent", "success", "\u5df2\u53d1\u9001", "\u5b8c\u6210", "\u6210\u529f")):
-        return "completed"
-    if contains_any(lowered, ("visible", "paste", "pasted", "content", "\u7c98\u8d34", "\u53ef\u89c1", "\u5171\u4eab")):
-        return "content_exposed"
-    if contains_any(lowered, ("upload", "send", "attach", "\u9009\u62e9", "\u9644\u4ef6", "\u4e0a\u4f20", "\u53d1\u9001")):
-        return "selected_or_attached"
+    for level, tokens in POLICY.risk_levels:
+        if contains_any(text, tokens):
+            return level
     return "in_progress"
+
+
+def semantic_sensitive_match(keyword: str, text: str) -> bool:
+    normalized_keyword = normalize_text(keyword)
+    normalized_text = normalize_text(text)
+    for token, aliases in POLICY.semantic_sensitive_aliases.items():
+        if normalize_text(token) in normalized_keyword and contains_any(normalized_text, aliases):
+            return True
+    return False
+
+
+def is_normal_only_context(text: str) -> bool:
+    """判断一段文本是否只是普通浏览/阅读，而没有风险动作。"""
+
+    return contains_any(text, NORMAL_ACTIVITY_TOKENS) and not contains_any(text, UNKNOWN_RISK_TOKENS + SINK_TOKENS + TRANSFER_TOKENS)
+
+
+def _tokens(raw: dict[str, Any], key: str, env_name: str) -> tuple[str, ...]:
+    tokens = list(_tuple(raw.get(key)))
+    for token in os.getenv(env_name, "").split(","):
+        token = token.strip()
+        if token:
+            tokens.append(token)
+    return _dedupe(tokens)
+
+
+def _tuple(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, list | tuple | set):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    return (str(value).strip(),) if str(value).strip() else ()
+
+
+def _classification(value: Any, *, label_key: str = "type") -> tuple[tuple[str, tuple[str, ...]], ...]:
+    items: list[tuple[str, tuple[str, ...]]] = []
+    for item in value or ():
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get(label_key) or "").strip()
+        tokens = _tuple(item.get("tokens"))
+        if label and tokens:
+            items.append((label, tokens))
+    return tuple(items)
+
+
+def _alias_map(value: Any) -> dict[str, tuple[str, ...]]:
+    aliases: dict[str, tuple[str, ...]] = {}
+    for key, items in dict(value or {}).items():
+        aliases[str(key)] = _tuple(items)
+    return aliases
+
+
+def _dedupe(tokens: list[str]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for token in tokens:
+        key = normalize_text(token)
+        if key and key not in seen:
+            seen.add(key)
+            result.append(token)
+    return tuple(result)
+
+
+POLICY = load_policy_config()
+
+SENSITIVE_TOKENS = POLICY.sensitive_tokens
+TRANSFER_TOKENS = POLICY.transfer_tokens
+SINK_TOKENS = POLICY.sink_tokens
+NORMAL_ACTIVITY_TOKENS = POLICY.normal_activity_tokens
+UNKNOWN_RISK_TOKENS = POLICY.unknown_risk_tokens
+APP_HINTS = POLICY.frontend_app_hints
+APP_CATEGORY_RULES = POLICY.frontend_category_rules
+RISKY_APP_CATEGORIES = POLICY.risky_app_categories

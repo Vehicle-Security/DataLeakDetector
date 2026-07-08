@@ -25,6 +25,18 @@ def original_file_from_metadata(record: dict[str, Any]) -> str:
     return normalize_path(record.get("source_file") or record.get("original_file") or upload.get("original_file") or "")
 
 
+def target_file_from_metadata(record: dict[str, Any]) -> str:
+    upload = record.get("upload_detection") if isinstance(record.get("upload_detection"), dict) else {}
+    return normalize_path(
+        record.get("destination_path")
+        or record.get("target_file")
+        or record.get("derived_file")
+        or upload.get("temp_file")
+        or record.get("file_path")
+        or ""
+    )
+
+
 def behavior_category(text: str) -> str:
     if contains_any(text, SINK_TOKENS):
         return "data_exfiltration_candidate"

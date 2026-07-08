@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .io import normalize_path, read_text
+from .sensitivity import extract_sensitive_sources
 
 
 @dataclass(frozen=True)
@@ -45,7 +43,7 @@ def discover_data_case(path: str | Path) -> DataCase:
     if not groundtruth_file.exists():
         groundtruth_file = None
 
-    sensitive = set(_sensitive_files_from_groundtruth(groundtruth_file))
+    sensitive = set(extract_sensitive_sources(groundtruth_file))
 
     return DataCase(
         case_dir=case_dir,
@@ -78,31 +76,4 @@ def _choose_video_file(case_dir: Path) -> Path | None:
     if not candidates:
         candidates = sorted(case_dir.glob("**/*.mp4"))
     return candidates[0] if candidates else None
-
-
-def _sensitive_files_from_groundtruth(path: Path | None) -> list[str]:
-    if path is None or not path.exists():
-        return []
-    text = read_text(path)
-    values: list[str] = []
-    try:
-        payload = json.loads(text, strict=False)
-        values.extend(_collect_sensitive_values(payload))
-    except json.JSONDecodeError:
-        pass
-    values.extend(re.findall(r'"sensitive_file_path"\s*:\s*"([^"]+)"', text))
-    return [normalize_path(value) for value in values if normalize_path(value)]
-
-
-def _collect_sensitive_values(value: Any) -> list[str]:
-    values: list[str] = []
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if key in {"sensitive_file_path", "sensitive_file", "original_file", "original_filename"}:
-                values.append(str(item or ""))
-            values.extend(_collect_sensitive_values(item))
-    elif isinstance(value, list):
-        for item in value:
-            values.extend(_collect_sensitive_values(item))
-    return values
 

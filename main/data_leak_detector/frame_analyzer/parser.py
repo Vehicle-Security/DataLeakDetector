@@ -1,4 +1,4 @@
-"""Parse OCR/VLM outputs into FrameObservation objects."""
+"""把 OCR/VLM 输出解析为 FrameObservation。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 from ..io import normalize_path, parse_timestamp_ms
 from ..models import FrameObservation
-from ..policy import SENSITIVE_TOKENS, SINK_TOKENS, TRANSFER_TOKENS, contains_any
+from ..policy import SENSITIVE_TOKENS, SINK_TOKENS, TRANSFER_TOKENS, contains_any, is_normal_only_context, semantic_sensitive_match
 
 
 @dataclass(frozen=True)
@@ -143,32 +143,20 @@ def _is_relevant(event: ParsedVisionEvent, keywords: list[str]) -> bool:
     compact = re.sub(r"\s+", "", text)
     for keyword in keywords:
         key = re.sub(r"\s+", "", keyword.lower())
-        if key and (key in compact or _semantic_sensitive_match(key, compact)):
+        if key and (key in compact or semantic_sensitive_match(key, compact)):
             return True
     return "unknown" in event.behavior_category.lower() or "未知" in event.behavior_category
 
 
 def _is_normal_only(text: str) -> bool:
-    normal_terms = ("正常", "normal", "reading", "阅读", "浏览")
-    risk_terms = (*SINK_TOKENS, *TRANSFER_TOKENS, "外发", "泄露", "隐藏", "截图", "录屏", "共享", "粘贴")
-    return any(term in text for term in normal_terms) and not contains_any(text, risk_terms)
-
-
-def _semantic_sensitive_match(keyword: str, text: str) -> bool:
-    variants = {
-        "薪资": ("薪酬", "工资", "月薪"),
-        "工资": ("薪资", "薪酬", "月薪"),
-        "预算": ("成本", "财务", "budget"),
-        "账号": ("账户", "口令", "密码", "credential"),
-    }
-    return any(alias in text for token, aliases in variants.items() if token in keyword for alias in aliases)
+    return is_normal_only_context(text)
 
 
 def _operation_to_pipeline(event: ParsedVisionEvent) -> str:
     text = f"{event.behavior_category} {event.operation_type} {event.description}".lower()
-    if contains_any(text, SINK_TOKENS) or any(term in text for term in ("外发", "泄露", "发送", "共享")):
+    if contains_any(text, SINK_TOKENS):
         return "external_sink_interaction"
-    if contains_any(text, TRANSFER_TOKENS) or any(term in text for term in ("截图", "录屏", "导出", "另存", "隐藏")):
+    if contains_any(text, TRANSFER_TOKENS):
         return "file_or_content_transfer"
     return event.operation_type or "visual_review"
 

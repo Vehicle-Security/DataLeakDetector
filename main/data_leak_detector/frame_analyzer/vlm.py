@@ -9,6 +9,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..policy import SENSITIVE_TOKENS, SINK_TOKENS, TRANSFER_TOKENS, UNKNOWN_RISK_TOKENS, contains_any
 from .config import VisionConfig
 from .frames import KeyFrame
 from .ocr import OcrResult
@@ -83,8 +84,9 @@ def choose_vlm_frames(
     candidates: list[VlmRequestFrame] = []
     for result in ocr_results:
         text = result.text.strip()
-        low_confidence = result.confidence < min_confidence
-        suspicious_text = any(term in text.lower() for term in ("upload", "send", "share", "password", "secret", "粘贴", "上传", "发送", "共享"))
+        ocr_available = result.provider not in {"none", "tesseract_missing"}
+        low_confidence = ocr_available and result.confidence < min_confidence
+        suspicious_text = contains_any(text, SINK_TOKENS + TRANSFER_TOKENS + SENSITIVE_TOKENS + UNKNOWN_RISK_TOKENS)
         if low_confidence or suspicious_text:
             candidates.append(VlmRequestFrame(result.frame, text, result.confidence))
     return candidates[:max_frames]

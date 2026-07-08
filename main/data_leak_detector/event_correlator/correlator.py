@@ -13,7 +13,7 @@ from ..io import flatten_text, looks_sensitive, normalize_logs, normalize_path, 
 from ..models import CorrelatedEvent
 from ..policy import SINK_TOKENS, TRANSFER_TOKENS, contains_any
 from .candidates import build_upload_candidates
-from .classification import behavior_category, guess_source_by_stem, original_file_from_metadata, operation_from_text
+from .classification import behavior_category, guess_source_by_stem, original_file_from_metadata, operation_from_text, target_file_from_metadata
 from .config import EventCorrelatorConfig
 from .facts import build_datalog_facts
 from .lineage import Lineage
@@ -86,9 +86,10 @@ class EventCorrelator:
         for event in sorted(logs, key=lambda item: item.timestamp_ms):
             process_key = (event.process_name or event.app_name or "").lower()
             original = original_file_from_metadata(event.raw)
+            target = target_file_from_metadata(event.raw) or event.file_path
             if original and self._resolve_original(original, sensitive_files, lineage):
-                lineage.add(event.file_path, original)
-                known.append(event.file_path)
+                lineage.add(target, original)
+                known.append(target)
 
             resolved = self._resolve_original(event.file_path, sensitive_files, lineage)
             if resolved and process_key:
@@ -96,21 +97,22 @@ class EventCorrelator:
 
             text = flatten_text(event.raw)
             if event.file_path and contains_any(text, TRANSFER_TOKENS):
-                source = original or guess_source_by_stem(event.file_path, known) or last_sensitive_by_process.get(process_key, "")
+                source = original or guess_source_by_stem(target, known) or last_sensitive_by_process.get(process_key, "")
                 if source and not self._resolve_original(source, sensitive_files, lineage):
                     source = ""
                 if source:
-                    lineage.add(event.file_path, source)
-                    known.append(event.file_path)
+                    lineage.add(target, source)
+                    known.append(target)
         return lineage
 
     def _correlate(self, logs, observations, sensitive_files: list[str], lineage: Lineage) -> list[CorrelatedEvent]:
         correlated: list[CorrelatedEvent] = []
         recent_sensitive: tuple[str, int] | None = None
+        observation_time_mode = self._observation_time_mode(observations)
 
         for log in sorted(logs, key=lambda item: item.timestamp_ms):
             original = self._resolve_original(log.file_path, sensitive_files, lineage)
-            observation = nearest_observation(log.timestamp_ms, observations, self.config.nearby_window_ms)
+            observation = nearest_observation(self._log_observation_time(log, observation_time_mode), observations, self.config.nearby_window_ms)
             if original and log.timestamp_ms:
                 recent_sensitive = (original, log.timestamp_ms)
 
@@ -138,7 +140,7 @@ class EventCorrelator:
             confidence = self.config.upload_confidence if behavior == "data_exfiltration_candidate" else 0.68
             if observation:
                 confidence = max(confidence, observation.confidence)
-            current_file = log.file_path or (observation.resource if observation and observation.resource else original)
+            current_file = target_file_from_metadata(log.raw) or log.file_path or (observation.resource if observation and observation.resource else original)
 
             correlated.append(
                 CorrelatedEvent(
@@ -158,6 +160,16 @@ class EventCorrelator:
             )
         correlated.extend(self._correlate_visual_only(observations, sensitive_files, lineage, start_index=len(correlated)))
         return correlated
+
+    def _observation_time_mode(self, observations) -> str:
+        # OCR/keyframe evidence uses video-relative milliseconds. Some imported
+        # or test VLM observations may already contain absolute epoch millis.
+        return "absolute" if any(item.start_ms > 10_000_000_000 for item in observations) else "video"
+
+    def _log_observation_time(self, log, mode: str) -> int:
+        if mode == "absolute":
+            return log.timestamp_ms
+        return log.video_time_ms if log.video_time_ms >= 0 else log.timestamp_ms
 
     def _resolve_original(self, file_path: str, sensitive_files: list[str], lineage: Lineage) -> str:
         if not file_path:

@@ -16,6 +16,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--log", "-l", default="", help="Path to a JSON/JSONL monitor log.")
     parser.add_argument("--case", "-c", default="", help="Path to a spec/data sample case directory.")
     parser.add_argument("--video", "-v", default="", help="Optional screen recording path for frame analysis.")
+    parser.add_argument("--groundtruth", default="", help="Optional groundtruth.json path for verdict evaluation.")
     parser.add_argument("--output-dir", "-o", default="", help="Optional directory for the JSON report.")
     parser.add_argument("--sensitive-file", action="append", default=[], help="Sensitive file path. Can be repeated.")
     parser.add_argument("--observations", default="", help="Optional precomputed frame observation JSON.")
@@ -41,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         if not args.log:
             parser.error("either --log or --case is required")
-        report = run_pipeline(log_file=args.log, video_file=args.video, **common_args)
+        report = run_pipeline(log_file=args.log, video_file=args.video, groundtruth_file=args.groundtruth or None, **common_args)
 
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0

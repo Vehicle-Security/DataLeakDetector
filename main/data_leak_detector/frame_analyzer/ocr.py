@@ -1,4 +1,4 @@
-"""OCR provider abstraction and prefiltering utilities."""
+"""OCR provider abstraction for reading every selected keyframe."""
 
 from __future__ import annotations
 
@@ -56,8 +56,78 @@ class TesseractOcrProvider:
         return OcrResult(frame=frame, text=" ".join(words), confidence=round(confidence, 3), provider="tesseract")
 
 
+class RapidOcrProvider:
+    """Fast local OCR provider backed by RapidOCR/ONNX Runtime.
+
+    RapidOCR works well on Chinese Windows UI text and can use CUDA through
+    onnxruntime-gpu when `DLD_RAPIDOCR_USE_CUDA=1` and CUDAExecutionProvider is
+    available. It still falls back to CPU through ONNX Runtime if CUDA is not
+    active.
+    """
+
+    def __init__(self, *, use_cuda: bool = False, max_image_side: int = 1_280):
+        self.use_cuda = use_cuda
+        self.max_image_side = max_image_side
+        self._engine = None
+
+    def read(self, frame: KeyFrame) -> OcrResult:
+        try:
+            engine = self._get_engine()
+            output = engine(self._load_image(frame.image_path))
+        except ImportError:
+            return OcrResult(frame=frame, text="", confidence=0.0, provider="rapidocr_missing")
+        except Exception as exc:
+            return OcrResult(frame=frame, text=f"[rapidocr_error:{type(exc).__name__}:{exc}]", confidence=0.0, provider="rapidocr_error")
+
+        texts = [str(item).strip() for item in getattr(output, "txts", ()) if str(item).strip()]
+        scores = []
+        for score in getattr(output, "scores", ()):
+            try:
+                scores.append(float(score))
+            except (TypeError, ValueError):
+                continue
+        confidence = sum(scores) / len(scores) if scores else 0.0
+        return OcrResult(frame=frame, text=" ".join(texts), confidence=round(confidence, 3), provider="rapidocr")
+
+    def _get_engine(self):
+        if self._engine is not None:
+            return self._engine
+
+        from rapidocr import RapidOCR
+
+        params = {"Global.log_level": "warning"}
+        if self.use_cuda:
+            _preload_onnxruntime_cuda_dlls()
+            params["EngineConfig.onnxruntime.use_cuda"] = True
+        self._engine = RapidOCR(params=params)
+        return self._engine
+
+    def _load_image(self, image_path: str):
+        if self.max_image_side <= 0:
+            return image_path
+        try:
+            import cv2
+        except ImportError:
+            return image_path
+
+        image = cv2.imread(image_path)
+        if image is None:
+            return image_path
+        height, width = image.shape[:2]
+        longest = max(height, width)
+        if longest <= self.max_image_side:
+            return image
+
+        scale = self.max_image_side / float(longest)
+        size = (max(1, int(width * scale)), max(1, int(height * scale)))
+        return cv2.resize(image, size, interpolation=cv2.INTER_AREA)
+
+
 def build_ocr_provider(config: VisionConfig) -> OcrProvider:
-    if config.ocr_provider.lower() == "tesseract":
+    provider = config.ocr_provider.lower()
+    if provider == "rapidocr":
+        return RapidOcrProvider(use_cuda=config.rapidocr_use_cuda, max_image_side=config.ocr_max_image_side)
+    if provider == "tesseract":
         return TesseractOcrProvider()
     return NoopOcrProvider()
 
@@ -65,3 +135,18 @@ def build_ocr_provider(config: VisionConfig) -> OcrProvider:
 def run_ocr(frames: list[KeyFrame], config: VisionConfig) -> list[OcrResult]:
     provider = build_ocr_provider(config)
     return [provider.read(frame) for frame in frames]
+
+
+def _preload_onnxruntime_cuda_dlls() -> None:
+    try:
+        import onnxruntime as ort
+    except ImportError:
+        return
+
+    preload = getattr(ort, "preload_dlls", None)
+    if preload is None:
+        return
+    try:
+        preload(directory="")
+    except TypeError:
+        preload()

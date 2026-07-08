@@ -1,43 +1,10 @@
-"""Frontend application recognition and unknown-risk helpers."""
+"""前端应用识别和未知风险提示。"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..policy import SINK_TOKENS, contains_any
-
-KNOWN_APP_HINTS = {
-    "excel": "document_editor",
-    "word": "document_editor",
-    "wps": "document_editor",
-    "notepad": "document_editor",
-    "chrome": "browser",
-    "edge": "browser",
-    "firefox": "browser",
-    "safari": "browser",
-    "chatgpt": "ai_chat",
-    "claude": "ai_chat",
-    "gemini": "ai_chat",
-    "kimi": "ai_chat",
-    "deepseek": "ai_chat",
-    "qwen": "ai_chat",
-    "wechat": "chat",
-    "qq": "chat",
-    "feishu": "chat",
-    "lark": "chat",
-    "dingtalk": "chat",
-    "gmail": "mail",
-    "outlook": "mail",
-    "163": "mail",
-    "onedrive": "cloud_drive",
-    "dropbox": "cloud_drive",
-    "google drive": "cloud_drive",
-    "baidu": "cloud_drive",
-    "zoom": "meeting",
-    "teams": "meeting",
-}
-
-RISKY_APP_CATEGORIES = {"browser", "ai_chat", "chat", "mail", "cloud_drive", "meeting"}
+from ..policy import APP_CATEGORY_RULES, APP_HINTS, RISKY_APP_CATEGORIES, SINK_TOKENS, contains_any, normalize_text
 
 
 @dataclass(frozen=True)
@@ -49,11 +16,25 @@ class AppIdentity:
 
 
 def identify_frontend_app(app_name: str = "", window_title: str = "", ocr_text: str = "") -> AppIdentity:
-    text = f"{app_name} {window_title} {ocr_text}".lower()
-    for hint, category in KNOWN_APP_HINTS.items():
+    text = normalize_text(f"{app_name} {window_title} {ocr_text}")
+    for hint, category in APP_HINTS.items():
         if hint in text:
             risk = "external_capable" if category in RISKY_APP_CATEGORIES else "local_or_benign"
             return AppIdentity(app_name=app_name or hint, category=category, known=True, risk_hint=risk)
+
+    for category, tokens in APP_CATEGORY_RULES:
+        if contains_any(text, tokens):
+            risk = "external_capable_inferred" if category in RISKY_APP_CATEGORIES else "local_or_benign_inferred"
+            return AppIdentity(app_name=app_name or _label_from_text(window_title, ocr_text), category=category, known=False, risk_hint=risk)
+
     if contains_any(text, SINK_TOKENS):
         return AppIdentity(app_name=app_name or "unknown", category="external_sink", known=False, risk_hint="unknown_external_sink")
     return AppIdentity(app_name=app_name or "unknown", category="unknown", known=False, risk_hint="unknown_app_near_sensitive_activity")
+
+
+def _label_from_text(window_title: str, ocr_text: str) -> str:
+    for candidate in (window_title, ocr_text):
+        text = str(candidate or "").strip()
+        if text:
+            return text[:80]
+    return "unknown"

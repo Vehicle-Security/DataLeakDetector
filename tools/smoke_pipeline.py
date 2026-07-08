@@ -24,6 +24,8 @@ def main() -> int:
     )
     print(json.dumps(report["input"], ensure_ascii=False, indent=2))
     print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
+    print(json.dumps(report["detection_core"], ensure_ascii=False, indent=2))
+    print(json.dumps(report["verdict"], ensure_ascii=False, indent=2))
     print(json.dumps(report["graph"], ensure_ascii=False, indent=2))
     return 0
 
