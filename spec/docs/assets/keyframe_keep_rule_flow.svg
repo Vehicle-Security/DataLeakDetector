@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="900" viewBox="0 0 1280 900" role="img" aria-labelledby="title desc">
+  <title id="title">关键帧保留规则流程图</title>
+  <desc id="desc">候选帧依次经过窗口首帧、精确重复、日志锚点、视觉差分、最小间隔、感知哈希近重复判断，最后决定保留或丢弃。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2f3b45" />
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 28px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #17212b; }
+      .subtitle { font: 400 15px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #53606d; }
+      .box { fill: #ffffff; stroke: #cfd7e2; stroke-width: 1.6; }
+      .decision { fill: #fff7e6; stroke: #d19a2e; stroke-width: 1.8; }
+      .keep { fill: #dff3e8; stroke: #4c9a6a; stroke-width: 2; }
+      .drop { fill: #ffe1df; stroke: #d7564a; stroke-width: 2; }
+      .label { font: 700 16px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #1f2a34; text-anchor: middle; }
+      .body { font: 400 13px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #53606d; text-anchor: middle; }
+      .edge { stroke: #2f3b45; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .edge-label { font: 700 12px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #34404b; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1280" height="900" />
+  <text x="52" y="58" class="title">窗口内候选帧保留规则</text>
+  <text x="52" y="84" class="subtitle">近距离但确实变化的状态可以保留；真正重复的帧由视觉差分和哈希去掉。</text>
+
+  <rect x="510" y="118" width="260" height="58" rx="14" class="box" />
+  <text x="640" y="142" class="label">读到候选帧</text>
+  <text x="640" y="163" class="body">window.start + n * step</text>
+
+  <path class="edge" d="M640 176 L640 218" />
+  <polygon points="640,218 780,278 640,338 500,278" class="decision" />
+  <text x="640" y="272" class="label">窗口第一帧?</text>
+  <text x="640" y="294" class="body">previous_small is None</text>
+
+  <path class="edge" d="M780 278 C850 278 850 176 910 176" />
+  <text x="820" y="254" class="edge-label">是</text>
+  <rect x="910" y="146" width="190" height="60" rx="14" class="keep" />
+  <text x="1005" y="171" class="label">保留</text>
+  <text x="1005" y="192" class="body">建立窗口参考帧</text>
+
+  <path class="edge" d="M640 338 L640 382" />
+  <text x="654" y="364" class="edge-label">否</text>
+  <polygon points="640,382 800,442 640,502 480,442" class="decision" />
+  <text x="640" y="435" class="label">几乎完全重复?</text>
+  <text x="640" y="457" class="body">delta &lt;= exact threshold</text>
+
+  <path class="edge" d="M800 442 C880 442 880 340 940 340" />
+  <text x="842" y="420" class="edge-label">是</text>
+  <rect x="940" y="310" width="190" height="60" rx="14" class="drop" />
+  <text x="1035" y="335" class="label">丢弃</text>
+  <text x="1035" y="356" class="body">窗口内重复画面</text>
+
+  <path class="edge" d="M640 502 L640 546" />
+  <text x="654" y="528" class="edge-label">否</text>
+  <polygon points="640,546 780,606 640,666 500,606" class="decision" />
+  <text x="640" y="599" class="label">靠近日志锚点?</text>
+  <text x="640" y="621" class="body">near anchor_ms</text>
+
+  <path class="edge" d="M500 606 C430 606 430 706 370 706" />
+  <text x="456" y="586" class="edge-label">是</text>
+  <rect x="180" y="676" width="190" height="60" rx="14" class="keep" />
+  <text x="275" y="701" class="label">保留</text>
+  <text x="275" y="722" class="body">锚点帧优先</text>
+
+  <path class="edge" d="M640 666 L640 710" />
+  <text x="654" y="692" class="edge-label">否</text>
+  <polygon points="640,710 800,770 640,830 480,770" class="decision" />
+  <text x="640" y="763" class="label">视觉变化足够?</text>
+  <text x="640" y="785" class="body">score &gt;= diff threshold</text>
+
+  <path class="edge" d="M800 770 C875 770 875 706 940 706" />
+  <text x="842" y="748" class="edge-label">否</text>
+  <rect x="940" y="676" width="190" height="60" rx="14" class="drop" />
+  <text x="1035" y="701" class="label">丢弃</text>
+  <text x="1035" y="722" class="body">画面变化太小</text>
+
+  <path class="edge" d="M480 770 C405 770 405 805 330 805" />
+  <text x="438" y="752" class="edge-label">是</text>
+  <polygon points="330,745 470,805 330,865 190,805" class="decision" />
+  <text x="330" y="798" class="label">时间间隔限流?</text>
+  <text x="330" y="820" class="body">min_keep_gap hit</text>
+
+  <path class="edge" d="M190 805 C138 805 138 760 180 760" />
+  <text x="154" y="784" class="edge-label">是</text>
+  <rect x="180" y="730" width="190" height="60" rx="14" class="drop" />
+  <text x="275" y="755" class="label">丢弃</text>
+  <text x="275" y="776" class="body">距离上一帧太近</text>
+
+  <path class="edge" d="M470 805 C522 805 522 805 574 805" />
+  <text x="510" y="786" class="edge-label">否</text>
+  <polygon points="720,745 860,805 720,865 580,805" class="decision" />
+  <text x="720" y="798" class="label">哈希近重复?</text>
+  <text x="720" y="820" class="body">hamming too small</text>
+
+  <path class="edge" d="M860 805 C930 805 930 736 940 736" />
+  <text x="888" y="786" class="edge-label">是</text>
+
+  <path class="edge" d="M720 865 C720 880 1005 880 1005 850" />
+  <text x="746" y="884" class="edge-label">否</text>
+  <rect x="910" y="820" width="190" height="60" rx="14" class="keep" />
+  <text x="1005" y="845" class="label">保留</text>
+  <text x="1005" y="866" class="body">有新增视觉证据</text>
+</svg>

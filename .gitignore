@@ -13,8 +13,8 @@ __pycache__/
 *.swo
 
 # 忽略文档
-**/doc/
-**/docs/
+# **/doc/
+# **/docs/
 # 忽略输入输出
 **/gradio_temp/
 **/inputs/
@@ -76,3 +76,4 @@ ScreenMonitor/win_monitor/recordings
 
 .claude/
 .codex/
+spec/docs/方案(只负责参考不用于展示）.md

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="620" viewBox="0 0 1280 620" role="img" aria-labelledby="title desc">
+  <title id="title">Cypher 候选事件查询流程</title>
+  <desc id="desc">Neo4j 先查询 is_candidate 为真的事件，再查询这些事件附近的活跃应用，最终交给窗口构造函数。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2f3b45" />
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 28px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #17212b; }
+      .subtitle { font: 400 15px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #53606d; }
+      .box { fill: #ffffff; stroke: #cfd7e2; stroke-width: 1.5; }
+      .query { fill: #f4f7fb; stroke: #9aa9ba; stroke-width: 1.5; }
+      .out { fill: #e5f6ed; stroke: #4c9a6a; stroke-width: 1.8; }
+      .label { font: 700 17px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #1f2a34; }
+      .body { font: 400 13px "Consolas", "Microsoft YaHei", monospace; fill: #44515e; }
+      .small { font: 400 13px "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #5f6b76; }
+      .arrow { stroke: #2f3b45; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1280" height="620" />
+  <text x="52" y="58" class="title">用 Cypher 把日志图收敛成窗口输入</text>
+  <text x="52" y="84" class="subtitle">第一段查询拿候选事件；第二段查询这些候选事件附近的风险应用和传输应用。</text>
+
+  <rect x="60" y="145" width="270" height="112" rx="14" class="box" />
+  <text x="84" y="181" class="label">输入</text>
+  <text x="84" y="212" class="small">case_id</text>
+  <text x="84" y="236" class="small">DLDLogEvent 图节点</text>
+
+  <path class="arrow" d="M330 201 C368 201 374 201 412 201" />
+
+  <rect x="412" y="116" width="380" height="170" rx="14" class="query" />
+  <text x="436" y="150" class="label">查询 1：候选事件 ID</text>
+  <text x="436" y="181" class="body">MATCH (c)-[:HAS_EVENT]->(e)</text>
+  <text x="436" y="205" class="body">WHERE e.video_time_ms >= 0</text>
+  <text x="436" y="229" class="body">  AND e.is_candidate = true</text>
+  <text x="436" y="253" class="body">RETURN e.event_id ORDER BY time</text>
+
+  <path class="arrow" d="M792 201 C830 201 836 201 874 201" />
+
+  <rect x="874" y="145" width="330" height="112" rx="14" class="out" />
+  <text x="898" y="181" class="label">输出 1</text>
+  <text x="898" y="212" class="small">candidate_ids</text>
+  <text x="898" y="236" class="small">例：log_2232, log_2233, ...</text>
+
+  <path class="arrow" d="M1039 257 C1039 300 1039 310 1039 350" />
+
+  <rect x="690" y="350" width="514" height="168" rx="14" class="query" />
+  <text x="714" y="384" class="label">查询 2：候选事件附近的 active_apps</text>
+  <text x="714" y="415" class="body">OPTIONAL MATCH near:DLDLogEvent</text>
+  <text x="714" y="439" class="body">WHERE near.time within radius</text>
+  <text x="714" y="463" class="body">  AND (near.is_risky_app OR near.is_sink_action</text>
+  <text x="714" y="487" class="body">       OR near.is_transfer_action)</text>
+
+  <path class="arrow" d="M690 434 C644 434 628 434 582 434" />
+
+  <rect x="342" y="350" width="240" height="168" rx="14" class="out" />
+  <text x="366" y="384" class="label">输出 2</text>
+  <text x="366" y="416" class="small">event_id -> active_apps</text>
+  <text x="366" y="442" class="small">log_2232 -> fsquirt, Edge</text>
+  <text x="366" y="468" class="small">用于 VLM 提示和窗口解释</text>
+
+  <path class="arrow" d="M342 434 C296 434 280 434 234 434" />
+
+  <rect x="60" y="350" width="174" height="168" rx="14" class="box" />
+  <text x="84" y="384" class="label">窗口构造</text>
+  <text x="84" y="416" class="small">candidate event</text>
+  <text x="84" y="442" class="small">+ active_apps</text>
+  <text x="84" y="468" class="small">-> AnalysisWindow</text>
+</svg>
