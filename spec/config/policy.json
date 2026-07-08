@@ -1,0 +1,244 @@
+{
+  "sensitive_tokens": [
+    "salary",
+    "payroll",
+    "confidential",
+    "secret",
+    "contract",
+    "finance",
+    "customer",
+    "password",
+    "budget",
+    "strategy",
+    "internal",
+    "board",
+    "credential",
+    "工资",
+    "薪资",
+    "薪酬",
+    "月薪",
+    "机密",
+    "绝密",
+    "合同",
+    "财务",
+    "客户",
+    "密码",
+    "账号",
+    "账户",
+    "预算",
+    "成本",
+    "战略",
+    "内部",
+    "董事会"
+  ],
+  "transfer_tokens": [
+    "copy",
+    "copied",
+    "paste",
+    "pasted",
+    "clipboard",
+    "created",
+    "modified",
+    "rename",
+    "renamed",
+    "compress",
+    "compressed",
+    "convert",
+    "export",
+    "split",
+    "screenshot",
+    "screen recording",
+    "recording",
+    "复制",
+    "粘贴",
+    "剪贴板",
+    "创建",
+    "修改",
+    "重命名",
+    "压缩",
+    "转换",
+    "导出",
+    "另存",
+    "截图",
+    "截屏",
+    "录屏",
+    "派生"
+  ],
+  "sink_tokens": [
+    "upload",
+    "send",
+    "share",
+    "mail",
+    "email",
+    "attach",
+    "attachment",
+    "http_post",
+    "post ",
+    "network",
+    "cloud",
+    "drive",
+    "dropbox",
+    "onedrive",
+    "wechat",
+    "qq",
+    "feishu",
+    "lark",
+    "dingtalk",
+    "teams",
+    "zoom",
+    "chatgpt",
+    "claude",
+    "gemini",
+    "kimi",
+    "usb",
+    "removable",
+    "上传",
+    "发送",
+    "分享",
+    "外发",
+    "泄露",
+    "附件",
+    "邮件",
+    "网盘",
+    "云盘",
+    "共享",
+    "屏幕共享",
+    "可移动",
+    "微信",
+    "飞书",
+    "钉钉"
+  ],
+  "normal_activity_tokens": [
+    "normal",
+    "reading",
+    "正常",
+    "阅读",
+    "浏览"
+  ],
+  "unknown_risk_tokens": [
+    "外发",
+    "泄露",
+    "隐藏",
+    "截图",
+    "录屏",
+    "共享",
+    "粘贴",
+    "发送",
+    "导出",
+    "另存"
+  ],
+  "sink_classification": [
+    {
+      "type": "mail_attachment",
+      "tokens": ["mail", "email", "attachment", "attach", "邮件", "附件"]
+    },
+    {
+      "type": "cloud_sync",
+      "tokens": ["cloud", "drive", "dropbox", "onedrive", "网盘", "云盘"]
+    },
+    {
+      "type": "chat_upload",
+      "tokens": ["wechat", "qq", "feishu", "lark", "dingtalk", "chat", "微信", "飞书", "钉钉"]
+    },
+    {
+      "type": "removable_media",
+      "tokens": ["usb", "removable", "可移动"]
+    },
+    {
+      "type": "screen_share",
+      "tokens": ["screen", "share", "zoom", "teams", "共享", "屏幕共享"]
+    }
+  ],
+  "risk_levels": [
+    {
+      "level": "completed",
+      "tokens": ["complete", "completed", "sent", "success", "已发送", "完成", "成功"]
+    },
+    {
+      "level": "content_exposed",
+      "tokens": ["visible", "paste", "pasted", "content", "粘贴", "可见", "共享"]
+    },
+    {
+      "level": "selected_or_attached",
+      "tokens": ["upload", "send", "attach", "selected", "选择", "附件", "上传", "发送"]
+    }
+  ],
+  "semantic_sensitive_aliases": {
+    "薪资": ["薪酬", "工资", "月薪"],
+    "工资": ["薪资", "薪酬", "月薪"],
+    "预算": ["成本", "财务", "budget"],
+    "账号": ["账户", "口令", "密码", "credential"]
+  },
+  "frontend_app_hints": {
+    "excel": "document_editor",
+    "word": "document_editor",
+    "wps": "document_editor",
+    "notepad": "document_editor",
+    "chrome": "browser",
+    "edge": "browser",
+    "firefox": "browser",
+    "safari": "browser",
+    "chatgpt": "ai_chat",
+    "claude": "ai_chat",
+    "gemini": "ai_chat",
+    "kimi": "ai_chat",
+    "deepseek": "ai_chat",
+    "qwen": "ai_chat",
+    "wechat": "chat",
+    "qq": "chat",
+    "feishu": "chat",
+    "lark": "chat",
+    "dingtalk": "chat",
+    "gmail": "mail",
+    "outlook": "mail",
+    "163": "mail",
+    "onedrive": "cloud_drive",
+    "dropbox": "cloud_drive",
+    "google drive": "cloud_drive",
+    "baidu": "cloud_drive",
+    "zoom": "meeting",
+    "teams": "meeting"
+  },
+  "frontend_category_rules": [
+    {
+      "category": "ai_chat",
+      "tokens": ["prompt", "assistant", "chatbot", "llm", "大模型", "智能助手", "AI 对话", "AI聊天"]
+    },
+    {
+      "category": "mail",
+      "tokens": ["mail", "email", "inbox", "compose", "attachment", "邮箱", "邮件", "收件箱", "写邮件", "附件"]
+    },
+    {
+      "category": "cloud_drive",
+      "tokens": ["cloud drive", "drive", "dropbox", "netdisk", "网盘", "云盘", "文件上传", "上传文件"]
+    },
+    {
+      "category": "chat",
+      "tokens": ["chat", "message", "messenger", "im", "聊天", "群聊", "会话", "发送消息"]
+    },
+    {
+      "category": "meeting",
+      "tokens": ["meeting", "screen share", "share screen", "会议", "屏幕共享", "共享屏幕"]
+    },
+    {
+      "category": "browser",
+      "tokens": ["browser", "chrome_widgetwin", "网页", "浏览器"]
+    },
+    {
+      "category": "document_editor",
+      "tokens": ["document", "spreadsheet", "office", "文档", "表格", "演示文稿"]
+    },
+    {
+      "category": "removable_media",
+      "tokens": ["bluetooth", "usb", "removable", "蓝牙", "可移动设备", "移动存储"]
+    }
+  ],
+  "risky_app_categories": [
+    "browser",
+    "ai_chat",
+    "chat",
+    "mail",
+    "cloud_drive",
+    "meeting"
+  ]
+}

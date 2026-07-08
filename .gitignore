@@ -39,6 +39,9 @@ artifacts/
 **/tests/
 !tests/
 !tests/**
+tests/**/__pycache__/
+tests/**/*.pyc
+tests/**/*.pyo
 **/checkMemory.py
 
 #忽略配置文件

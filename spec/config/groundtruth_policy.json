@@ -1,0 +1,33 @@
+{
+  "operation_paths": [
+    "operations"
+  ],
+  "operation_text_fields": [
+    "operation",
+    "operation_type",
+    "description",
+    "label",
+    "risk_type"
+  ],
+  "leak_tokens": [
+    "直接外发",
+    "完成外传",
+    "外传",
+    "泄露",
+    "泄漏",
+    "上传",
+    "发送",
+    "exfiltration",
+    "leak"
+  ],
+  "non_leak_tokens": [
+    "正常操作",
+    "正常",
+    "normal"
+  ],
+  "unknown_risk_tokens": [
+    "潜在隐藏行为",
+    "隐藏行为",
+    "可疑"
+  ]
+}
