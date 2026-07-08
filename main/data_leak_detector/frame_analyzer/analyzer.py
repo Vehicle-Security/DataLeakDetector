@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from .config import VisionConfig
 from .frames import AnalysisWindow, KeyFrameDuplicate, select_keyframes_detailed
 from .ocr import OcrResult, run_ocr
 from .parser import parse_vlm_response, vision_events_to_observations
+from .roi import OcrFrameCandidate, prepare_ocr_candidates
 from .vlm import OpenAICompatibleVlmClient, choose_vlm_frames
 
 
@@ -190,15 +192,32 @@ def _run_vision_pipeline(
     warnings: list[str] = []
     errors: list[str] = []
 
+    vision_started = time.perf_counter()
+    windows_started = time.perf_counter()
     windows = analysis_windows if analysis_windows is not None else build_analysis_windows(logs, sensitive_files, config)
+    windows_seconds = time.perf_counter() - windows_started
+
+    keyframes_started = time.perf_counter()
     keyframe_selection = select_keyframes_detailed(video_path, windows, config)
+    keyframes_seconds = time.perf_counter() - keyframes_started
     keyframes = keyframe_selection.keyframes
     warnings.extend(keyframe_selection.warnings)
 
+    ocr_prepare_started = time.perf_counter()
     ocr_frames = _select_ocr_frames_for_ocr(keyframes)
-    raw_ocr_results = run_ocr(ocr_frames, config) if ocr_frames else []
+    ocr_candidates = prepare_ocr_candidates(ocr_frames, config)
+    ocr_candidate_frames = [candidate.frame for candidate in ocr_candidates if candidate.selected_for_ocr]
+    ocr_prepare_seconds = time.perf_counter() - ocr_prepare_started
+
+    ocr_started = time.perf_counter()
+    raw_roi_ocr_results = run_ocr(ocr_candidate_frames, config) if ocr_candidate_frames else []
+    ocr_seconds = time.perf_counter() - ocr_started
+
+    ocr_postprocess_started = time.perf_counter()
+    raw_ocr_results = _merge_roi_ocr_results(raw_roi_ocr_results, ocr_candidates)
     ocr_results = _dedupe_ocr_results(raw_ocr_results, config)
     observations.extend(_ocr_observations(ocr_results, config, start_index=start_index))
+    ocr_postprocess_seconds = time.perf_counter() - ocr_postprocess_started
 
     vlm_frames = choose_vlm_frames(
         ocr_results,
@@ -210,12 +229,15 @@ def _run_vision_pipeline(
         keyframes=keyframes,
         raw_all_keyframes=keyframe_selection.raw_keyframes,
         duplicate_keyframes=keyframe_selection.duplicates,
+        ocr_candidates=ocr_candidates,
         ocr_selected_frames=[item.frame for item in vlm_frames],
         ocr_results=ocr_results,
     )
     vlm_events = 0
+    vlm_seconds = 0.0
     if vlm_frames and config.mode.lower() in {"hybrid", "vlm"}:
         try:
+            vlm_started = time.perf_counter()
             active_apps = sorted({app for window in windows for app in window.active_apps})
             response = OpenAICompatibleVlmClient(config).analyze(
                 vlm_frames,
@@ -227,7 +249,9 @@ def _run_vision_pipeline(
             observations.extend(
                 vision_events_to_observations(events, source="vlm", start_index=start_index + len(observations))
             )
+            vlm_seconds = time.perf_counter() - vlm_started
         except Exception as exc:
+            vlm_seconds = time.perf_counter() - vlm_started if "vlm_started" in locals() else 0.0
             errors.append(f"vlm_failed: {type(exc).__name__}: {exc}")
 
     stats = {
@@ -240,10 +264,21 @@ def _run_vision_pipeline(
         "keyframes_raw_all": len(keyframe_selection.raw_keyframes),
         "keyframe_duplicates": len(keyframe_selection.duplicates),
         "ocr_input_keyframes": len(ocr_frames),
+        "ocr_roi_candidates": len(ocr_candidates),
+        "ocr_roi_selected": len(ocr_candidate_frames),
         "ocr_frames": len(ocr_results),
         "ocr_raw_frames": len(raw_ocr_results),
         "vlm_frames": len(vlm_frames),
         "vlm_events": vlm_events,
+        "timing_seconds": {
+            "windows": round(windows_seconds, 3),
+            "keyframes": round(keyframes_seconds, 3),
+            "ocr_prepare": round(ocr_prepare_seconds, 3),
+            "ocr": round(ocr_seconds, 3),
+            "ocr_postprocess": round(ocr_postprocess_seconds, 3),
+            "vlm": round(vlm_seconds, 3),
+            "total": round(time.perf_counter() - vision_started, 3),
+        },
         "artifacts": artifact_manifest,
     }
     return observations, stats, warnings, errors
@@ -257,6 +292,7 @@ def _export_vision_artifacts(
     ocr_results: list[OcrResult],
     raw_all_keyframes: list[Any] | None = None,
     duplicate_keyframes: list[KeyFrameDuplicate] | None = None,
+    ocr_candidates: list[OcrFrameCandidate] | None = None,
 ) -> dict[str, Any]:
     if artifact_dir is None:
         return {}
@@ -264,19 +300,38 @@ def _export_vision_artifacts(
     root = Path(artifact_dir)
     raw_all_dir = root / "keyframes_raw_all"
     raw_dir = root / "keyframes_raw"
+    roi_dir = root / "keyframes_ocr_roi"
     selected_dir = root / "keyframes_ocr_selected"
     raw_all_dir.mkdir(parents=True, exist_ok=True)
     raw_dir.mkdir(parents=True, exist_ok=True)
+    roi_dir.mkdir(parents=True, exist_ok=True)
     selected_dir.mkdir(parents=True, exist_ok=True)
 
     raw_all_files = _copy_frame_images(raw_all_keyframes if raw_all_keyframes is not None else keyframes, raw_all_dir)
     raw_files = _copy_frame_images(keyframes, raw_dir)
+    roi_files = _copy_frame_images([item.frame for item in ocr_candidates or [] if item.selected_for_ocr], roi_dir)
     selected_files = _copy_frame_images(ocr_selected_frames, selected_dir)
     ocr_file = root / "ocr_results.json"
     ocr_file.write_text(json.dumps([_ocr_result_to_dict(item) for item in ocr_results], ensure_ascii=False, indent=2), encoding="utf-8")
+    roi_file = root / "ocr_roi_regions.json"
+    roi_file.write_text(json.dumps([_ocr_candidate_to_dict(item) for item in ocr_candidates or []], ensure_ascii=False, indent=2), encoding="utf-8")
     duplicate_file = root / "keyframe_duplicates.json"
     duplicate_file.write_text(
         json.dumps([_keyframe_duplicate_to_dict(item) for item in duplicate_keyframes or []], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    manifest_file = root / "artifact_manifest.json"
+    manifest_file.write_text(
+        json.dumps(
+            {
+                "keyframes_raw_all_files": raw_all_files,
+                "keyframes_raw_files": raw_files,
+                "keyframes_ocr_roi_files": roi_files,
+                "keyframes_ocr_selected_files": selected_files,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
@@ -284,12 +339,18 @@ def _export_vision_artifacts(
         "root_dir": str(root),
         "keyframes_raw_all_dir": str(raw_all_dir),
         "keyframes_raw_dir": str(raw_dir),
+        "keyframes_ocr_roi_dir": str(roi_dir),
         "keyframes_ocr_selected_dir": str(selected_dir),
         "ocr_results_file": str(ocr_file),
+        "ocr_roi_regions_file": str(roi_file),
         "keyframe_duplicates_file": str(duplicate_file),
-        "keyframes_raw_all_files": raw_all_files,
-        "keyframes_raw_files": raw_files,
-        "keyframes_ocr_selected_files": selected_files,
+        "artifact_manifest_file": str(manifest_file),
+        "counts": {
+            "keyframes_raw_all_files": len(raw_all_files),
+            "keyframes_raw_files": len(raw_files),
+            "keyframes_ocr_roi_files": len(roi_files),
+            "keyframes_ocr_selected_files": len(selected_files),
+        },
     }
 
 
@@ -320,6 +381,29 @@ def _ocr_result_to_dict(result: OcrResult) -> dict[str, Any]:
     }
 
 
+def _ocr_candidate_to_dict(candidate: OcrFrameCandidate) -> dict[str, Any]:
+    return {
+        "frame_id": candidate.source_frame.frame_id,
+        "roi_frame_id": candidate.frame.frame_id,
+        "timestamp_ms": candidate.source_frame.timestamp_ms,
+        "source_image_path": candidate.source_frame.image_path,
+        "roi_image_path": candidate.frame.image_path,
+        "selected_for_ocr": candidate.selected_for_ocr,
+        "reason": candidate.reason,
+        "regions": [
+            {
+                "x": region.x,
+                "y": region.y,
+                "width": region.width,
+                "height": region.height,
+                "text_density": region.text_density,
+                "edge_density": region.edge_density,
+            }
+            for region in candidate.regions
+        ],
+    }
+
+
 def _keyframe_duplicate_to_dict(duplicate: KeyFrameDuplicate) -> dict[str, Any]:
     return {
         "frame_id": duplicate.frame.frame_id,
@@ -346,6 +430,28 @@ def _select_ocr_frames_for_ocr(frames: list[Any]) -> list[Any]:
         seen_timestamps.add(timestamp)
         selected.append(frame)
     return selected
+
+
+def _merge_roi_ocr_results(results: list[OcrResult], candidates: list[OcrFrameCandidate]) -> list[OcrResult]:
+    candidates_by_frame = {candidate.frame.frame_id: candidate for candidate in candidates}
+    grouped: dict[str, list[OcrResult]] = {}
+    source_frames: dict[str, Any] = {}
+    for result in results:
+        candidate = candidates_by_frame.get(result.frame.frame_id)
+        source_frame = candidate.source_frame if candidate is not None else result.frame
+        key = source_frame.frame_id
+        source_frames[key] = source_frame
+        grouped.setdefault(key, []).append(result)
+
+    merged: list[OcrResult] = []
+    for frame_id, items in grouped.items():
+        texts = [item.text.strip() for item in items if item.text.strip()]
+        confidences = [item.confidence for item in items if item.confidence > 0]
+        providers = sorted({item.provider for item in items})
+        confidence = sum(confidences) / len(confidences) if confidences else 0.0
+        provider = "+".join(providers) + ":roi" if providers else "roi"
+        merged.append(OcrResult(frame=source_frames[frame_id], text=" ".join(texts), confidence=round(confidence, 3), provider=provider))
+    return sorted(merged, key=lambda item: item.frame.timestamp_ms)
 
 
 def _dedupe_ocr_results(results: list[OcrResult], config: VisionConfig) -> list[OcrResult]:

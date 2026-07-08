@@ -48,8 +48,24 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("either --log or --case is required")
         report = run_pipeline(log_file=args.log, video_file=args.video, groundtruth_file=args.groundtruth or None, **common_args)
 
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    print(json.dumps(_build_cli_summary(report), ensure_ascii=False, indent=2))
     return 0
+
+
+def _build_cli_summary(report: dict) -> dict:
+    """Keep command output readable; full evidence lives in report/detail files."""
+
+    return {
+        "report_id": report.get("report_id", ""),
+        "conclusion": report.get("conclusion", ""),
+        "report_file": report.get("report_file", ""),
+        "detail_files": report.get("detail_files", {}),
+        "summary": report.get("summary", {}),
+        "log_miner": report.get("log_miner", {}),
+        "vision": report.get("frame_analyzer", {}).get("statistics", {}).get("vision", {}),
+        "verdict": report.get("verdict", {}),
+        "graph": report.get("graph", {}),
+    }
 
 
 if __name__ == "__main__":

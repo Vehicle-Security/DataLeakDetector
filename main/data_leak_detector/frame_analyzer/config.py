@@ -31,6 +31,11 @@ class VisionConfig:
     ocr_min_confidence: float = 0.70
     ocr_max_image_side: int = 1_280
     ocr_workers: int = 1
+    ocr_roi_enabled: bool = False
+    ocr_roi_window_first: bool = True
+    ocr_roi_min_text_density: float = 0.002
+    ocr_roi_max_regions: int = 3
+    ocr_roi_padding: int = 24
     rapidocr_use_cuda: bool = False
     vlm_provider: str = "openai_compatible"
     vlm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -65,6 +70,11 @@ class VisionConfig:
             ocr_min_confidence=_env_float("DLD_OCR_MIN_CONFIDENCE", 0.70),
             ocr_max_image_side=_env_int("DLD_OCR_MAX_IMAGE_SIDE", 1_280),
             ocr_workers=max(1, _env_int("DLD_OCR_WORKERS", 1)),
+            ocr_roi_enabled=_env_bool("DLD_OCR_ROI_ENABLED", False),
+            ocr_roi_window_first=_env_bool("DLD_OCR_ROI_WINDOW_FIRST", True),
+            ocr_roi_min_text_density=_env_float("DLD_OCR_ROI_MIN_TEXT_DENSITY", 0.002),
+            ocr_roi_max_regions=max(1, _env_int("DLD_OCR_ROI_MAX_REGIONS", 3)),
+            ocr_roi_padding=max(0, _env_int("DLD_OCR_ROI_PADDING", 24)),
             rapidocr_use_cuda=_env_bool("DLD_RAPIDOCR_USE_CUDA", False),
             vlm_provider=os.getenv("DLD_VLM_PROVIDER", "openai_compatible"),
             vlm_base_url=os.getenv("DLD_VLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
@@ -104,6 +114,11 @@ class VisionConfig:
             ocr_min_confidence=self.ocr_min_confidence,
             ocr_max_image_side=self.ocr_max_image_side,
             ocr_workers=self.ocr_workers,
+            ocr_roi_enabled=self.ocr_roi_enabled,
+            ocr_roi_window_first=self.ocr_roi_window_first,
+            ocr_roi_min_text_density=self.ocr_roi_min_text_density,
+            ocr_roi_max_regions=self.ocr_roi_max_regions,
+            ocr_roi_padding=self.ocr_roi_padding,
             rapidocr_use_cuda=self.rapidocr_use_cuda,
             vlm_provider=self.vlm_provider,
             vlm_base_url=self.vlm_base_url,

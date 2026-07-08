@@ -15,6 +15,7 @@ from data_leak_detector.frame_analyzer.config import VisionConfig
 from data_leak_detector.frame_analyzer.frames import KeyFrame, KeyFrameDuplicate, _hamming, _should_keep_frame
 from data_leak_detector.frame_analyzer.ocr import OcrResult, RapidOcrProvider, _rapidocr_provider_name
 from data_leak_detector.frame_analyzer.parser import parse_vlm_response, vision_events_to_observations
+from data_leak_detector.frame_analyzer.roi import detect_foreground_window_region, detect_text_regions
 from data_leak_detector.frame_analyzer.vlm import choose_vlm_frames
 from data_leak_detector.log_mining import build_analysis_windows, mine_analysis_windows
 from data_leak_detector.neo4j.importer import fingerprint_records, records_to_graph_events
@@ -253,6 +254,10 @@ def test_ocr_reads_all_selected_keyframes() -> None:
     assert [frame.frame_id for frame in selected] == ["w0_0", "w0_1", "w0_2", "w1_0", "w1_1", "w1_2"]
 
 
+def test_ocr_roi_is_experimental_and_disabled_by_default() -> None:
+    assert VisionConfig().ocr_roi_enabled is False
+
+
 def test_ocr_dedupes_same_timestamp_from_overlapping_windows() -> None:
     frames = [
         KeyFrame("medium", 1000, "frame_a.jpg", 0.9, "medium:visual_change", window_id="window_0"),
@@ -381,6 +386,37 @@ def test_rapidocr_provider_name_reports_cuda_when_primary_session_uses_cuda() ->
     assert _rapidocr_provider_name(Engine()) == "rapidocr_cuda"
 
 
+def test_opencv_roi_detects_synthetic_text_region() -> None:
+    cv2 = __import__("cv2")
+    np = __import__("numpy")
+    image = np.full((220, 520, 3), 255, dtype="uint8")
+    cv2.putText(image, "Attach secret.pdf", (40, 95), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 0, 0), 3)
+
+    regions = detect_text_regions(image, VisionConfig(ocr_roi_enabled=True))
+
+    assert regions
+    assert regions[0].width > 120
+    assert regions[0].height > 20
+
+
+def test_opencv_roi_prefers_large_foreground_window() -> None:
+    cv2 = __import__("cv2")
+    np = __import__("numpy")
+    image = np.zeros((500, 800, 3), dtype="uint8")
+    image[:, :] = (40, 120, 60)
+    cv2.rectangle(image, (120, 70), (680, 410), (245, 245, 245), -1)
+    cv2.rectangle(image, (120, 70), (680, 410), (80, 80, 80), 3)
+    cv2.putText(image, "Foreground Window", (170, 160), cv2.FONT_HERSHEY_SIMPLEX, 1.3, (0, 0, 0), 3)
+
+    region = detect_foreground_window_region(image, VisionConfig(ocr_roi_window_first=True))
+
+    assert region is not None
+    assert 80 <= region.x <= 140
+    assert 40 <= region.y <= 90
+    assert region.width >= 520
+    assert region.height >= 320
+
+
 def test_vision_artifact_export_writes_raw_and_ocr_selected_frames(tmp_path: Path) -> None:
     image = tmp_path / "frame.jpg"
     image.write_bytes(b"fake image")
@@ -400,10 +436,13 @@ def test_vision_artifact_export_writes_raw_and_ocr_selected_frames(tmp_path: Pat
 
     assert Path(manifest["keyframes_raw_all_dir"]).exists()
     assert Path(manifest["keyframes_raw_dir"]).exists()
+    assert Path(manifest["keyframes_ocr_roi_dir"]).exists()
     assert Path(manifest["keyframes_ocr_selected_dir"]).exists()
-    assert len(manifest["keyframes_raw_all_files"]) == 2
-    assert len(manifest["keyframes_raw_files"]) == 1
-    assert len(manifest["keyframes_ocr_selected_files"]) == 1
+    assert manifest["counts"]["keyframes_raw_all_files"] == 2
+    assert manifest["counts"]["keyframes_raw_files"] == 1
+    assert Path(manifest["artifact_manifest_file"]).exists()
+    assert Path(manifest["ocr_roi_regions_file"]).exists()
+    assert manifest["counts"]["keyframes_ocr_selected_files"] == 1
     assert "same_timestamp" in Path(manifest["keyframe_duplicates_file"]).read_text(encoding="utf-8")
     assert "文字文稿1.docx" in Path(manifest["ocr_results_file"]).read_text(encoding="utf-8")
 
@@ -719,7 +758,9 @@ def test_pipeline_writes_report_for_inline_leak(tmp_path: Path) -> None:
     assert saved_report["event_correlator"]["counts"]["raw_log_events"] == len(_records())
     assert "raw_log_events" not in saved_report["event_correlator"]
     assert event_details.exists()
-    assert len(json.loads(event_details.read_text(encoding="utf-8"))["raw_log_events"]) == len(_records())
+    event_details_payload = json.loads(event_details.read_text(encoding="utf-8"))
+    assert event_details_payload["raw_log_events_count"] == len(_records())
+    assert "raw_log_events" not in event_details_payload
     assert report["conclusion"] == "data_leak_risk_detected"
     assert report["graph"]["status"] == "skipped"
     assert report["log_miner"]["source"] == "in_memory"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import re
 from typing import Any
@@ -165,8 +166,11 @@ def _write_detail_files(payload: dict[str, Any], detail_dir: Path) -> dict[str, 
         "upload_candidates": event_correlator.get("upload_candidates", []),
         "file_lineage": event_correlator.get("file_lineage", {}),
         "datalog_facts": event_correlator.get("datalog_facts", []),
-        "raw_log_events": event_correlator.get("raw_log_events", []),
+        "raw_log_events_count": len(event_correlator.get("raw_log_events", [])),
+        "raw_log_events_source": payload.get("input", {}).get("log_file", ""),
     }
+    if _env_bool("DLD_WRITE_RAW_LOG_DETAILS", False):
+        event_detail["raw_log_events"] = event_correlator.get("raw_log_events", [])
     details["event_correlator_details"] = _write_json(detail_dir / "event_correlator_details.json", event_detail)
     details["frame_observations"] = _write_json(detail_dir / "frame_observations.json", frame_analyzer.get("observations", []))
     details["leak_paths"] = _write_json(detail_dir / "leak_paths.json", leak_reasoner.get("leak_paths", []))
@@ -176,6 +180,13 @@ def _write_detail_files(payload: dict[str, Any], detail_dir: Path) -> dict[str, 
 def _write_json(path: Path, payload: Any) -> str:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return str(path)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _build_readable_report(payload: dict[str, Any], detail_files: dict[str, str]) -> dict[str, Any]:
