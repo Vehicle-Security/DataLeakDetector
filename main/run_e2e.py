@@ -1,39 +1,48 @@
-"""DataLeakDetector 规范流水线的命令行入口。
-
-这个文件的存在是为了让运维人员无需直接导入 Python 对象即可运行项目。
-它刻意保持轻量：参数解析和 JSON 输出放在这里，而检测逻辑保留在 data_leak_detector.pipeline 中。
-"""
+"""Command-line entry point for the canonical DataLeakDetector pipeline."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from pathlib import Path
 
-from data_leak_detector import run_pipeline
+from data_leak_detector import run_data_case, run_pipeline
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="运行 DataLeakDetector 端到端流程。")
-    parser.add_argument("--log", "-l", required=True, help="JSON/JSONL 监控日志路径。")
-    parser.add_argument("--video", "-v", default="", help="用于报告元数据的可选视频路径。")
-    parser.add_argument("--output-dir", "-o", default="", help="用于 JSON 报告的可选输出目录。")
-    parser.add_argument("--sensitive-file", action="append", default=[], help="敏感文件路径，可重复传入。")
-    parser.add_argument("--observations", default="", help="可选的预计算帧观察 JSON。")
-    parser.add_argument("--neo4j", action="store_true", help="将本次运行的报告图写入 Neo4j。")
-    parser.add_argument("--neo4j-strict", action="store_true", help="Neo4j 写入失败时直接报错。")
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    parser = argparse.ArgumentParser(description="Run DataLeakDetector end-to-end.")
+    parser.add_argument("--log", "-l", default="", help="Path to a JSON/JSONL monitor log.")
+    parser.add_argument("--case", "-c", default="", help="Path to a spec/data sample case directory.")
+    parser.add_argument("--video", "-v", default="", help="Optional screen recording path for frame analysis.")
+    parser.add_argument("--output-dir", "-o", default="", help="Optional directory for the JSON report.")
+    parser.add_argument("--sensitive-file", action="append", default=[], help="Sensitive file path. Can be repeated.")
+    parser.add_argument("--observations", default="", help="Optional precomputed frame observation JSON.")
+    parser.add_argument("--vision", action="store_true", help="Enable OCR/VLM-assisted frame analysis.")
+    parser.add_argument("--vision-mode", choices=["hybrid", "ocr", "vlm"], default="", help="Frame analysis mode.")
+    parser.add_argument("--max-vlm-frames", type=int, default=0, help="Maximum keyframes sent to VLM.")
+    parser.add_argument("--neo4j", action="store_true", help="Write the report graph to Neo4j for this run.")
+    parser.add_argument("--neo4j-strict", action="store_true", help="Fail if Neo4j writing fails.")
     args = parser.parse_args(argv)
 
-    report = run_pipeline(
-        log_file=args.log,
-        video_file=args.video,
-        output_dir=args.output_dir or None,
-        sensitive_files=args.sensitive_file,
-        observations_file=args.observations or None,
-        neo4j_enabled=True if args.neo4j else None,
-        neo4j_strict=True if args.neo4j_strict else None,
-    )
+    common_args = {
+        "output_dir": args.output_dir or None,
+        "sensitive_files": args.sensitive_file,
+        "observations_file": args.observations or None,
+        "neo4j_enabled": True if args.neo4j else None,
+        "neo4j_strict": True if args.neo4j_strict else None,
+        "vision_enabled": True if args.vision else None,
+        "vision_mode": args.vision_mode or None,
+        "max_vlm_frames": args.max_vlm_frames or None,
+    }
+    if args.case:
+        report = run_data_case(args.case, **common_args)
+    else:
+        if not args.log:
+            parser.error("either --log or --case is required")
+        report = run_pipeline(log_file=args.log, video_file=args.video, **common_args)
+
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 

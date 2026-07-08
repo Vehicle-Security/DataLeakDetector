@@ -1,7 +1,4 @@
-"""确定性事件关联的配置对象。
-
-这些参数与关联器分离开来，这样测试和未来部署就可以调整时间窗口与默认置信度，而不用修改工作流代码。
-"""
+"""Configuration for deterministic event correlation."""
 
 from __future__ import annotations
 
@@ -10,8 +7,14 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class EventCorrelatorConfig:
-    """用于确定性证据绑定的一组小参数。"""
+    """Small knobs for evidence binding.
+
+    Initial sensitive sources should normally come from groundtruth.json or
+    explicit CLI arguments. Derived files are inferred through lineage and
+    reasoning, not inserted into the initial source set.
+    """
 
     nearby_window_ms: int = 5 * 60 * 1000
     upload_confidence: float = 0.86
     transfer_confidence: float = 0.72
+    infer_sensitive_from_logs: bool = False

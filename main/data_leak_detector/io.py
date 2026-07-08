@@ -90,7 +90,9 @@ def flatten_text(value: Any) -> str:
 
 
 def normalize_path(value: object) -> str:
-    return str(value or "").strip().strip('"').replace("\\", "/")
+    text = str(value or "").strip().strip('"').replace("\\", "/")
+    text = re.sub(r"^([A-Za-z]:)/+", r"\1/", text)
+    return re.sub(r"/{2,}", "/", text)
 
 
 def basename(value: object) -> str:
@@ -149,5 +151,5 @@ def _only_objects(value: Any) -> list[dict[str, Any]]:
 
 def _repair_json(text: str) -> str:
     repaired = re.sub(r",(\s*[}\]])", r"\1", text)
-    repaired = re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", repaired)
+    repaired = re.sub(r'(?<!\\)\\(?!["\\/bfnrtu])', r"\\\\", repaired)
     return repaired

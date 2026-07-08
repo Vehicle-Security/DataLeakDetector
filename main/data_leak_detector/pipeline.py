@@ -1,9 +1,4 @@
-"""单一规范检测流水线的端到端编排。
-
-本模块是唯一把 FrameAnalyzer、EventCorrelator、LeakReasoner、报告序列化和可选 Neo4j 持久化
-串联起来的地方。把编排逻辑保留在这里，可以让各阶段独立可测，并防止旧的三目录结构
-以隐藏兼容代码的形式回归。
-"""
+"""End-to-end orchestration for the canonical DataLeakDetector pipeline."""
 
 from __future__ import annotations
 
@@ -11,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .datasets import discover_data_case
 from .event_correlator import EventCorrelator
 from .frame_analyzer import analyze_video_behavior
 from .graph import Neo4jConfig, write_report_to_neo4j
@@ -27,8 +23,11 @@ def run_pipeline(
     observations_file: str | Path | None = None,
     neo4j_enabled: bool | None = None,
     neo4j_strict: bool | None = None,
+    vision_enabled: bool | None = None,
+    vision_mode: str | None = None,
+    max_vlm_frames: int | None = None,
 ) -> dict[str, Any]:
-    """运行规范的 FrameAnalyzer -> EventCorrelator -> LeakReasoner 流程。"""
+    """Run FrameAnalyzer -> EventCorrelator -> LeakReasoner."""
 
     log_path = Path(log_file)
     video_text = str(video_file or "")
@@ -41,6 +40,9 @@ def run_pipeline(
         logs=logs,
         sensitive_files=sensitive_files or [],
         observations_file=observations_file,
+        vision_enabled=vision_enabled,
+        vision_mode=vision_mode,
+        max_vlm_frames=max_vlm_frames,
     )
     correlation_bundle = EventCorrelator().run(
         {
@@ -74,7 +76,7 @@ def run_pipeline(
             "engine": "python_taint",
             "leak_paths": [item.to_dict() for item in leak_paths],
         },
-        conclusion="发现数据泄露风险" if leak_paths else "未发现已确认的数据泄露",
+        conclusion="data_leak_risk_detected" if leak_paths else "no_confirmed_data_leak",
     )
     payload = report.to_dict()
     payload["event_correlator"]["raw_log_events"] = records
@@ -87,6 +89,38 @@ def run_pipeline(
         report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         payload["report_file"] = str(report_path)
     return payload
+
+
+def run_data_case(
+    case_dir: str | Path,
+    *,
+    output_dir: str | Path | None = None,
+    sensitive_files: list[str] | None = None,
+    observations_file: str | Path | None = None,
+    neo4j_enabled: bool | None = None,
+    neo4j_strict: bool | None = None,
+    vision_enabled: bool | None = None,
+    vision_mode: str | None = None,
+    max_vlm_frames: int | None = None,
+) -> dict[str, Any]:
+    """Run a real spec/data sample directory."""
+
+    case = discover_data_case(case_dir)
+    merged_sensitive = list(dict.fromkeys([*case.sensitive_files, *(sensitive_files or [])]))
+    report = run_pipeline(
+        log_file=case.log_file,
+        video_file=case.video_file or "",
+        output_dir=output_dir,
+        sensitive_files=merged_sensitive,
+        observations_file=observations_file,
+        neo4j_enabled=neo4j_enabled,
+        neo4j_strict=neo4j_strict,
+        vision_enabled=vision_enabled,
+        vision_mode=vision_mode,
+        max_vlm_frames=max_vlm_frames,
+    )
+    report["input"].update(case.to_input_metadata())
+    return report
 
 
 def _write_graph(
