@@ -12,17 +12,20 @@ from data_leak_detector.frame_analyzer import analyze_video_behavior
 from data_leak_detector.frame_analyzer.analyzer import _dedupe_ocr_results, _export_vision_artifacts, _select_ocr_frames_for_ocr
 from data_leak_detector.frame_analyzer.apps import identify_frontend_app
 from data_leak_detector.frame_analyzer.config import VisionConfig
-from data_leak_detector.frame_analyzer.frames import KeyFrame, _hamming, _should_keep_frame, build_analysis_windows
-from data_leak_detector.frame_analyzer.ocr import OcrResult, RapidOcrProvider
+from data_leak_detector.frame_analyzer.frames import KeyFrame, KeyFrameDuplicate, _hamming, _should_keep_frame
+from data_leak_detector.frame_analyzer.ocr import OcrResult, RapidOcrProvider, _rapidocr_provider_name
 from data_leak_detector.frame_analyzer.parser import parse_vlm_response, vision_events_to_observations
 from data_leak_detector.frame_analyzer.vlm import choose_vlm_frames
-from data_leak_detector.graph.store import Neo4jGraphStore
+from data_leak_detector.log_mining import build_analysis_windows, mine_analysis_windows
+from data_leak_detector.neo4j.importer import fingerprint_records, records_to_graph_events
+from data_leak_detector.neo4j.store import Neo4jGraphStore
 from data_leak_detector.groundtruth import evaluate_groundtruth
 from data_leak_detector.io import normalize_logs
 from data_leak_detector.io import load_json_records
 from data_leak_detector.leak_reasoner import DatalogEngine
 from data_leak_detector.policy import contains_any, load_policy_config
 from data_leak_detector.sensitivity import SensitiveSourceConfig, extract_sensitive_sources
+from data_leak_detector.pipeline import _build_report_id
 
 
 def _records() -> list[dict]:
@@ -117,6 +120,75 @@ def test_analysis_windows_sample_strong_upload_events_more_densely() -> None:
     assert windows[0].max_keyframes == 24
 
 
+def test_default_log_miner_keeps_in_memory_window_contract() -> None:
+    records = [
+        {
+            "timestamp": "2026-01-01T12:00:00",
+            "event_type": "file_selected",
+            "file_path": "C:/Users/alice/Documents/secret.docx",
+            "window_info": {"window_title": "Upload files - Unknown Cloud"},
+            "extra": {"raw_operation": "file_selected", "relative_timestamp": 60.0},
+        }
+    ]
+    logs = normalize_logs(records)
+
+    result = mine_analysis_windows(
+        case_id="unit",
+        log_file="logs.json",
+        records=records,
+        logs=logs,
+        sensitive_files=["C:/Users/alice/Documents/secret.docx"],
+        vision_config=VisionConfig(),
+        neo4j_log_miner=False,
+    )
+
+    assert result.source == "in_memory"
+    assert result.windows[0].priority == "strong"
+    assert result.windows[0].start_ms == 55_000
+    assert result.metadata["neo4j_enabled"] is False
+
+
+def test_neo4j_log_miner_graph_event_payload_is_case_scoped() -> None:
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "opened",
+                "file_path": "C:/Users/alice/Documents/secret.docx",
+                "process_info": {"process_name": "WINWORD.EXE"},
+            }
+        ]
+    )
+
+    events = records_to_graph_events("case_a", logs, ["C:/Users/alice/Documents/secret.docx"])
+
+    assert events[0]["id"] == "case_a:event:log_0"
+    assert events[0]["file_id"].startswith("case_a:file:")
+    assert events[0]["file_path_lower"].endswith("secret.docx")
+    assert events[0]["is_sensitive_related"] is True
+    assert events[0]["is_candidate"] is True
+    assert len(fingerprint_records([logs[0].raw])) == 64
+
+
+def test_neo4j_log_miner_does_not_promote_risky_app_without_activity() -> None:
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "app_switch",
+                "file_path": "",
+                "app_name": "Edge",
+                "window_info": {"window_title": "New tab"},
+            }
+        ]
+    )
+
+    events = records_to_graph_events("case_a", logs, [])
+
+    assert events[0]["is_risky_app"] is True
+    assert events[0]["is_candidate"] is False
+
+
 def test_bluetooth_transfer_window_keeps_separate_strong_budget() -> None:
     logs = normalize_logs(
         [
@@ -179,6 +251,18 @@ def test_ocr_reads_all_selected_keyframes() -> None:
     selected = _select_ocr_frames_for_ocr(frames)
 
     assert [frame.frame_id for frame in selected] == ["w0_0", "w0_1", "w0_2", "w1_0", "w1_1", "w1_2"]
+
+
+def test_ocr_dedupes_same_timestamp_from_overlapping_windows() -> None:
+    frames = [
+        KeyFrame("medium", 1000, "frame_a.jpg", 0.9, "medium:visual_change", window_id="window_0"),
+        KeyFrame("weak_duplicate", 1000, "frame_b.jpg", 0.9, "weak:visual_change", window_id="window_1"),
+        KeyFrame("later", 2000, "frame_c.jpg", 0.9, "strong:visual_change", window_id="window_2"),
+    ]
+
+    selected = _select_ocr_frames_for_ocr(frames)
+
+    assert [frame.frame_id for frame in selected] == ["medium", "later"]
 
 
 def test_ocr_keeps_medium_and_strong_keyframes() -> None:
@@ -281,10 +365,27 @@ def test_rapidocr_provider_downscales_large_images(tmp_path: Path) -> None:
     assert max(loaded.shape[:2]) == 800
 
 
+def test_rapidocr_provider_name_reports_cuda_when_primary_session_uses_cuda() -> None:
+    class Session:
+        def get_providers(self) -> list[str]:
+            return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+
+    class Part:
+        def __init__(self) -> None:
+            self.session = Session()
+
+    class Engine:
+        def __init__(self) -> None:
+            self.text_det = Part()
+
+    assert _rapidocr_provider_name(Engine()) == "rapidocr_cuda"
+
+
 def test_vision_artifact_export_writes_raw_and_ocr_selected_frames(tmp_path: Path) -> None:
     image = tmp_path / "frame.jpg"
     image.write_bytes(b"fake image")
     raw_frame = KeyFrame("raw", 1000, str(image), 0.9, "strong:visual_change", window_id="window_0")
+    duplicate_frame = KeyFrame("duplicate", 1000, str(image), 0.9, "weak:visual_change", window_id="window_1")
     selected_frame = KeyFrame("selected", 2000, str(image), 0.8, "strong:visual_change", window_id="window_0")
     ocr = OcrResult(selected_frame, "蓝牙文件传送 文字文稿1.docx", 0.95, "rapidocr")
 
@@ -293,12 +394,17 @@ def test_vision_artifact_export_writes_raw_and_ocr_selected_frames(tmp_path: Pat
         keyframes=[raw_frame],
         ocr_selected_frames=[selected_frame],
         ocr_results=[ocr],
+        raw_all_keyframes=[raw_frame, duplicate_frame],
+        duplicate_keyframes=[KeyFrameDuplicate(duplicate_frame, "raw", "same_timestamp", 0.0, 0)],
     )
 
+    assert Path(manifest["keyframes_raw_all_dir"]).exists()
     assert Path(manifest["keyframes_raw_dir"]).exists()
     assert Path(manifest["keyframes_ocr_selected_dir"]).exists()
+    assert len(manifest["keyframes_raw_all_files"]) == 2
     assert len(manifest["keyframes_raw_files"]) == 1
     assert len(manifest["keyframes_ocr_selected_files"]) == 1
+    assert "same_timestamp" in Path(manifest["keyframe_duplicates_file"]).read_text(encoding="utf-8")
     assert "文字文稿1.docx" in Path(manifest["ocr_results_file"]).read_text(encoding="utf-8")
 
 
@@ -463,6 +569,12 @@ def test_dataset_case_discovery_uses_real_data_layout(tmp_path: Path) -> None:
     assert case.sensitive_files == ("C:/Users/alice/Documents/customer_salary.xlsx",)
 
 
+def test_report_id_includes_case_name_for_artifact_folders() -> None:
+    report_id = _build_report_id(Path("logs.json"), 528, "1-email-fastmail-1")
+
+    assert report_id == "1-email-fastmail-1_logs_528"
+
+
 def test_sensitive_source_extraction_is_configurable(tmp_path: Path) -> None:
     groundtruth = tmp_path / "groundtruth.json"
     groundtruth.write_text(
@@ -602,8 +714,16 @@ def test_pipeline_writes_report_for_inline_leak(tmp_path: Path) -> None:
 
     assert report["summary"]["leak_paths"] == 1
     assert Path(report["report_file"]).exists()
+    saved_report = json.loads(Path(report["report_file"]).read_text(encoding="utf-8"))
+    event_details = Path(saved_report["detail_files"]["event_correlator_details"])
+    assert saved_report["event_correlator"]["counts"]["raw_log_events"] == len(_records())
+    assert "raw_log_events" not in saved_report["event_correlator"]
+    assert event_details.exists()
+    assert len(json.loads(event_details.read_text(encoding="utf-8"))["raw_log_events"]) == len(_records())
     assert report["conclusion"] == "data_leak_risk_detected"
     assert report["graph"]["status"] == "skipped"
+    assert report["log_miner"]["source"] == "in_memory"
+    assert report["frame_analyzer"]["statistics"]["vision"]["log_mining"]["source"] == "in_memory"
 
 
 def test_neo4j_writer_generates_graph_queries(tmp_path: Path) -> None:

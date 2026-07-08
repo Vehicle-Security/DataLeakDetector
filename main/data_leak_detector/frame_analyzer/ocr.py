@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Protocol
 
 from .config import VisionConfig
 from .frames import KeyFrame
+
+_RAPIDOCR_ENGINE_CACHE: dict[tuple[bool, int], object] = {}
 
 
 @dataclass(frozen=True)
@@ -87,19 +91,30 @@ class RapidOcrProvider:
             except (TypeError, ValueError):
                 continue
         confidence = sum(scores) / len(scores) if scores else 0.0
-        return OcrResult(frame=frame, text=" ".join(texts), confidence=round(confidence, 3), provider="rapidocr")
+        return OcrResult(
+            frame=frame,
+            text=" ".join(texts),
+            confidence=round(confidence, 3),
+            provider=_rapidocr_provider_name(engine),
+        )
 
     def _get_engine(self):
         if self._engine is not None:
             return self._engine
-
-        from rapidocr import RapidOCR
+        cache_key = (self.use_cuda, threading.get_ident())
+        cached = _RAPIDOCR_ENGINE_CACHE.get(cache_key)
+        if cached is not None:
+            self._engine = cached
+            return self._engine
 
         params = {"Global.log_level": "warning"}
         if self.use_cuda:
             _preload_onnxruntime_cuda_dlls()
             params["EngineConfig.onnxruntime.use_cuda"] = True
+        from rapidocr import RapidOCR
+
         self._engine = RapidOCR(params=params)
+        _RAPIDOCR_ENGINE_CACHE[cache_key] = self._engine
         return self._engine
 
     def _load_image(self, image_path: str):
@@ -133,11 +148,32 @@ def build_ocr_provider(config: VisionConfig) -> OcrProvider:
 
 
 def run_ocr(frames: list[KeyFrame], config: VisionConfig) -> list[OcrResult]:
-    provider = build_ocr_provider(config)
-    return [provider.read(frame) for frame in frames]
+    if not frames:
+        return []
+    workers = max(1, int(config.ocr_workers or 1))
+    if workers == 1:
+        provider = build_ocr_provider(config)
+        return [provider.read(frame) for frame in frames]
+
+    thread_local = threading.local()
+
+    def read(frame: KeyFrame) -> OcrResult:
+        provider = getattr(thread_local, "provider", None)
+        if provider is None:
+            provider = build_ocr_provider(config)
+            thread_local.provider = provider
+        return provider.read(frame)
+
+    with ThreadPoolExecutor(max_workers=min(workers, len(frames)), thread_name_prefix="dld_ocr") as executor:
+        return list(executor.map(read, frames))
 
 
 def _preload_onnxruntime_cuda_dlls() -> None:
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pass
+
     try:
         import onnxruntime as ort
     except ImportError:
@@ -150,3 +186,22 @@ def _preload_onnxruntime_cuda_dlls() -> None:
         preload(directory="")
     except TypeError:
         preload()
+
+
+def _rapidocr_provider_name(engine: object) -> str:
+    for part_name in ("text_det", "text_cls", "text_rec"):
+        part = getattr(engine, part_name, None)
+        if part is None:
+            continue
+        for value in getattr(part, "__dict__", {}).values():
+            session = getattr(value, "session", value)
+            get_providers = getattr(session, "get_providers", None)
+            if get_providers is None:
+                continue
+            try:
+                providers = list(get_providers())
+            except Exception:
+                continue
+            if providers and providers[0] == "CUDAExecutionProvider":
+                return "rapidocr_cuda"
+    return "rapidocr_cpu"

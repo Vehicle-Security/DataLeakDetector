@@ -75,3 +75,4 @@ ScreenMonitor/win_monitor/start_admin.bat
 ScreenMonitor/win_monitor/recordings
 
 .claude/
+.codex/

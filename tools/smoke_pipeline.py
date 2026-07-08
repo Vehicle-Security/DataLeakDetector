@@ -13,6 +13,7 @@ def main() -> int:
     parser.add_argument("--case", default=r"spec\data\nas_samples\stage1\0-normal-ai-chatgpt-1")
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--neo4j", action="store_true")
+    parser.add_argument("--neo4j-log-miner", action="store_true")
     parser.add_argument("--vision", action="store_true")
     args = parser.parse_args()
 
@@ -20,11 +21,13 @@ def main() -> int:
         args.case,
         output_dir=args.output_dir or None,
         neo4j_enabled=bool(args.neo4j),
+        neo4j_log_miner=bool(args.neo4j_log_miner),
         vision_enabled=bool(args.vision),
     )
     print(json.dumps(report["input"], ensure_ascii=False, indent=2))
     print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
     print(json.dumps(report["detection_core"], ensure_ascii=False, indent=2))
+    print(json.dumps(report["log_miner"], ensure_ascii=False, indent=2))
     print(json.dumps(report["verdict"], ensure_ascii=False, indent=2))
     print(json.dumps(report["graph"], ensure_ascii=False, indent=2))
     return 0

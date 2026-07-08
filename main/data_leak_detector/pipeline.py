@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from .datasets import discover_data_case
 from .event_correlator import EventCorrelator
 from .frame_analyzer import analyze_video_behavior
-from .graph import Neo4jConfig, write_report_to_neo4j
+from .frame_analyzer.config import VisionConfig
+from .log_mining import mine_analysis_windows
+from .neo4j import Neo4jConfig, write_report_to_neo4j
 from .groundtruth import evaluate_groundtruth
 from .io import iso_now, load_json_records, normalize_logs
 from .leak_reasoner import DatalogEngine
@@ -28,6 +31,9 @@ def run_pipeline(
     vision_mode: str | None = None,
     max_vlm_frames: int | None = None,
     groundtruth_file: str | Path | None = None,
+    neo4j_log_miner: bool | None = None,
+    reuse_neo4j_import: bool | None = None,
+    case_name: str | None = None,
 ) -> dict[str, Any]:
     """Run FrameAnalyzer -> EventCorrelator -> LeakReasoner."""
 
@@ -36,9 +42,27 @@ def run_pipeline(
     video_path = Path(video_text) if video_text else None
     records = load_json_records(log_path)
     logs = normalize_logs(records)
-    report_id = f"dld_{log_path.stem}_{len(records)}"
+    report_id = _build_report_id(log_path, len(records), case_name)
     target_dir = Path(output_dir) if output_dir is not None else None
     vision_artifact_dir = target_dir / report_id if target_dir is not None else None
+    vision_config = VisionConfig.from_env().with_overrides(
+        enabled=vision_enabled,
+        mode=vision_mode,
+        max_vlm_frames=max_vlm_frames,
+    )
+    effective_neo4j_log_miner = neo4j_log_miner
+    if effective_neo4j_log_miner is None and not vision_config.enabled:
+        effective_neo4j_log_miner = False
+    log_mining = mine_analysis_windows(
+        case_id=report_id,
+        log_file=log_path,
+        records=records,
+        logs=logs,
+        sensitive_files=sensitive_files or [],
+        vision_config=vision_config,
+        neo4j_log_miner=effective_neo4j_log_miner,
+        reuse_import=reuse_neo4j_import,
+    )
 
     frame_bundle = analyze_video_behavior(
         video_path or "",
@@ -49,6 +73,8 @@ def run_pipeline(
         vision_mode=vision_mode,
         max_vlm_frames=max_vlm_frames,
         artifact_dir=vision_artifact_dir,
+        analysis_windows=log_mining.windows,
+        log_mining={"source": log_mining.source, **log_mining.metadata},
     )
     correlation_bundle = EventCorrelator().run(
         {
@@ -104,16 +130,88 @@ def run_pipeline(
         verdict_source=payload["verdict"]["source"],
     )
     payload["groundtruth"] = groundtruth_verdict.to_dict()
+    payload["log_miner"] = {"source": log_mining.source, **log_mining.metadata}
     payload["event_correlator"]["raw_log_events"] = records
     payload["graph"] = _write_graph(payload, neo4j_enabled=neo4j_enabled, neo4j_strict=neo4j_strict)
 
     if output_dir is not None:
         target_dir = Path(output_dir)
-        target_dir.mkdir(parents=True, exist_ok=True)
-        report_path = target_dir / f"{report.report_id}.json"
-        report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        payload["report_file"] = str(report_path)
+        report_files = _write_report_files(payload, target_dir, report.report_id)
+        payload.update(report_files)
     return payload
+
+
+def _write_report_files(payload: dict[str, Any], target_dir: Path, report_id: str) -> dict[str, Any]:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    detail_dir = target_dir / report_id
+    detail_dir.mkdir(parents=True, exist_ok=True)
+
+    detail_files = _write_detail_files(payload, detail_dir)
+    readable = _build_readable_report(payload, detail_files)
+    report_path = target_dir / f"{report_id}.json"
+    report_path.write_text(json.dumps(readable, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"report_file": str(report_path), "detail_files": detail_files}
+
+
+def _write_detail_files(payload: dict[str, Any], detail_dir: Path) -> dict[str, str]:
+    event_correlator = payload.get("event_correlator", {})
+    frame_analyzer = payload.get("frame_analyzer", {})
+    leak_reasoner = payload.get("leak_reasoner", {})
+    details: dict[str, str] = {}
+
+    event_detail = {
+        "correlated_events": event_correlator.get("correlated_events", []),
+        "operation_records": event_correlator.get("operation_records", []),
+        "upload_candidates": event_correlator.get("upload_candidates", []),
+        "file_lineage": event_correlator.get("file_lineage", {}),
+        "datalog_facts": event_correlator.get("datalog_facts", []),
+        "raw_log_events": event_correlator.get("raw_log_events", []),
+    }
+    details["event_correlator_details"] = _write_json(detail_dir / "event_correlator_details.json", event_detail)
+    details["frame_observations"] = _write_json(detail_dir / "frame_observations.json", frame_analyzer.get("observations", []))
+    details["leak_paths"] = _write_json(detail_dir / "leak_paths.json", leak_reasoner.get("leak_paths", []))
+    return details
+
+
+def _write_json(path: Path, payload: Any) -> str:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return str(path)
+
+
+def _build_readable_report(payload: dict[str, Any], detail_files: dict[str, str]) -> dict[str, Any]:
+    frame_analyzer = dict(payload.get("frame_analyzer", {}))
+    frame_observations = frame_analyzer.pop("observations", [])
+    event_correlator = dict(payload.get("event_correlator", {}))
+    leak_reasoner = dict(payload.get("leak_reasoner", {}))
+
+    compact_event_correlator = {
+        "session_id": event_correlator.get("session_id", ""),
+        "analysis_status": event_correlator.get("analysis_status", ""),
+        "analysis_windows": event_correlator.get("analysis_windows", []),
+        "statistics": event_correlator.get("statistics", {}),
+        "errors": event_correlator.get("errors", []),
+        "counts": {
+            "correlated_events": len(event_correlator.get("correlated_events", [])),
+            "operation_records": len(event_correlator.get("operation_records", [])),
+            "upload_candidates": len(event_correlator.get("upload_candidates", [])),
+            "datalog_facts": len(event_correlator.get("datalog_facts", [])),
+            "raw_log_events": len(event_correlator.get("raw_log_events", [])),
+            "lineage_mappings": len(event_correlator.get("file_lineage", {}).get("direct_file_mappings", {})),
+        },
+        "details_file": detail_files.get("event_correlator_details", ""),
+    }
+    frame_analyzer["observations_count"] = len(frame_observations)
+    frame_analyzer["observations_file"] = detail_files.get("frame_observations", "")
+    leak_reasoner["leak_path_count"] = len(leak_reasoner.get("leak_paths", []))
+    leak_reasoner["leak_paths"] = []
+    leak_reasoner["leak_paths_file"] = detail_files.get("leak_paths", "")
+
+    readable = dict(payload)
+    readable["frame_analyzer"] = frame_analyzer
+    readable["event_correlator"] = compact_event_correlator
+    readable["leak_reasoner"] = leak_reasoner
+    readable["detail_files"] = detail_files
+    return readable
 
 
 def _build_detection_core(
@@ -175,6 +273,8 @@ def run_data_case(
     vision_enabled: bool | None = None,
     vision_mode: str | None = None,
     max_vlm_frames: int | None = None,
+    neo4j_log_miner: bool | None = None,
+    reuse_neo4j_import: bool | None = None,
 ) -> dict[str, Any]:
     """Run a real spec/data sample directory."""
 
@@ -192,9 +292,25 @@ def run_data_case(
         vision_mode=vision_mode,
         max_vlm_frames=max_vlm_frames,
         groundtruth_file=case.groundtruth_file,
+        neo4j_log_miner=neo4j_log_miner,
+        reuse_neo4j_import=reuse_neo4j_import,
+        case_name=case.case_dir.name,
     )
     report["input"].update(case.to_input_metadata())
     return report
+
+
+def _build_report_id(log_path: Path, record_count: int, case_name: str | None) -> str:
+    prefix = _slugify(case_name or "")
+    if not prefix:
+        prefix = f"dld_{_slugify(log_path.stem)}"
+    return f"{prefix}_{_slugify(log_path.stem)}_{record_count}"
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^0-9A-Za-z._-]+", "-", value.strip())
+    slug = slug.strip("-._")
+    return slug or ""
 
 
 def _write_graph(
@@ -205,25 +321,9 @@ def _write_graph(
 ) -> dict[str, Any]:
     config = Neo4jConfig.from_env()
     if neo4j_enabled is not None:
-        config = Neo4jConfig(
-            enabled=neo4j_enabled,
-            uri=config.uri,
-            user=config.user,
-            password=config.password,
-            database=config.database,
-            strict=config.strict,
-            clear_session=config.clear_session,
-        )
+        config = config.with_overrides(enabled=neo4j_enabled)
     if neo4j_strict is not None:
-        config = Neo4jConfig(
-            enabled=config.enabled,
-            uri=config.uri,
-            user=config.user,
-            password=config.password,
-            database=config.database,
-            strict=neo4j_strict,
-            clear_session=config.clear_session,
-        )
+        config = config.with_overrides(strict=neo4j_strict)
 
     try:
         return write_report_to_neo4j(payload, config)

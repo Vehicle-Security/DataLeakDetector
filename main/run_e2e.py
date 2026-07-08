@@ -25,6 +25,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-vlm-frames", type=int, default=0, help="Maximum keyframes sent to VLM.")
     parser.add_argument("--neo4j", action="store_true", help="Write the report graph to Neo4j for this run.")
     parser.add_argument("--neo4j-strict", action="store_true", help="Fail if Neo4j writing fails.")
+    parser.add_argument("--neo4j-log-miner", action="store_true", help="Use Neo4j to mine analysis windows before frame extraction.")
+    parser.add_argument("--no-reuse-neo4j-import", action="store_true", help="Reimport logs even when the case fingerprint already exists in Neo4j.")
     args = parser.parse_args(argv)
 
     common_args = {
@@ -33,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
         "observations_file": args.observations or None,
         "neo4j_enabled": True if args.neo4j else None,
         "neo4j_strict": True if args.neo4j_strict else None,
+        "neo4j_log_miner": True if args.neo4j_log_miner else None,
+        "reuse_neo4j_import": False if args.no_reuse_neo4j_import else None,
         "vision_enabled": True if args.vision else None,
         "vision_mode": args.vision_mode or None,
         "max_vlm_frames": args.max_vlm_frames or None,

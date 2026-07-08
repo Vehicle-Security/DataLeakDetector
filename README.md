@@ -9,7 +9,7 @@ spec/data 样本目录
   -> logs/logs.json 或 logs/keyevents.json
   -> video/*.mp4
   -> groundtruth.json 中声明的初始敏感源文件
-  -> FrameAnalyzer：日志时间窗 + 非均匀关键帧 + OCR 预筛 + VLM
+  -> FrameAnalyzer：日志时间窗 + 非均匀关键帧 + OCR 全量读帧 + VLM
   -> EventCorrelator：文件血缘 + 前端应用识别 + 泄漏出口候选
   -> LeakReasoner：符号化污点传播
   -> 可选 Neo4j 证据图谱
@@ -30,7 +30,7 @@ spec/data 样本目录
 
 1. 从日志定位可疑时间窗，而不是全视频均匀抽帧。
 2. 在可疑时间窗内按画面变化选择关键帧，捕捉应用切换、上传弹窗、粘贴内容等状态变化。
-3. 用 OCR 做低成本预筛，只把低置信或高风险帧交给 VLM。
+3. 对抽出的关键帧全量执行 OCR，先得到低成本文本证据。
 4. 用 VLM 补全日志缺失的前端应用、屏幕内容、文件名和外发动作事实。
 5. 将日志事实和视觉事实统一成 Datalog 事实，做可解释的污点传播推理。
 
@@ -124,9 +124,18 @@ DLD_SENSITIVE_SOURCE_REGEXES=
 
 ## Neo4j
 
+Neo4j 有两个独立用途：
+
+- `--neo4j` / `DLD_NEO4J_ENABLED=1`：分析结束后把报告写成证据图谱，便于查看。
+- `--neo4j-log-miner` / `DLD_NEO4J_LOG_MINER=1`：分析开始前把日志导入或复用到 Neo4j，再用 Cypher 生成抽帧时间窗和活跃应用上下文。
+
+固定 case 反复调参时，建议开启 `DLD_NEO4J_REUSE_IMPORT=1`。程序会用 `case_id + log_hash + records_count + schema_version` 判断日志图是否可复用；同一个 case 未变化时不会重复全量入库，只执行查询。
+长录屏/长日志场景下，Neo4j LogMiner 会按 `DLD_NEO4J_LOG_MINER_BATCH_SIZE` 分批写入，并在入库时预计算 `is_candidate`、`is_sensitive_related`、`is_transfer_action`、`is_sink_action` 等字段，查询阶段优先走布尔字段和索引，避免每次 Cypher 都对完整日志文本做扫描。
+
 ```powershell
 tools\start_neo4j.ps1
 python main/run_e2e.py --case spec\data\nas_samples\stage1\0-normal-ai-chatgpt-1 --neo4j --neo4j-strict
+python main/run_e2e.py --case spec\data\nas_samples\stage1\0-normal-ai-chatgpt-1 --vision --neo4j-log-miner
 tools\stop_neo4j.ps1
 ```
 
@@ -140,6 +149,10 @@ tools\stop_neo4j.ps1
 | `main/data_leak_detector/groundtruth.py` | 按 `groundtruth.json` 和可配置口径生成最终标注结论。 |
 | `main/data_leak_detector/pipeline.py` | 编排分析流程和可选图谱写入。 |
 | `main/data_leak_detector/policy.py` | 加载 `spec/config/policy.json`，提供统一文本归一化和策略判断接口。 |
+| `main/data_leak_detector/log_mining.py` | 日志挖掘统一入口，包含 InMemoryLogMiner、Neo4jLogMiner 和抽帧时间窗生成。 |
+| `main/data_leak_detector/neo4j/importer.py` | Neo4j 日志图批量导入、复用指纹、索引和候选标志预计算。 |
+| `main/data_leak_detector/neo4j/queries.py` | Neo4j LogMiner 使用的 Cypher 时间窗和活跃应用查询。 |
+| `main/data_leak_detector/neo4j/store.py` | 将最终检测报告写入 Neo4j 证据图。 |
 | `spec/config/policy.json` | 可替换的业务策略配置，避免把数据集规则写死在代码里。 |
 | `spec/config/groundtruth_policy.json` | 可替换的 groundtruth 结论口径配置。 |
 | `main/data_leak_detector/frame_analyzer/*` | 关键帧、OCR、VLM、响应解析和前端应用识别。 |

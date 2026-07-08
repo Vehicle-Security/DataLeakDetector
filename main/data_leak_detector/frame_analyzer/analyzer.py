@@ -11,9 +11,10 @@ from typing import Any
 from ..io import flatten_text, looks_sensitive, normalize_path
 from ..models import FrameObservation, LogEvent
 from ..policy import SINK_TOKENS, TRANSFER_TOKENS, contains_any
+from ..log_mining import build_analysis_windows
 from .apps import identify_frontend_app
 from .config import VisionConfig
-from .frames import build_analysis_windows, select_keyframes
+from .frames import AnalysisWindow, KeyFrameDuplicate, select_keyframes_detailed
 from .ocr import OcrResult, run_ocr
 from .parser import parse_vlm_response, vision_events_to_observations
 from .vlm import OpenAICompatibleVlmClient, choose_vlm_frames
@@ -29,6 +30,8 @@ def analyze_video_behavior(
     vision_mode: str | None = None,
     max_vlm_frames: int | None = None,
     artifact_dir: str | Path | None = None,
+    analysis_windows: list[AnalysisWindow] | None = None,
+    log_mining: dict[str, Any] | None = None,
     **_: Any,
 ) -> dict[str, Any]:
     """Produce frame-level behavior observations for downstream correlation.
@@ -67,6 +70,8 @@ def analyze_video_behavior(
         "ocr_frames": 0,
         "vlm_frames": 0,
         "vlm_events": 0,
+        "window_source": str((log_mining or {}).get("source") or "in_memory"),
+        "log_mining": dict(log_mining or {}),
     }
 
     if config.enabled:
@@ -77,6 +82,8 @@ def analyze_video_behavior(
             config=config,
             start_index=len(observations),
             artifact_dir=artifact_dir,
+            analysis_windows=analysis_windows,
+            log_mining=log_mining,
         )
         observations.extend(vision_observations)
         warnings.extend(vision_warnings)
@@ -176,14 +183,17 @@ def _run_vision_pipeline(
     config: VisionConfig,
     start_index: int,
     artifact_dir: str | Path | None,
+    analysis_windows: list[AnalysisWindow] | None,
+    log_mining: dict[str, Any] | None,
 ) -> tuple[list[FrameObservation], dict[str, Any], list[str], list[str]]:
     observations: list[FrameObservation] = []
     warnings: list[str] = []
     errors: list[str] = []
 
-    windows = build_analysis_windows(logs, sensitive_files, config)
-    keyframes, frame_warnings = select_keyframes(video_path, windows, config)
-    warnings.extend(frame_warnings)
+    windows = analysis_windows if analysis_windows is not None else build_analysis_windows(logs, sensitive_files, config)
+    keyframe_selection = select_keyframes_detailed(video_path, windows, config)
+    keyframes = keyframe_selection.keyframes
+    warnings.extend(keyframe_selection.warnings)
 
     ocr_frames = _select_ocr_frames_for_ocr(keyframes)
     raw_ocr_results = run_ocr(ocr_frames, config) if ocr_frames else []
@@ -198,6 +208,8 @@ def _run_vision_pipeline(
     artifact_manifest = _export_vision_artifacts(
         artifact_dir=artifact_dir,
         keyframes=keyframes,
+        raw_all_keyframes=keyframe_selection.raw_keyframes,
+        duplicate_keyframes=keyframe_selection.duplicates,
         ocr_selected_frames=[item.frame for item in vlm_frames],
         ocr_results=ocr_results,
     )
@@ -222,7 +234,11 @@ def _run_vision_pipeline(
         "enabled": config.enabled,
         "mode": config.mode,
         "analysis_windows": len(windows),
+        "window_source": str((log_mining or {}).get("source") or ("provided" if analysis_windows is not None else "in_memory")),
+        "log_mining": dict(log_mining or {}),
         "keyframes": len(keyframes),
+        "keyframes_raw_all": len(keyframe_selection.raw_keyframes),
+        "keyframe_duplicates": len(keyframe_selection.duplicates),
         "ocr_input_keyframes": len(ocr_frames),
         "ocr_frames": len(ocr_results),
         "ocr_raw_frames": len(raw_ocr_results),
@@ -239,26 +255,39 @@ def _export_vision_artifacts(
     keyframes: list[Any],
     ocr_selected_frames: list[Any],
     ocr_results: list[OcrResult],
+    raw_all_keyframes: list[Any] | None = None,
+    duplicate_keyframes: list[KeyFrameDuplicate] | None = None,
 ) -> dict[str, Any]:
     if artifact_dir is None:
         return {}
 
     root = Path(artifact_dir)
+    raw_all_dir = root / "keyframes_raw_all"
     raw_dir = root / "keyframes_raw"
     selected_dir = root / "keyframes_ocr_selected"
+    raw_all_dir.mkdir(parents=True, exist_ok=True)
     raw_dir.mkdir(parents=True, exist_ok=True)
     selected_dir.mkdir(parents=True, exist_ok=True)
 
+    raw_all_files = _copy_frame_images(raw_all_keyframes if raw_all_keyframes is not None else keyframes, raw_all_dir)
     raw_files = _copy_frame_images(keyframes, raw_dir)
     selected_files = _copy_frame_images(ocr_selected_frames, selected_dir)
     ocr_file = root / "ocr_results.json"
     ocr_file.write_text(json.dumps([_ocr_result_to_dict(item) for item in ocr_results], ensure_ascii=False, indent=2), encoding="utf-8")
+    duplicate_file = root / "keyframe_duplicates.json"
+    duplicate_file.write_text(
+        json.dumps([_keyframe_duplicate_to_dict(item) for item in duplicate_keyframes or []], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     return {
         "root_dir": str(root),
+        "keyframes_raw_all_dir": str(raw_all_dir),
         "keyframes_raw_dir": str(raw_dir),
         "keyframes_ocr_selected_dir": str(selected_dir),
         "ocr_results_file": str(ocr_file),
+        "keyframe_duplicates_file": str(duplicate_file),
+        "keyframes_raw_all_files": raw_all_files,
         "keyframes_raw_files": raw_files,
         "keyframes_ocr_selected_files": selected_files,
     }
@@ -291,10 +320,32 @@ def _ocr_result_to_dict(result: OcrResult) -> dict[str, Any]:
     }
 
 
+def _keyframe_duplicate_to_dict(duplicate: KeyFrameDuplicate) -> dict[str, Any]:
+    return {
+        "frame_id": duplicate.frame.frame_id,
+        "timestamp_ms": duplicate.frame.timestamp_ms,
+        "image_path": duplicate.frame.image_path,
+        "reason": duplicate.frame.reason,
+        "window_id": duplicate.frame.window_id,
+        "kept_frame_id": duplicate.kept_frame_id,
+        "duplicate_reason": duplicate.reason,
+        "delta": duplicate.delta,
+        "hash_distance": duplicate.hash_distance,
+    }
+
+
 def _select_ocr_frames_for_ocr(frames: list[Any]) -> list[Any]:
     """OCR every keyframe that survived extraction and visual deduplication."""
 
-    return sorted(frames, key=lambda frame: int(getattr(frame, "timestamp_ms", 0)))
+    selected: list[Any] = []
+    seen_timestamps: set[int] = set()
+    for frame in sorted(frames, key=lambda item: int(getattr(item, "timestamp_ms", 0))):
+        timestamp = int(getattr(frame, "timestamp_ms", 0))
+        if timestamp in seen_timestamps:
+            continue
+        seen_timestamps.add(timestamp)
+        selected.append(frame)
+    return selected
 
 
 def _dedupe_ocr_results(results: list[OcrResult], config: VisionConfig) -> list[OcrResult]:

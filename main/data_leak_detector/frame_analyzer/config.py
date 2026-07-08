@@ -30,6 +30,7 @@ class VisionConfig:
     ocr_provider: str = "none"
     ocr_min_confidence: float = 0.70
     ocr_max_image_side: int = 1_280
+    ocr_workers: int = 1
     rapidocr_use_cuda: bool = False
     vlm_provider: str = "openai_compatible"
     vlm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -63,6 +64,7 @@ class VisionConfig:
             ocr_provider=os.getenv("DLD_OCR_PROVIDER", "none"),
             ocr_min_confidence=_env_float("DLD_OCR_MIN_CONFIDENCE", 0.70),
             ocr_max_image_side=_env_int("DLD_OCR_MAX_IMAGE_SIDE", 1_280),
+            ocr_workers=max(1, _env_int("DLD_OCR_WORKERS", 1)),
             rapidocr_use_cuda=_env_bool("DLD_RAPIDOCR_USE_CUDA", False),
             vlm_provider=os.getenv("DLD_VLM_PROVIDER", "openai_compatible"),
             vlm_base_url=os.getenv("DLD_VLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
@@ -101,6 +103,7 @@ class VisionConfig:
             ocr_provider=self.ocr_provider,
             ocr_min_confidence=self.ocr_min_confidence,
             ocr_max_image_side=self.ocr_max_image_side,
+            ocr_workers=self.ocr_workers,
             rapidocr_use_cuda=self.rapidocr_use_cuda,
             vlm_provider=self.vlm_provider,
             vlm_base_url=self.vlm_base_url,
