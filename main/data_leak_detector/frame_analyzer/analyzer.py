@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import time
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from ..io import flatten_text, looks_sensitive, normalize_path
+from ..io import basename, flatten_text, looks_sensitive, normalize_path
 from ..models import FrameObservation, LogEvent
 from ..policy import SINK_TOKENS, TRANSFER_TOKENS, contains_any
 from ..log_mining import build_analysis_windows
@@ -220,7 +221,7 @@ def _run_vision_pipeline(
     ocr_postprocess_started = time.perf_counter()
     raw_ocr_results = _merge_roi_ocr_results(raw_roi_ocr_results, ocr_candidates) if config.ocr_roi_enabled else raw_roi_ocr_results
     ocr_results = _dedupe_ocr_results(raw_ocr_results, config)
-    observations.extend(_ocr_observations(ocr_results, config, start_index=start_index))
+    observations.extend(_ocr_observations(ocr_results, config, sensitive_files=sensitive_files, start_index=start_index))
     ocr_postprocess_seconds = time.perf_counter() - ocr_postprocess_started
 
     vlm_frames = choose_vlm_frames(
@@ -522,18 +523,93 @@ def _text_similarity(left: str, right: str) -> float:
     return SequenceMatcher(None, left, right).ratio()
 
 
+OCR_FILE_RE = re.compile(
+    r"[\w\u4e00-\u9fff ._\-()（）【】\[\]]+"
+    r"\.(?:docx|doc|pdf|txt|png|jpg|jpeg|xlsx|xls|csv|sql|zip|7z|rar|pptx|ppt|mp4|mov)",
+    re.IGNORECASE,
+)
+
+
+def _ocr_mentioned_files(text: str, sensitive_files: list[str]) -> list[str]:
+    mentioned: list[str] = []
+    for match in OCR_FILE_RE.finditer(text):
+        candidate = _clean_ocr_file_candidate(match.group(0))
+        if candidate:
+            mentioned.append(candidate)
+
+    normalized_text = normalize_path(text).lower()
+    for sensitive in sensitive_files:
+        resolved = _resolve_sensitive_from_text(normalized_text, sensitive)
+        if resolved:
+            mentioned.append(resolved)
+    return list(dict.fromkeys(mentioned))
+
+
+def _clean_ocr_file_candidate(value: str) -> str:
+    candidate = normalize_path(value).strip(" .,:;，。：；|[]【】()（）")
+    if "/" in candidate:
+        return candidate
+    parts = [part.strip(" .,:;，。：；|[]【】()（）") for part in candidate.split() if part.strip()]
+    if parts and OCR_FILE_RE.fullmatch(parts[-1]):
+        return parts[-1]
+    return candidate
+
+
+def _resolve_sensitive_from_text(normalized_text: str, sensitive_file: str) -> str:
+    sensitive = normalize_path(sensitive_file)
+    if not sensitive:
+        return ""
+    lowered = sensitive.lower()
+    name = basename(sensitive).lower()
+    stem = Path(name).stem.lower()
+    if lowered in normalized_text or (name and name in normalized_text) or (len(stem) >= 4 and stem in normalized_text):
+        return sensitive
+    return ""
+
+
+def _ocr_fact_prefix(text: str, mentioned_files: list[str]) -> str:
+    facts: list[str] = []
+    if mentioned_files:
+        facts.append("mentioned_files=" + "|".join(mentioned_files[:8]))
+    if contains_any(text, SINK_TOKENS):
+        facts.append("sink_context=true")
+    if contains_any(text, TRANSFER_TOKENS):
+        facts.append("transfer_context=true")
+    return f"OCR facts: {'; '.join(facts)}. " if facts else ""
+
+
 def _ocr_observations(
     results: list[OcrResult],
     config: VisionConfig,
     *,
+    sensitive_files: list[str] | None = None,
     start_index: int,
 ) -> list[FrameObservation]:
     observations: list[FrameObservation] = []
+    sensitive_files = [normalize_path(item) for item in sensitive_files or []]
     for result in results:
         if result.confidence < config.ocr_min_confidence or not result.text.strip():
             continue
         app = identify_frontend_app(ocr_text=result.text)
-        operation = "external_sink_interaction" if app.risk_hint == "external_capable" and contains_any(result.text, SINK_TOKENS) else "visual_text_observed"
+        mentioned_files = _ocr_mentioned_files(result.text, sensitive_files)
+        sink_context = app.risk_hint.startswith("external_capable") or contains_any(result.text, SINK_TOKENS)
+        transfer_context = contains_any(result.text, TRANSFER_TOKENS)
+        if sink_context:
+            operation = "external_sink_interaction"
+        elif transfer_context:
+            operation = "file_or_content_transfer"
+        else:
+            operation = "visual_text_observed"
+        resolved_files = list(
+            dict.fromkeys(
+                resolved
+                for item in mentioned_files
+                for sensitive in sensitive_files
+                for resolved in (_resolve_sensitive_from_text(item.lower(), sensitive),)
+                if resolved
+            )
+        )
+        resource = resolved_files[0] if resolved_files else (mentioned_files[0] if mentioned_files else "")
         observations.append(
             FrameObservation(
                 observation_id=f"ocr_{start_index + len(observations)}",
@@ -541,9 +617,9 @@ def _ocr_observations(
                 end_ms=result.frame.timestamp_ms,
                 app_name=app.app_name,
                 operation_type=operation,
-                resource="",
-                related_resources=(),
-                description=f"OCR text: {result.text[:500]}; app_category={app.category}; risk_hint={app.risk_hint}",
+                resource=resource,
+                related_resources=tuple(mentioned_files),
+                description=f"{_ocr_fact_prefix(result.text, mentioned_files)}OCR text: {result.text[:500]}; app_category={app.category}; risk_hint={app.risk_hint}",
                 confidence=result.confidence,
                 source=result.provider,
             )

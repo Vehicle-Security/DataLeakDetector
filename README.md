@@ -81,6 +81,8 @@ python main/run_e2e.py --case spec\data\nas_samples\stage2\2-filestruct-pdfconve
 6. `parser.py` 统一解析 Qwen/OpenAI 兼容接口返回的 JSON。
 7. 视觉观察结果进入 `EventCorrelator`，即使日志里没有泄漏文件路径，也能补充 Datalog 事实。
 
+抽帧的具体执行边界见 [`spec/docs/02抽帧策略-具体实现.md`](spec/docs/02抽帧策略-具体实现.md)：从 `AnalysisWindow` 到 probe、顺序解码、窗口内保留、全局去重、OCR 输入裁剪和 artifact 导出都按代码路径展开。
+
 ## 配置
 
 密钥只放在本地 `.env`，不要提交到仓库。
@@ -131,6 +133,8 @@ Neo4j 有两个独立用途：
 
 固定 case 反复调参时，建议开启 `DLD_NEO4J_REUSE_IMPORT=1`。程序会用 `case_id + log_hash + records_count + schema_version` 判断日志图是否可复用；同一个 case 未变化时不会重复全量入库，只执行查询。
 长录屏/长日志场景下，Neo4j LogMiner 会按 `DLD_NEO4J_LOG_MINER_BATCH_SIZE` 分批写入，并在入库时预计算 `is_candidate`、`is_sensitive_related`、`is_transfer_action`、`is_sink_action` 等字段，查询阶段优先走布尔字段和索引，避免每次 Cypher 都对完整日志文本做扫描。
+
+日志挖掘的具体执行边界见 [`spec/docs/01日志挖掘策略-具体实现.md`](spec/docs/01日志挖掘策略-具体实现.md)：`--neo4j-log-miner` 打开且服务可连接时，报告里的 `log_miner.source` 应为 `neo4j`；连接或查询失败且非 strict 时才会写成 `in_memory_fallback`。
 
 ```powershell
 tools\start_neo4j.ps1

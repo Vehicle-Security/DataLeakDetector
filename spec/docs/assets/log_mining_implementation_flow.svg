@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="620" viewBox="0 0 1180 620" role="img" aria-labelledby="title desc">
+  <title id="title">日志挖掘具体实现：InMemory 与 Neo4j 双路径</title>
+  <desc id="desc">展示共享预处理后，InMemory 和 Neo4j 作为同级日志挖掘路径展开；Neo4j 可连接时使用图查询，不可连接且非 strict 时回退到 InMemory。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+    <style>
+      text { font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #172033; }
+      .box { fill: #f8fafc; stroke: #64748b; stroke-width: 1.4; rx: 8; }
+      .shared { fill: #eef6ff; stroke: #2563eb; }
+      .mem { fill: #f0fdf4; stroke: #16a34a; }
+      .neo { fill: #fff7ed; stroke: #ea580c; }
+      .common { fill: #fffbeb; stroke: #d97706; }
+      .out { fill: #f5f3ff; stroke: #7c3aed; }
+      .fail { fill: #fff1f2; stroke: #e11d48; }
+      .title { font-size: 17px; font-weight: 700; }
+      .body { font-size: 13px; }
+      .small { font-size: 12px; fill: #475569; }
+      .line { stroke: #334155; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #64748b; stroke-width: 1.3; stroke-dasharray: 5 5; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect x="24" y="24" width="1132" height="572" fill="#ffffff" stroke="#cbd5e1" rx="12"/>
+  <text x="52" y="58" class="title">日志挖掘具体实现：两条同级路径</text>
+  <text x="52" y="82" class="small">打开 --neo4j-log-miner 且服务可连接时实际走 Neo4j；未打开走 InMemory；Neo4j 失败且非 strict 时 fallback 到 InMemory。</text>
+
+  <rect x="70" y="122" width="172" height="88" class="shared"/>
+  <text x="92" y="152" class="title">共享预处理</text>
+  <text x="92" y="178" class="body">discover_data_case</text>
+  <text x="92" y="198" class="body">normalize_logs</text>
+
+  <rect x="306" y="118" width="170" height="96" class="common"/>
+  <text x="328" y="148" class="title">mine_analysis_windows</text>
+  <text x="328" y="174" class="body">读取配置/CLI</text>
+  <text x="328" y="194" class="body">选择执行路径</text>
+
+  <rect x="104" y="286" width="204" height="102" class="mem"/>
+  <text x="126" y="316" class="title">InMemory 路径</text>
+  <text x="126" y="342" class="body">遍历每条 LogEvent</text>
+  <text x="126" y="362" class="body">直接调用窗口规则</text>
+
+  <rect x="454" y="286" width="210" height="102" class="neo"/>
+  <text x="476" y="316" class="title">Neo4j 路径</text>
+  <text x="476" y="342" class="body">--neo4j-log-miner 可连</text>
+  <text x="476" y="362" class="body">导入/复用图 + Cypher</text>
+
+  <rect x="790" y="286" width="214" height="102" class="fail"/>
+  <text x="812" y="316" class="title">fallback 条件</text>
+  <text x="812" y="342" class="body">连接失败/查询异常</text>
+  <text x="812" y="362" class="body">且 log_miner_strict=false</text>
+
+  <rect x="246" y="456" width="220" height="88" class="common"/>
+  <text x="268" y="486" class="title">共享单事件规则</text>
+  <text x="268" y="512" class="body">build_analysis_window_for_event</text>
+  <text x="268" y="532" class="body">priority / anchor / profile</text>
+
+  <rect x="548" y="456" width="216" height="88" class="common"/>
+  <text x="570" y="486" class="title">按路径收敛</text>
+  <text x="570" y="512" class="body">两条路径都做 segment merge</text>
+  <text x="570" y="532" class="body">InMemory 额外过滤无 anchor medium</text>
+
+  <rect x="846" y="456" width="190" height="88" class="out"/>
+  <text x="868" y="486" class="title">LogMiningResult</text>
+  <text x="868" y="512" class="body">windows</text>
+  <text x="868" y="532" class="body">source / metadata</text>
+
+  <path class="line" d="M242 166 H306"/>
+  <path class="line" d="M391 214 C391 250 206 250 206 286"/>
+  <path class="line" d="M391 214 C391 250 559 250 559 286"/>
+  <path class="dash" d="M664 337 H790"/>
+  <path class="dash" d="M897 388 C897 426 206 426 206 388"/>
+  <path class="line" d="M206 388 C206 426 356 426 356 456"/>
+  <path class="line" d="M559 388 C559 426 356 426 356 456"/>
+  <path class="line" d="M466 500 H548"/>
+  <path class="line" d="M764 500 H846"/>
+
+  <text x="128" y="410" class="small">source=in_memory</text>
+  <text x="482" y="410" class="small">source=neo4j</text>
+  <text x="814" y="410" class="small">source=in_memory_fallback</text>
+</svg>

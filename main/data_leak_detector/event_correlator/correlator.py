@@ -29,7 +29,8 @@ class EventCorrelator:
         self.config = config or EventCorrelatorConfig()
 
     def run(self, payload: dict[str, Any]) -> dict[str, Any]:
-        logs = normalize_logs([item for item in payload.get("log_events") or [] if isinstance(item, dict)])
+        session_start_ms = int(payload.get("recording_start_ms") or 0) or None
+        logs = normalize_logs([item for item in payload.get("log_events") or [] if isinstance(item, dict)], session_start_ms=session_start_ms)
         observations = normalize_observations(payload.get("frame_segments") or [])
         sensitive_files = self._collect_sensitive_files(logs, payload.get("sensitive_files") or [])
         lineage = self._build_lineage(logs, sensitive_files)
@@ -117,7 +118,15 @@ class EventCorrelator:
 
         for log in sorted(logs, key=lambda item: item.timestamp_ms):
             original = self._resolve_original(log.file_path, sensitive_files, lineage)
-            observation = observation_index.nearest(self._log_observation_time(log, observation_time_mode), self.config.nearby_window_ms)
+            observation = self._best_observation_for_log(
+                log,
+                observations,
+                observation_index,
+                observation_time_mode,
+                original,
+                sensitive_files,
+                lineage,
+            )
             if original and log.timestamp_ms:
                 recent_sensitive = (original, log.timestamp_ms)
 
@@ -146,13 +155,15 @@ class EventCorrelator:
             if observation:
                 confidence = max(confidence, observation.confidence)
             current_file = target_file_from_metadata(log.raw) or log.file_path or (observation.resource if observation and observation.resource else original)
+            if original and current_file and _mentions_file(current_file, original) and not Path(normalize_path(current_file)).suffix:
+                current_file = original
 
             correlated.append(
                 CorrelatedEvent(
                     event_id=f"corr_{len(correlated)}",
                     timestamp=log.timestamp,
                     event_type=log.event_type,
-                    app_name=(observation.app_name if observation and observation.app_name else log.app_name or log.process_name),
+                    app_name=(log.app_name or log.process_name or (observation.app_name if observation else "")),
                     original_file=original,
                     current_file=current_file,
                     operation_type=(observation.operation_type if observation else operation_from_text(text, log.event_type)),
@@ -165,6 +176,60 @@ class EventCorrelator:
             )
         correlated.extend(self._correlate_visual_only(observations, sensitive_files, lineage, start_index=len(correlated)))
         return correlated
+
+    def _best_observation_for_log(
+        self,
+        log,
+        observations,
+        observation_index: ObservationIndex,
+        observation_time_mode: str,
+        original: str,
+        sensitive_files: list[str],
+        lineage: Lineage,
+    ):
+        log_time = self._log_observation_time(log, observation_time_mode)
+        nearest = observation_index.nearest(log_time, self.config.nearby_window_ms)
+        if nearest is not None and not _observation_allowed_for_log(log, nearest):
+            nearest = None
+        best = nearest
+        best_score = self._observation_join_score(log, nearest, original, sensitive_files, lineage) if nearest else -1
+        for observation in observations:
+            if not _observation_allowed_for_log(log, observation):
+                continue
+            distance = abs(log_time - self._observation_center(observation))
+            if distance > self.config.nearby_window_ms:
+                continue
+            score = self._observation_join_score(log, observation, original, sensitive_files, lineage)
+            if score > best_score or (score == best_score and best is not None and distance < abs(log_time - self._observation_center(best))):
+                best = observation
+                best_score = score
+        return best
+
+    def _observation_join_score(self, log, observation, original: str, sensitive_files: list[str], lineage: Lineage) -> int:
+        if observation is None:
+            return -1
+        text = _observation_search_text(observation)
+        score = 0
+        resolved = self._resolve_observation_original(observation, sensitive_files, lineage)
+        if original and resolved and same_file(original, resolved):
+            score += 6
+        elif original and _mentions_file(text, original):
+            score += 5
+        elif log.file_path and _mentions_file(text, log.file_path):
+            score += 4
+        elif resolved:
+            score += 2
+        if observation.operation_type == "external_sink_interaction" or contains_any(text, SINK_TOKENS):
+            score += 3
+        if contains_any(text, TRANSFER_TOKENS):
+            score += 1
+        if observation.source != "log_anchored":
+            score += 1
+        return score
+
+    @staticmethod
+    def _observation_center(observation) -> int:
+        return observation.start_ms if not observation.end_ms else (observation.start_ms + observation.end_ms) // 2
 
     def _observation_time_mode(self, observations) -> str:
         # OCR/keyframe evidence uses video-relative milliseconds. Some imported
@@ -195,7 +260,7 @@ class EventCorrelator:
                 return resolved
         description = observation.description.lower()
         for sensitive in sensitive_files:
-            if sensitive and (sensitive.lower() in description or looks_sensitive(description)):
+            if sensitive and (sensitive.lower() in description or _mentions_file(description, sensitive)):
                 return sensitive
         return ""
 
@@ -260,6 +325,53 @@ def _event_search_text(event) -> str:
     for key in ("extra", "upload_detection", "process_info", "window_info"):
         parts.extend(_flatten_search_parts(raw.get(key)))
     return " ".join(item.strip() for item in parts if item and item.strip())
+
+
+def _observation_search_text(observation) -> str:
+    return " ".join(
+        item
+        for item in (
+            observation.operation_type,
+            observation.app_name,
+            observation.resource,
+            " ".join(observation.related_resources),
+            observation.description,
+            observation.source,
+        )
+        if item
+    )
+
+
+def _is_external_observation(observation) -> bool:
+    text = _observation_search_text(observation)
+    return observation.operation_type == "external_sink_interaction" or contains_any(text, SINK_TOKENS)
+
+
+def _observation_allowed_for_log(log, observation) -> bool:
+    if observation.source == "log_anchored":
+        return False
+    return not _is_external_observation(observation) or _is_sink_log(log)
+
+
+def _is_sink_log(log) -> bool:
+    if log.event_type in {"file_selected", "file_upload", "upload", "uploaded", "upload_complete", "send_click"}:
+        return True
+    if (log.process_name or log.app_name or "").lower() == "fsquirt.exe":
+        return True
+    extra = log.raw.get("extra") if isinstance(log.raw.get("extra"), dict) else {}
+    raw_operation = str(log.raw.get("operation") or extra.get("raw_operation") or "")
+    category = str(extra.get("category") or "")
+    return raw_operation in {"file_selected", "file_upload", "upload", "send_click"} or contains_any(category, ("文件上传", "直接外发"))
+
+
+def _mentions_file(text: str, file_path: str) -> bool:
+    normalized_text = normalize_path(text).lower()
+    normalized_file = normalize_path(file_path).lower()
+    if not normalized_text or not normalized_file:
+        return False
+    name = Path(normalized_file).name.lower()
+    stem = Path(name).stem.lower()
+    return normalized_file in normalized_text or (name and name in normalized_text) or (len(stem) >= 4 and stem in normalized_text)
 
 
 def _flatten_search_parts(value: Any) -> list[str]:

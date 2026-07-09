@@ -9,7 +9,7 @@ from data_leak_detector import run_pipeline
 from data_leak_detector.datasets import discover_data_case
 from data_leak_detector.event_correlator import EventCorrelator
 from data_leak_detector.frame_analyzer import analyze_video_behavior
-from data_leak_detector.frame_analyzer.analyzer import _dedupe_ocr_results, _export_vision_artifacts, _select_ocr_frames_for_ocr
+from data_leak_detector.frame_analyzer.analyzer import _dedupe_ocr_results, _export_vision_artifacts, _ocr_observations, _select_ocr_frames_for_ocr
 from data_leak_detector.frame_analyzer.apps import identify_frontend_app
 from data_leak_detector.frame_analyzer.config import VisionConfig
 from data_leak_detector.frame_analyzer.frames import (
@@ -444,6 +444,20 @@ def test_ocr_results_are_deduped_per_window() -> None:
     assert [item.frame.frame_id for item in deduped] == ["a", "c"]
 
 
+def test_ocr_observation_extracts_non_vlm_file_and_sink_facts() -> None:
+    sensitive = "C:/Users/alice/Documents/customer_salary.xlsx"
+    frame = KeyFrame("frame_0", 19517, "frame.jpg", 1.0, "strong:anchor", "window_0")
+    result = OcrResult(frame, "ChatGPT 默认助手 正在上传 customer_salary.xlsx", 0.96, "rapidocr_cuda")
+
+    observations = _ocr_observations([result], VisionConfig(), sensitive_files=[sensitive], start_index=0)
+
+    assert len(observations) == 1
+    assert observations[0].operation_type == "external_sink_interaction"
+    assert observations[0].resource == sensitive
+    assert sensitive in observations[0].related_resources
+    assert "mentioned_files=" in observations[0].description
+
+
 def test_ocr_dedupe_keeps_anchor_frames() -> None:
     frame_a = KeyFrame("a", 1000, "a.jpg", 0.9, "medium:anchor", window_id="window_0")
     frame_b = KeyFrame("b", 2000, "b.jpg", 0.9, "medium:anchor", window_id="window_0")
@@ -684,6 +698,43 @@ def test_visual_observation_can_create_datalog_fact_without_file_path_log() -> N
 
     assert bundle["upload_candidates"]
     assert any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
+
+
+def test_event_correlator_joins_log_and_ocr_without_vlm() -> None:
+    sensitive = "C:/Users/alice/Documents/customer_salary.xlsx"
+    records = [
+        {
+            "timestamp": "2026-06-28T10:00:00.000",
+            "event_type": "file_selected",
+            "file_path": sensitive,
+            "process_info": {"process_name": "msedge.exe"},
+            "window_info": {"window_title": "ChatGPT upload"},
+        }
+    ]
+    observations = [
+        {
+            "observation_id": "ocr_0",
+            "start_ms": 0,
+            "end_ms": 0,
+            "app_name": "ChatGPT",
+            "operation_type": "external_sink_interaction",
+            "resource": sensitive,
+            "related_resources": [sensitive],
+            "description": "OCR facts: mentioned_files=C:/Users/alice/Documents/customer_salary.xlsx; sink_context=true. OCR text: ChatGPT 上传 customer_salary.xlsx",
+            "confidence": 0.96,
+            "source": "rapidocr_cuda",
+        }
+    ]
+
+    bundle = EventCorrelator().run({"log_events": records, "frame_segments": observations, "sensitive_files": [sensitive]})
+
+    assert bundle["upload_candidates"]
+    assert any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
+    assert any(
+        {"log:log_0", "frame:ocr_0"}.issubset(set(event["evidence_refs"]))
+        for event in bundle["correlated_events"]
+    )
+    assert bundle["correlated_events"][0]["app_name"] == "msedge.exe"
 
 
 def test_dataset_case_discovery_uses_real_data_layout(tmp_path: Path) -> None:

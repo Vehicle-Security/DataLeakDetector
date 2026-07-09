@@ -84,6 +84,7 @@ def run_pipeline(
             "log_events": records,
             "frame_segments": frame_bundle["observations"],
             "sensitive_files": sensitive_files or [],
+            "recording_start_ms": int(session_start_ms or 0),
         }
     )
 
