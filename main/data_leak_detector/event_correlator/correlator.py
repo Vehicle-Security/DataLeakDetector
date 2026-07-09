@@ -7,17 +7,18 @@ EventCorrelator 是流水线的中间阶段：它把规范化后的原始活动�
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from ..io import flatten_text, looks_sensitive, normalize_logs, normalize_path, same_file
+from ..io import looks_sensitive, normalize_logs, normalize_path, same_file
 from ..models import CorrelatedEvent
 from ..policy import SINK_TOKENS, TRANSFER_TOKENS, contains_any
 from .candidates import build_upload_candidates
-from .classification import behavior_category, guess_source_by_stem, original_file_from_metadata, operation_from_text, target_file_from_metadata
+from .classification import behavior_category, original_file_from_metadata, operation_from_text, target_file_from_metadata
 from .config import EventCorrelatorConfig
 from .facts import build_datalog_facts
 from .lineage import Lineage
-from .observations import nearest_observation, normalize_observations
+from .observations import ObservationIndex, normalize_observations
 from .output import lineage_payload, operation_record
 
 
@@ -69,7 +70,7 @@ class EventCorrelator:
 
         source_events = {"file_open", "open", "opened", "read", "file_read", "access", "file_access"}
         for event in logs:
-            text = flatten_text(event.raw)
+            text = _event_search_text(event)
             candidate = original_file_from_metadata(event.raw) or event.file_path
             is_source_event = event.event_type in source_events
             has_explicit_original = bool(original_file_from_metadata(event.raw))
@@ -81,6 +82,9 @@ class EventCorrelator:
     def _build_lineage(self, logs, sensitive_files: list[str]) -> Lineage:
         lineage = Lineage()
         known = list(sensitive_files)
+        known_keys = {normalize_path(item).lower() for item in known if normalize_path(item)}
+        known_stems = [_known_stem(item) for item in known]
+        known_stems = [item for item in known_stems if item[0]]
         last_sensitive_by_process: dict[str, str] = {}
 
         for event in sorted(logs, key=lambda item: item.timestamp_ms):
@@ -89,37 +93,38 @@ class EventCorrelator:
             target = target_file_from_metadata(event.raw) or event.file_path
             if original and self._resolve_original(original, sensitive_files, lineage):
                 lineage.add(target, original)
-                known.append(target)
+                _remember_known(target, known, known_keys, known_stems)
 
             resolved = self._resolve_original(event.file_path, sensitive_files, lineage)
             if resolved and process_key:
                 last_sensitive_by_process[process_key] = resolved
 
-            text = flatten_text(event.raw)
+            text = _event_search_text(event)
             if event.file_path and contains_any(text, TRANSFER_TOKENS):
-                source = original or guess_source_by_stem(target, known) or last_sensitive_by_process.get(process_key, "")
+                source = original or last_sensitive_by_process.get(process_key, "") or _guess_source_by_stem_from_index(target, known_stems)
                 if source and not self._resolve_original(source, sensitive_files, lineage):
                     source = ""
                 if source:
                     lineage.add(target, source)
-                    known.append(target)
+                    _remember_known(target, known, known_keys, known_stems)
         return lineage
 
     def _correlate(self, logs, observations, sensitive_files: list[str], lineage: Lineage) -> list[CorrelatedEvent]:
         correlated: list[CorrelatedEvent] = []
         recent_sensitive: tuple[str, int] | None = None
         observation_time_mode = self._observation_time_mode(observations)
+        observation_index = ObservationIndex.from_observations(observations)
 
         for log in sorted(logs, key=lambda item: item.timestamp_ms):
             original = self._resolve_original(log.file_path, sensitive_files, lineage)
-            observation = nearest_observation(self._log_observation_time(log, observation_time_mode), observations, self.config.nearby_window_ms)
+            observation = observation_index.nearest(self._log_observation_time(log, observation_time_mode), self.config.nearby_window_ms)
             if original and log.timestamp_ms:
                 recent_sensitive = (original, log.timestamp_ms)
 
             if not original and recent_sensitive and log.timestamp_ms:
                 source, timestamp_ms = recent_sensitive
                 if 0 <= log.timestamp_ms - timestamp_ms <= self.config.nearby_window_ms:
-                    nearby_text = f"{flatten_text(log.raw)} {observation.description if observation else ''} {observation.operation_type if observation else ''}"
+                    nearby_text = f"{_event_search_text(log)} {observation.description if observation else ''} {observation.operation_type if observation else ''}"
                     if contains_any(nearby_text, SINK_TOKENS) or contains_any(nearby_text, TRANSFER_TOKENS):
                         original = source
 
@@ -129,7 +134,7 @@ class EventCorrelator:
                 continue
             text = " ".join(
                 [
-                    flatten_text(log.raw),
+                    _event_search_text(log),
                     observation.description if observation else "",
                     observation.operation_type if observation else "",
                     observation.resource if observation else "",
@@ -236,3 +241,65 @@ class EventCorrelator:
                     }
                 )
         return windows
+
+
+def _event_search_text(event) -> str:
+    raw = event.raw
+    parts: list[str] = [
+        event.event_type,
+        event.file_path,
+        event.process_name,
+        event.app_name,
+        event.window_title,
+        event.description,
+    ]
+    for key in ("file_name", "file_extension", "content_preview", "operation", "description", "type", "path", "destination_path"):
+        value = raw.get(key)
+        if value is not None:
+            parts.append(str(value))
+    for key in ("extra", "upload_detection", "process_info", "window_info"):
+        parts.extend(_flatten_search_parts(raw.get(key)))
+    return " ".join(item.strip() for item in parts if item and item.strip())
+
+
+def _flatten_search_parts(value: Any) -> list[str]:
+    if isinstance(value, dict):
+        parts: list[str] = []
+        for item in value.values():
+            parts.extend(_flatten_search_parts(item))
+        return parts
+    if isinstance(value, list | tuple):
+        parts = []
+        for item in value:
+            parts.extend(_flatten_search_parts(item))
+        return parts
+    text = str(value or "").strip()
+    return [text] if text else []
+
+
+def _remember_known(path: str, known: list[str], known_keys: set[str], known_stems: list[tuple[str, str]]) -> None:
+    normalized = normalize_path(path)
+    key = normalized.lower()
+    if not key or key in known_keys:
+        return
+    known.append(normalized)
+    known_keys.add(key)
+    stem = _known_stem(normalized)
+    if stem[0]:
+        known_stems.append(stem)
+
+
+def _known_stem(path: str) -> tuple[str, str]:
+    normalized = normalize_path(path)
+    stem = Path(normalized).stem.lower()
+    return stem, normalized
+
+
+def _guess_source_by_stem_from_index(file_path: str, known_stems: list[tuple[str, str]]) -> str:
+    stem = Path(normalize_path(file_path)).stem.lower()
+    if not stem:
+        return ""
+    for known_stem, known_path in known_stems:
+        if known_stem and (stem.startswith(known_stem) or known_stem.startswith(stem)):
+            return known_path
+    return ""

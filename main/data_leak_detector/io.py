@@ -48,12 +48,14 @@ def load_json_records(path: str | Path) -> list[dict[str, Any]]:
     return records
 
 
-def normalize_logs(records: list[dict[str, Any]]) -> list[LogEvent]:
+def normalize_logs(records: list[dict[str, Any]], session_start_ms: int | None = None) -> list[LogEvent]:
     """把异构的原始日志记录映射成流水线事件结构。"""
 
     events: list[LogEvent] = []
     parsed_times = [parse_timestamp_ms(record.get("timestamp") or record.get("time") or "") for record in records]
-    session_start_ms = next((item for item in parsed_times if item), 0)
+    inferred_start_ms = next((item for item in parsed_times if item), 0)
+    effective_start_ms = int(session_start_ms or 0) or inferred_start_ms
+    explicit_session_start = bool(session_start_ms)
     for index, record in enumerate(records):
         process = record.get("process_info") if isinstance(record.get("process_info"), dict) else {}
         window = record.get("window_info") if isinstance(record.get("window_info"), dict) else {}
@@ -80,7 +82,7 @@ def normalize_logs(records: list[dict[str, Any]]) -> list[LogEvent]:
                 event_id=str(record.get("event_id") or f"log_{index}"),
                 timestamp=timestamp,
                 timestamp_ms=timestamp_ms,
-                video_time_ms=_video_time_ms(record, timestamp_ms, session_start_ms),
+                video_time_ms=_video_time_ms(record, timestamp_ms, effective_start_ms, explicit_session_start),
                 event_type=str(record.get("event_type") or record.get("type") or "").lower(),
                 file_path=file_path,
                 process_name=process_name,
@@ -109,7 +111,12 @@ def _event_description(record: dict[str, Any], upload: dict[str, Any], extra: di
     return " ".join(str(item).strip() for item in parts if str(item or "").strip())
 
 
-def _video_time_ms(record: dict[str, Any], timestamp_ms: int, session_start_ms: int) -> int:
+def _video_time_ms(
+    record: dict[str, Any],
+    timestamp_ms: int,
+    session_start_ms: int,
+    explicit_session_start: bool = False,
+) -> int:
     extra = record.get("extra") if isinstance(record.get("extra"), dict) else {}
     relative = extra.get("relative_timestamp")
     try:
@@ -117,7 +124,10 @@ def _video_time_ms(record: dict[str, Any], timestamp_ms: int, session_start_ms: 
     except (TypeError, ValueError):
         pass
     if timestamp_ms and session_start_ms:
-        return max(timestamp_ms - session_start_ms, 0)
+        delta = timestamp_ms - session_start_ms
+        if delta < 0 and explicit_session_start:
+            return -1
+        return max(delta, 0)
     return -1
 
 

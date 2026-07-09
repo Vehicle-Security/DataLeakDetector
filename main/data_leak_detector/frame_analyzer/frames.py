@@ -114,12 +114,13 @@ def select_keyframes_detailed(
             retained_hashes: list[tuple[int, int]] = []
             retained_small_frames = []
             last_kept_ms = -10**9
-            timestamp = window.start_ms
-            while timestamp <= window.end_ms and retained_for_window < window.max_keyframes:
-                capture.set(cv2.CAP_PROP_POS_MSEC, float(timestamp))
-                ok, frame = capture.read()
-                if not ok:
-                    timestamp += window.step_ms
+            timestamps = _probe_timestamps(window, config)
+            frames_by_timestamp = _read_frames_for_timestamps(cv2, capture, timestamps, fps, config)
+            for timestamp in timestamps:
+                if retained_for_window >= window.max_keyframes:
+                    break
+                frame = frames_by_timestamp.get(timestamp)
+                if frame is None:
                     continue
 
                 small = cv2.resize(frame, (160, 90))
@@ -144,7 +145,12 @@ def select_keyframes_detailed(
                     frame_id = f"frame_{window_index}_{retained_for_window}"
                     image_path = temp_dir / f"{frame_id}_{timestamp}.jpg"
                     cv2.imwrite(str(image_path), frame)
-                    reason = f"{window.priority}:window_start" if previous_small is None else f"{window.priority}:visual_change"
+                    if force_keep:
+                        reason = f"{window.priority}:anchor"
+                    elif previous_small is None:
+                        reason = f"{window.priority}:window_start"
+                    else:
+                        reason = f"{window.priority}:visual_change"
                     keyframe = KeyFrame(frame_id, timestamp, str(image_path), round(float(score), 4), reason, window_id=f"window_{window_index}")
                     candidates.append(_FrameCandidate(frame=keyframe, priority=window.priority, gray=gray, frame_hash=frame_hash))
                     previous_small = gray
@@ -152,7 +158,6 @@ def select_keyframes_detailed(
                     retained_small_frames.append(gray)
                     last_kept_ms = timestamp
                     retained_for_window += 1
-                timestamp += window.step_ms
     finally:
         capture.release()
 
@@ -209,7 +214,13 @@ def _dedupe_keyframes_globally(
     kept: list[_FrameCandidate] = []
     duplicates: list[KeyFrameDuplicate] = []
     for candidate in sorted(candidates, key=lambda item: (_priority_sort_key(item.priority), item.frame.timestamp_ms)):
-        duplicate_of = _find_global_duplicate(cv2, candidate, kept, config.frame_exact_duplicate_threshold)
+        duplicate_of = _find_global_duplicate(
+            cv2,
+            candidate,
+            kept,
+            config.frame_exact_duplicate_threshold,
+            config.frame_anchor_duplicate_gap_ms,
+        )
         if duplicate_of is None:
             kept.append(candidate)
             continue
@@ -231,8 +242,17 @@ def _find_global_duplicate(
     candidate: _FrameCandidate,
     kept: list[_FrameCandidate],
     exact_threshold: float,
+    anchor_duplicate_gap_ms: int,
 ) -> tuple[_FrameCandidate, float, int] | None:
+    candidate_is_anchor = "anchor" in candidate.frame.reason
     for retained in kept:
+        retained_is_anchor = "anchor" in retained.frame.reason
+        if candidate_is_anchor and not (
+            retained_is_anchor
+            and anchor_duplicate_gap_ms > 0
+            and abs(candidate.frame.timestamp_ms - retained.frame.timestamp_ms) <= anchor_duplicate_gap_ms
+        ):
+            continue
         delta = _frame_delta(cv2, retained.gray, candidate.gray)
         hash_distance = _hamming(candidate.frame_hash, retained.frame_hash)
         if candidate.frame.timestamp_ms == retained.frame.timestamp_ms or delta <= exact_threshold:
@@ -255,10 +275,10 @@ def _should_keep_frame(
 ) -> bool:
     if previous_small is None:
         return True
-    if exact_duplicate:
-        return False
     if force_keep:
         return True
+    if exact_duplicate:
+        return False
     if score < diff_threshold:
         return False
     if config.frame_min_keep_gap_ms > 0 and timestamp_ms - last_kept_ms < config.frame_min_keep_gap_ms:
@@ -269,6 +289,90 @@ def _should_keep_frame(
 def _is_near_anchor(timestamp_ms: int, anchors: tuple[int, ...], step_ms: int) -> bool:
     tolerance = max(step_ms // 2, 125)
     return any(abs(timestamp_ms - anchor) <= tolerance for anchor in anchors)
+
+
+def _probe_timestamps(window: AnalysisWindow, config: VisionConfig) -> list[int]:
+    if window.end_ms <= window.start_ms:
+        return [window.start_ms]
+
+    exact = list(range(window.start_ms, window.end_ms + 1, max(1, window.step_ms)))
+    max_probes = max(window.max_keyframes, window.max_keyframes * config.frame_probe_multiplier)
+    if len(exact) <= max_probes:
+        timestamps = exact
+    else:
+        timestamps = []
+        last_index = len(exact) - 1
+        for slot in range(max_probes):
+            timestamps.append(exact[round(slot * last_index / max(1, max_probes - 1))])
+
+    anchors = [anchor for anchor in window.anchor_ms if window.start_ms <= anchor <= window.end_ms]
+    ordered: list[int] = []
+    seen: set[int] = set()
+    for timestamp in [*sorted(anchors), window.start_ms, window.end_ms, *timestamps]:
+        if timestamp in seen:
+            continue
+        seen.add(timestamp)
+        ordered.append(timestamp)
+    return ordered
+
+
+def _read_frames_for_timestamps(cv2, capture, timestamps: list[int], fps: float, config: VisionConfig) -> dict[int, object]:
+    if not timestamps:
+        return {}
+
+    frames: dict[int, object] = {}
+    for group in _timestamp_groups(sorted(set(timestamps)), config.frame_sequential_gap_ms):
+        if len(group) == 1:
+            frame = _seek_read_frame(cv2, capture, group[0])
+            if frame is not None:
+                frames[group[0]] = frame
+            continue
+        frames.update(_read_timestamp_group_sequentially(cv2, capture, group, fps))
+    return frames
+
+
+def _timestamp_groups(timestamps: list[int], max_gap_ms: int) -> list[list[int]]:
+    if not timestamps:
+        return []
+    if max_gap_ms <= 0:
+        return [[timestamp] for timestamp in timestamps]
+
+    groups: list[list[int]] = [[timestamps[0]]]
+    for timestamp in timestamps[1:]:
+        if timestamp - groups[-1][-1] <= max_gap_ms:
+            groups[-1].append(timestamp)
+        else:
+            groups.append([timestamp])
+    return groups
+
+
+def _seek_read_frame(cv2, capture, timestamp_ms: int):
+    capture.set(cv2.CAP_PROP_POS_MSEC, float(timestamp_ms))
+    ok, frame = capture.read()
+    return frame.copy() if ok else None
+
+
+def _read_timestamp_group_sequentially(cv2, capture, timestamps: list[int], fps: float) -> dict[int, object]:
+    frames: dict[int, object] = {}
+    if not timestamps:
+        return frames
+
+    frame_interval_ms = max(1, int(round(1000.0 / max(fps, 1.0))))
+    tolerance_ms = max(frame_interval_ms, 50)
+    target_index = 0
+    capture.set(cv2.CAP_PROP_POS_MSEC, float(timestamps[0]))
+
+    while target_index < len(timestamps):
+        ok, frame = capture.read()
+        if not ok:
+            break
+        position_ms = int(round(capture.get(cv2.CAP_PROP_POS_MSEC) or timestamps[target_index]))
+        if position_ms > timestamps[-1] + tolerance_ms:
+            break
+        while target_index < len(timestamps) and position_ms + tolerance_ms >= timestamps[target_index]:
+            frames[timestamps[target_index]] = frame.copy()
+            target_index += 1
+    return frames
 
 
 def _merge_same_priority_windows(windows: list[AnalysisWindow]) -> list[AnalysisWindow]:
@@ -286,7 +390,7 @@ def _merge_same_priority_windows(windows: list[AnalysisWindow]) -> list[Analysis
             reason=f"{previous.reason}+{window.reason}",
             priority=previous.priority,
             step_ms=min(previous.step_ms, window.step_ms),
-            max_keyframes=max(previous.max_keyframes, window.max_keyframes),
+            max_keyframes=max(previous.max_keyframes, window.max_keyframes, len(anchors)),
             diff_threshold=min(previous.diff_threshold, window.diff_threshold),
             anchor_ms=anchors,
             active_apps=apps,

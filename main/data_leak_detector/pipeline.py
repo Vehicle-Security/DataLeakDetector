@@ -35,6 +35,7 @@ def run_pipeline(
     neo4j_log_miner: bool | None = None,
     reuse_neo4j_import: bool | None = None,
     case_name: str | None = None,
+    session_start_ms: int | None = None,
 ) -> dict[str, Any]:
     """Run FrameAnalyzer -> EventCorrelator -> LeakReasoner."""
 
@@ -42,7 +43,7 @@ def run_pipeline(
     video_text = str(video_file or "")
     video_path = Path(video_text) if video_text else None
     records = load_json_records(log_path)
-    logs = normalize_logs(records)
+    logs = normalize_logs(records, session_start_ms=session_start_ms)
     report_id = _build_report_id(log_path, len(records), case_name)
     target_dir = Path(output_dir) if output_dir is not None else None
     vision_artifact_dir = target_dir / report_id if target_dir is not None else None
@@ -97,7 +98,12 @@ def run_pipeline(
     report = DetectionReport(
         report_id=report_id,
         generated_at=iso_now(),
-        input={"log_file": str(log_path), "video_file": video_text, "groundtruth_file": str(groundtruth_file or "")},
+        input={
+            "log_file": str(log_path),
+            "video_file": video_text,
+            "groundtruth_file": str(groundtruth_file or ""),
+            "recording_start_ms": int(session_start_ms or 0),
+        },
         summary={
             "logs": len(logs),
             "frame_observations": len(frame_bundle["observations"]),
@@ -306,6 +312,7 @@ def run_data_case(
         neo4j_log_miner=neo4j_log_miner,
         reuse_neo4j_import=reuse_neo4j_import,
         case_name=case.case_dir.name,
+        session_start_ms=case.recording_start_ms,
     )
     report["input"].update(case.to_input_metadata())
     return report

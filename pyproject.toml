@@ -24,6 +24,7 @@ vision-gpu = [
   "pillow>=10",
   "rapidocr>=3.9",
   "onnxruntime-gpu[cuda,cudnn]>=1.20,<1.21",
+  "paddleocr>=3.0",
 ]
 
 [build-system]

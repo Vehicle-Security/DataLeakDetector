@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
+from dataclasses import dataclass
 from typing import Any
 
 from ..io import normalize_path
@@ -55,3 +57,37 @@ def nearest_observation(
         if distance <= tolerance_ms and (best is None or distance < best[0]):
             best = (distance, observation)
     return best[1] if best else None
+
+
+@dataclass(frozen=True)
+class ObservationIndex:
+    centers: tuple[int, ...]
+    observations: tuple[FrameObservation, ...]
+
+    @classmethod
+    def from_observations(cls, observations: list[FrameObservation]) -> "ObservationIndex":
+        indexed = sorted(
+            (
+                observation.start_ms if not observation.end_ms else (observation.start_ms + observation.end_ms) // 2,
+                index,
+                observation,
+            )
+            for index, observation in enumerate(observations)
+        )
+        return cls(
+            centers=tuple(item[0] for item in indexed),
+            observations=tuple(item[2] for item in indexed),
+        )
+
+    def nearest(self, timestamp_ms: int, tolerance_ms: int) -> FrameObservation | None:
+        if not timestamp_ms:
+            return None
+        position = bisect_left(self.centers, timestamp_ms)
+        best: tuple[int, FrameObservation] | None = None
+        for index in (position - 1, position):
+            if index < 0 or index >= len(self.centers):
+                continue
+            distance = abs(timestamp_ms - self.centers[index])
+            if distance <= tolerance_ms and (best is None or distance < best[0]):
+                best = (distance, self.observations[index])
+        return best[1] if best else None

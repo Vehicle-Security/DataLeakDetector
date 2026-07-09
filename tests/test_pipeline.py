@@ -12,7 +12,15 @@ from data_leak_detector.frame_analyzer import analyze_video_behavior
 from data_leak_detector.frame_analyzer.analyzer import _dedupe_ocr_results, _export_vision_artifacts, _select_ocr_frames_for_ocr
 from data_leak_detector.frame_analyzer.apps import identify_frontend_app
 from data_leak_detector.frame_analyzer.config import VisionConfig
-from data_leak_detector.frame_analyzer.frames import KeyFrame, KeyFrameDuplicate, _hamming, _should_keep_frame
+from data_leak_detector.frame_analyzer.frames import (
+    AnalysisWindow,
+    KeyFrame,
+    KeyFrameDuplicate,
+    _hamming,
+    _should_keep_frame,
+    _timestamp_groups,
+    merge_analysis_windows,
+)
 from data_leak_detector.frame_analyzer.ocr import OcrResult, RapidOcrProvider, _rapidocr_provider_name
 from data_leak_detector.frame_analyzer.parser import parse_vlm_response, vision_events_to_observations
 from data_leak_detector.frame_analyzer.roi import detect_foreground_window_region, detect_text_regions
@@ -86,7 +94,11 @@ def test_analysis_windows_use_video_relative_timestamps_from_real_logs() -> None
         ]
     )
 
-    windows = build_analysis_windows(logs, [], VisionConfig(frame_window_before_ms=30_000, frame_window_after_ms=120_000))
+    windows = build_analysis_windows(
+        logs,
+        [],
+        VisionConfig(frame_window_before_ms=30_000, frame_window_after_ms=120_000, include_weak_windows=True),
+    )
 
     assert windows[0].start_ms == 12_500
     assert windows[0].end_ms == 162_500
@@ -211,7 +223,11 @@ def test_bluetooth_transfer_window_keeps_separate_strong_budget() -> None:
         ]
     )
 
-    windows = build_analysis_windows(logs, ["C:/Users/alice/Desktop/secret.docx"], VisionConfig())
+    windows = build_analysis_windows(
+        logs,
+        ["C:/Users/alice/Desktop/secret.docx"],
+        VisionConfig(include_unanchored_medium_windows=True),
+    )
 
     assert [window.priority for window in windows] == ["strong", "medium"]
     assert windows[0].start_ms == 55_000
@@ -240,6 +256,41 @@ def test_bluetooth_sensitive_file_access_becomes_keyframe_anchor() -> None:
     assert windows[0].anchor_ms == (0, 3_000, 8_000)
 
 
+def test_dense_medium_windows_are_merged_per_case_segment() -> None:
+    records = [
+        {
+            "timestamp": "2026-01-01T12:00:00",
+            "event_type": "opened",
+            "file_path": "C:/Users/alice/Desktop/customer_salary.xlsx",
+            "extra": {"relative_timestamp": float(second)},
+        }
+        for second in range(0, 1_201, 30)
+    ]
+    logs = normalize_logs(records)
+
+    windows = build_analysis_windows(
+        logs,
+        ["C:/Users/alice/Desktop/customer_salary.xlsx"],
+        VisionConfig(case_segment_ms=300_000, include_unanchored_medium_windows=True),
+    )
+    medium_windows = [window for window in windows if window.priority == "medium"]
+
+    assert len(medium_windows) > 1
+    assert max(window.end_ms - window.start_ms for window in medium_windows) <= 450_000
+
+
+def test_merged_window_budget_keeps_all_log_anchors() -> None:
+    windows = [
+        AnalysisWindow(0, 10_000, "a", priority="medium", max_keyframes=2, anchor_ms=(1_000, 2_000)),
+        AnalysisWindow(5_000, 15_000, "b", priority="medium", max_keyframes=2, anchor_ms=(6_000, 7_000, 8_000)),
+    ]
+
+    merged = merge_analysis_windows(windows)
+
+    assert merged[0].anchor_ms == (1_000, 2_000, 6_000, 7_000, 8_000)
+    assert merged[0].max_keyframes == 5
+
+
 def test_ocr_reads_all_selected_keyframes() -> None:
     frames = [
         KeyFrame(f"w0_{index}", index * 100, "frame.jpg", 0.9, "strong:visual_change", window_id="window_0")
@@ -256,6 +307,23 @@ def test_ocr_reads_all_selected_keyframes() -> None:
 
 def test_ocr_roi_is_experimental_and_disabled_by_default() -> None:
     assert VisionConfig().ocr_roi_enabled is False
+    assert VisionConfig().include_weak_windows is False
+
+
+def test_weak_analysis_windows_are_opt_in() -> None:
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "app_switch",
+                "app_name": "Edge",
+                "extra": {"risk_level": "high", "relative_timestamp": 1.0},
+            }
+        ]
+    )
+
+    assert build_analysis_windows(logs, [], VisionConfig()) == []
+    assert build_analysis_windows(logs, [], VisionConfig(include_weak_windows=True))[0].priority == "weak"
 
 
 def test_ocr_dedupes_same_timestamp_from_overlapping_windows() -> None:
@@ -280,6 +348,17 @@ def test_ocr_keeps_medium_and_strong_keyframes() -> None:
     selected = _select_ocr_frames_for_ocr(frames)
 
     assert [frame.frame_id for frame in selected] == ["medium", "strong", "far"]
+
+
+def test_ocr_keeps_all_anchor_keyframes_even_over_medium_budget() -> None:
+    frames = [
+        KeyFrame(f"anchor_{index}", index * 1_000, "frame.jpg", 0.9, "medium:anchor", window_id="window_0")
+        for index in range(4)
+    ]
+
+    selected = _select_ocr_frames_for_ocr(frames, VisionConfig(max_keyframes_per_medium_window=2))
+
+    assert [frame.frame_id for frame in selected] == ["anchor_0", "anchor_1", "anchor_2", "anchor_3"]
 
 
 def test_frame_hash_distance_can_detect_near_duplicates() -> None:
@@ -340,8 +419,14 @@ def test_keyframe_filter_has_no_time_based_force_keep() -> None:
 
     assert keep_duplicate_after_long_gap is False
     assert keep_different_frame is True
-    assert keep_duplicate_log_anchor is False
+    assert keep_duplicate_log_anchor is True
     assert keep_changed_log_anchor is True
+
+
+def test_keyframe_probe_timestamps_are_grouped_for_sequential_decode() -> None:
+    groups = _timestamp_groups([0, 250, 1_000, 8_000, 8_300, 20_000], max_gap_ms=1_000)
+
+    assert groups == [[0, 250, 1_000], [8_000, 8_300], [20_000]]
 
 
 def test_ocr_results_are_deduped_per_window() -> None:
@@ -357,6 +442,19 @@ def test_ocr_results_are_deduped_per_window() -> None:
     deduped = _dedupe_ocr_results(results, VisionConfig(ocr_text_similarity_threshold=0.92))
 
     assert [item.frame.frame_id for item in deduped] == ["a", "c"]
+
+
+def test_ocr_dedupe_keeps_anchor_frames() -> None:
+    frame_a = KeyFrame("a", 1000, "a.jpg", 0.9, "medium:anchor", window_id="window_0")
+    frame_b = KeyFrame("b", 2000, "b.jpg", 0.9, "medium:anchor", window_id="window_0")
+    results = [
+        OcrResult(frame_a, "same desktop text", 0.9, "paddleocr_gpu"),
+        OcrResult(frame_b, "same desktop text", 0.9, "paddleocr_gpu"),
+    ]
+
+    deduped = _dedupe_ocr_results(results, VisionConfig(ocr_text_similarity_threshold=0.92))
+
+    assert [item.frame.frame_id for item in deduped] == ["a", "b"]
 
 
 def test_rapidocr_provider_downscales_large_images(tmp_path: Path) -> None:
@@ -608,6 +706,25 @@ def test_dataset_case_discovery_uses_real_data_layout(tmp_path: Path) -> None:
     assert case.sensitive_files == ("C:/Users/alice/Documents/customer_salary.xlsx",)
 
 
+def test_dataset_case_discovery_prefers_indexed_video(tmp_path: Path) -> None:
+    case_dir = tmp_path / "case"
+    logs_dir = case_dir / "logs"
+    video_dir = case_dir / "video"
+    logs_dir.mkdir(parents=True)
+    video_dir.mkdir()
+    (logs_dir / "logs.json").write_text(json.dumps(_records()), encoding="utf-8")
+    (video_dir / "recording_20240101_000000.mp4").write_bytes(b"old")
+    (video_dir / "recording_20240102_000000.mp4").write_bytes(b"new")
+    (case_dir / "INDEX.md").write_text(
+        "# Recording Session Index\n\n**Session ID**: 20240102_000000\n\n- `video/recording_20240102_000000.mp4`\n",
+        encoding="utf-8",
+    )
+
+    case = discover_data_case(case_dir)
+
+    assert case.video_file and case.video_file.name == "recording_20240102_000000.mp4"
+
+
 def test_report_id_includes_case_name_for_artifact_folders() -> None:
     report_id = _build_report_id(Path("logs.json"), 528, "1-email-fastmail-1")
 
@@ -668,6 +785,25 @@ def test_vlm_frame_selection_requires_real_ocr_before_low_confidence_fallback() 
 
     assert choose_vlm_frames([no_ocr], min_confidence=0.70, max_frames=4) == []
     assert choose_vlm_frames([weak_ocr], min_confidence=0.70, max_frames=4)
+
+
+def test_vlm_frame_selection_prioritizes_strong_late_sink_frame() -> None:
+    early = OcrResult(
+        frame=KeyFrame("early", 1_000, "early.jpg", 0.9, "medium:visual_change"),
+        text="工资 表格 桌面",
+        confidence=0.95,
+        provider="rapidocr_cuda",
+    )
+    late = OcrResult(
+        frame=KeyFrame("late", 60_000, "late.jpg", 0.9, "strong:visual_change"),
+        text="豆包 上传 员工薪资",
+        confidence=0.95,
+        provider="rapidocr_cuda",
+    )
+
+    selected = choose_vlm_frames([early, late], min_confidence=0.70, max_frames=1)
+
+    assert selected[0].frame.frame_id == "late"
 
 
 def test_frontend_app_recognition_generalizes_to_unseen_apps() -> None:

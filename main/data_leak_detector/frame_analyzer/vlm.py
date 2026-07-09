@@ -81,15 +81,36 @@ def choose_vlm_frames(
     min_confidence: float,
     max_frames: int,
 ) -> list[VlmRequestFrame]:
-    candidates: list[VlmRequestFrame] = []
+    candidates: list[tuple[int, int, VlmRequestFrame]] = []
     for result in ocr_results:
         text = result.text.strip()
         ocr_available = result.provider not in {"none", "tesseract_missing"}
         low_confidence = ocr_available and result.confidence < min_confidence
         suspicious_text = contains_any(text, SINK_TOKENS + TRANSFER_TOKENS + SENSITIVE_TOKENS + UNKNOWN_RISK_TOKENS)
         if low_confidence or suspicious_text:
-            candidates.append(VlmRequestFrame(result.frame, text, result.confidence))
-    return candidates[:max_frames]
+            candidates.append((_vlm_frame_score(result, suspicious_text=suspicious_text, low_confidence=low_confidence), result.frame.timestamp_ms, VlmRequestFrame(result.frame, text, result.confidence)))
+    return [item[2] for item in sorted(candidates, key=lambda item: (-item[0], item[1]))[:max_frames]]
+
+
+def _vlm_frame_score(result: OcrResult, *, suspicious_text: bool, low_confidence: bool) -> int:
+    reason = result.frame.reason.lower()
+    text = result.text
+    score = 0
+    if reason.startswith("strong"):
+        score += 100
+    elif reason.startswith("weak"):
+        score += 40
+    if contains_any(text, SINK_TOKENS):
+        score += 80
+    if contains_any(text, TRANSFER_TOKENS):
+        score += 60
+    if contains_any(text, SENSITIVE_TOKENS):
+        score += 40
+    if suspicious_text:
+        score += 20
+    if low_confidence:
+        score += 10
+    return score
 
 
 def _prompt(frames: list[VlmRequestFrame], sensitive_files: list[str], active_apps: list[str]) -> str:

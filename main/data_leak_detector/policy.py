@@ -12,12 +12,15 @@ import os
 import re
 import unicodedata
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_POLICY_PATH = REPO_ROOT / "spec" / "config" / "policy.json"
+WHITESPACE_RE = re.compile(r"\s+")
+COMPACT_SEPARATOR_RE = re.compile(r"[\s_\-./\\:：,，。;；|]+")
 
 FALLBACK_POLICY: dict[str, Any] = {
     "sensitive_tokens": ("confidential", "secret", "salary", "customer", "机密", "工资", "客户"),
@@ -119,20 +122,27 @@ def normalize_text(value: object) -> str:
     """把文本统一为适合规则匹配的形式。"""
 
     text = unicodedata.normalize("NFKC", str(value or "")).casefold()
-    return re.sub(r"\s+", " ", text).strip()
+    return WHITESPACE_RE.sub(" ", text).strip()
 
 
 def contains_any(text: str, tokens: tuple[str, ...]) -> bool:
     normalized = f" {normalize_text(text)} "
-    compact = re.sub(r"[\s_\-./\\:：,，。;；|]+", "", normalized)
+    compact = COMPACT_SEPARATOR_RE.sub("", normalized)
+    for normalized_token, compact_token in _token_forms(tokens):
+        if normalized_token in normalized or compact_token in compact:
+            return True
+    return False
+
+
+@lru_cache(maxsize=128)
+def _token_forms(tokens: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
+    forms: list[tuple[str, str]] = []
     for token in tokens:
         normalized_token = normalize_text(token)
         if not normalized_token:
             continue
-        compact_token = re.sub(r"[\s_\-./\\:：,，。;；|]+", "", normalized_token)
-        if normalized_token in normalized or compact_token in compact:
-            return True
-    return False
+        forms.append((normalized_token, COMPACT_SEPARATOR_RE.sub("", normalized_token)))
+    return tuple(forms)
 
 
 def classify_sink(text: str) -> str:

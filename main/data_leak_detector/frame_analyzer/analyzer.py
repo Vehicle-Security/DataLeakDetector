@@ -204,9 +204,13 @@ def _run_vision_pipeline(
     warnings.extend(keyframe_selection.warnings)
 
     ocr_prepare_started = time.perf_counter()
-    ocr_frames = _select_ocr_frames_for_ocr(keyframes)
-    ocr_candidates = prepare_ocr_candidates(ocr_frames, config)
-    ocr_candidate_frames = [candidate.frame for candidate in ocr_candidates if candidate.selected_for_ocr]
+    ocr_frames = _select_ocr_frames_for_ocr(keyframes, config)
+    if config.ocr_roi_enabled:
+        ocr_candidates = prepare_ocr_candidates(ocr_frames, config)
+        ocr_candidate_frames = [candidate.frame for candidate in ocr_candidates if candidate.selected_for_ocr]
+    else:
+        ocr_candidates = []
+        ocr_candidate_frames = ocr_frames
     ocr_prepare_seconds = time.perf_counter() - ocr_prepare_started
 
     ocr_started = time.perf_counter()
@@ -214,7 +218,7 @@ def _run_vision_pipeline(
     ocr_seconds = time.perf_counter() - ocr_started
 
     ocr_postprocess_started = time.perf_counter()
-    raw_ocr_results = _merge_roi_ocr_results(raw_roi_ocr_results, ocr_candidates)
+    raw_ocr_results = _merge_roi_ocr_results(raw_roi_ocr_results, ocr_candidates) if config.ocr_roi_enabled else raw_roi_ocr_results
     ocr_results = _dedupe_ocr_results(raw_ocr_results, config)
     observations.extend(_ocr_observations(ocr_results, config, start_index=start_index))
     ocr_postprocess_seconds = time.perf_counter() - ocr_postprocess_started
@@ -265,7 +269,7 @@ def _run_vision_pipeline(
         "keyframe_duplicates": len(keyframe_selection.duplicates),
         "ocr_input_keyframes": len(ocr_frames),
         "ocr_roi_candidates": len(ocr_candidates),
-        "ocr_roi_selected": len(ocr_candidate_frames),
+        "ocr_roi_selected": len(ocr_candidate_frames) if config.ocr_roi_enabled else 0,
         "ocr_frames": len(ocr_results),
         "ocr_raw_frames": len(raw_ocr_results),
         "vlm_frames": len(vlm_frames),
@@ -302,10 +306,10 @@ def _export_vision_artifacts(
     raw_dir = root / "keyframes_raw"
     roi_dir = root / "keyframes_ocr_roi"
     selected_dir = root / "keyframes_ocr_selected"
-    raw_all_dir.mkdir(parents=True, exist_ok=True)
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    roi_dir.mkdir(parents=True, exist_ok=True)
-    selected_dir.mkdir(parents=True, exist_ok=True)
+    for directory in (raw_all_dir, raw_dir, roi_dir, selected_dir):
+        if directory.exists():
+            shutil.rmtree(directory)
+        directory.mkdir(parents=True, exist_ok=True)
 
     raw_all_files = _copy_frame_images(raw_all_keyframes if raw_all_keyframes is not None else keyframes, raw_all_dir)
     raw_files = _copy_frame_images(keyframes, raw_dir)
@@ -418,18 +422,55 @@ def _keyframe_duplicate_to_dict(duplicate: KeyFrameDuplicate) -> dict[str, Any]:
     }
 
 
-def _select_ocr_frames_for_ocr(frames: list[Any]) -> list[Any]:
-    """OCR every keyframe that survived extraction and visual deduplication."""
+def _select_ocr_frames_for_ocr(frames: list[Any], config: VisionConfig | None = None) -> list[Any]:
+    """Select OCR input frames while keeping each analysis window represented."""
 
-    selected: list[Any] = []
+    unique: list[Any] = []
     seen_timestamps: set[int] = set()
     for frame in sorted(frames, key=lambda item: int(getattr(item, "timestamp_ms", 0))):
         timestamp = int(getattr(frame, "timestamp_ms", 0))
         if timestamp in seen_timestamps:
             continue
         seen_timestamps.add(timestamp)
-        selected.append(frame)
+        unique.append(frame)
+    if config is None:
+        return unique
+
+    selected: list[Any] = []
+    by_window: dict[str, list[Any]] = {}
+    for frame in unique:
+        by_window.setdefault(str(getattr(frame, "window_id", "") or "window_unknown"), []).append(frame)
+
+    for _, group in sorted(by_window.items(), key=lambda item: min(int(getattr(frame, "timestamp_ms", 0)) for frame in item[1])):
+        priority = _frame_priority(group[0])
+        if priority == "strong":
+            budget = config.max_keyframes_per_strong_window
+        elif priority == "weak":
+            budget = config.max_keyframes_per_weak_window
+        else:
+            budget = config.max_keyframes_per_medium_window
+        anchor_frames = [frame for frame in group if "anchor" in str(getattr(frame, "reason", ""))]
+        budget = max(budget, len(anchor_frames))
+        selected.extend(_representative_frames(group, budget))
+    return sorted(selected, key=lambda item: int(getattr(item, "timestamp_ms", 0)))
+
+
+def _representative_frames(frames: list[Any], budget: int) -> list[Any]:
+    ordered = sorted(frames, key=lambda item: int(getattr(item, "timestamp_ms", 0)))
+    if len(ordered) <= budget:
+        return ordered
+    if budget <= 1:
+        return [ordered[0]]
+    selected: list[Any] = []
+    last_index = len(ordered) - 1
+    for slot in range(budget):
+        selected.append(ordered[round(slot * last_index / (budget - 1))])
     return selected
+
+
+def _frame_priority(frame: Any) -> str:
+    reason = str(getattr(frame, "reason", ""))
+    return reason.split(":", 1)[0].split("-", 1)[0].lower()
 
 
 def _merge_roi_ocr_results(results: list[OcrResult], candidates: list[OcrFrameCandidate]) -> list[OcrResult]:
@@ -459,6 +500,12 @@ def _dedupe_ocr_results(results: list[OcrResult], config: VisionConfig) -> list[
     texts_by_window: dict[str, list[str]] = {}
     for result in results:
         text = " ".join(result.text.split()).lower()
+        if "anchor" in str(getattr(result.frame, "reason", "")):
+            kept.append(result)
+            if text:
+                window_id = result.frame.window_id or "window_unknown"
+                texts_by_window.setdefault(window_id, []).append(text)
+            continue
         if not text:
             kept.append(result)
             continue
