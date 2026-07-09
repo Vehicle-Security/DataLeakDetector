@@ -33,6 +33,7 @@ from data_leak_detector.io import normalize_logs
 from data_leak_detector.io import load_json_records
 from data_leak_detector.leak_reasoner import DatalogEngine
 from data_leak_detector.policy import contains_any, load_policy_config
+from data_leak_detector.policy import classify_sink
 from data_leak_detector.sensitivity import SensitiveSourceConfig, extract_sensitive_sources
 from data_leak_detector.pipeline import _build_report_id
 
@@ -700,6 +701,61 @@ def test_visual_observation_can_create_datalog_fact_without_file_path_log() -> N
     assert any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
 
 
+def test_non_vlm_can_be_disabled_for_vlm_only_evaluation() -> None:
+    bundle = EventCorrelator().run(
+        {
+            "session_id": "unit",
+            "log_events": _records(),
+            "frame_segments": [],
+            "sensitive_files": ["C:/Users/alice/Documents/customer_salary.xlsx"],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert bundle["statistics"]["non_vlm_enabled"] is False
+    assert bundle["correlated_events"] == []
+    assert bundle["upload_candidates"] == []
+    assert bundle["datalog_facts"] == []
+
+
+def test_vlm_observations_still_work_when_non_vlm_is_disabled() -> None:
+    original = "C:/Users/alice/Documents/customer_salary.xlsx"
+    records = [
+        {
+            "timestamp": "2026-06-28T10:00:00.000",
+            "event_type": "file_open",
+            "file_path": original,
+            "process_info": {"process_name": "excel.exe"},
+        },
+        {
+            "timestamp": "2026-06-28T10:00:20.000",
+            "event_type": "clipboard_paste",
+            "process_info": {"process_name": "chrome.exe"},
+            "window_info": {"window_title": "ChatGPT"},
+        },
+    ]
+    events = parse_vlm_response(
+        "{\"events\":[{\"time_range\":\"2026-06-28 10:00:20 - 2026-06-28 10:00:21\","
+        "\"app_name\":\"ChatGPT\",\"behavior_category\":\"direct_leak\",\"operation_type\":\"paste_exfiltration\","
+        "\"original_filename\":\"customer_salary.xlsx\",\"description\":\"salary content pasted to ChatGPT\"}]}",
+        keywords=[original],
+    )
+    observations = [item.to_dict() for item in vision_events_to_observations(events)]
+
+    bundle = EventCorrelator().run(
+        {
+            "session_id": "vision",
+            "log_events": records,
+            "frame_segments": observations,
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert bundle["upload_candidates"]
+    assert any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
+
+
 def test_event_correlator_joins_log_and_ocr_without_vlm() -> None:
     sensitive = "C:/Users/alice/Documents/customer_salary.xlsx"
     records = [
@@ -735,6 +791,38 @@ def test_event_correlator_joins_log_and_ocr_without_vlm() -> None:
         for event in bundle["correlated_events"]
     )
     assert bundle["correlated_events"][0]["app_name"] == "msedge.exe"
+    assert "ocr_mentions_sensitive_file" in bundle["correlated_events"][0]["join_reasons"]
+
+
+def test_ai_chat_sink_is_classified_without_vlm() -> None:
+    assert classify_sink("Cherry Studio 默认助手 gpt-3.5-turbo 上传") == "ai_chat"
+
+
+def test_lineage_uses_extra_source_and_output_paths() -> None:
+    original = "C:/Users/alice/Documents/strategy.docx"
+    derived = "C:/Users/alice/Desktop/strategy.pdf"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "print_to_pdf",
+            "file_path": derived,
+            "extra": {"source_path": original, "output_path": derived, "raw_operation": "print_to_pdf"},
+            "process_info": {"process_name": "wps.exe"},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "file_selected",
+            "file_path": derived,
+            "extra": {"category": "文件上传", "source": "file_dialog_monitor"},
+            "process_info": {"process_name": "msedge.exe"},
+            "window_info": {"window_title": "ChatGPT upload"},
+        },
+    ]
+
+    bundle = EventCorrelator().run({"log_events": records, "frame_segments": [], "sensitive_files": [original]})
+
+    assert bundle["file_lineage"]["direct_file_mappings"][derived] == original
+    assert any(item["current_file"] == derived for item in bundle["correlated_events"])
 
 
 def test_dataset_case_discovery_uses_real_data_layout(tmp_path: Path) -> None:

@@ -176,7 +176,8 @@ def _write_correlated_events(tx: TransactionLike, report_id: str, report: dict[s
                 e.operation_type = $operation_type,
                 e.behavior_category = $behavior_category,
                 e.confidence = $confidence,
-                e.evidence_refs = $evidence_refs
+                e.evidence_refs = $evidence_refs,
+                e.join_reasons = $join_reasons
             MERGE (r)-[:HAS_CORRELATED_EVENT]->(e)
             """,
             {
@@ -189,6 +190,7 @@ def _write_correlated_events(tx: TransactionLike, report_id: str, report: dict[s
                 "behavior_category": item.get("behavior_category", ""),
                 "confidence": item.get("confidence", 0.0),
                 "evidence_refs": item.get("evidence_refs", []),
+                "join_reasons": item.get("join_reasons", []),
             },
         )
         _merge_file_edge(tx, "DLDCorrelatedEvent", event_id, item.get("original_file", ""), "ORIGINAL_FILE")

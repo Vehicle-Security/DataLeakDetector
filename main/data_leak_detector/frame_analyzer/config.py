@@ -187,4 +187,4 @@ def _load_dotenv() -> None:
     except ImportError:
         return
     root = Path(__file__).resolve().parents[3]
-    load_dotenv(root / ".env", override=True)
+    load_dotenv(root / ".env", override=False)

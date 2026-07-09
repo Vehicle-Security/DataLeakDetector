@@ -22,6 +22,7 @@ def operation_record(event: CorrelatedEvent) -> dict[str, Any]:
         "operation": event.operation_type,
         "behavior_category": event.behavior_category,
         "evidence_refs": list(event.evidence_refs),
+        "join_reasons": list(event.join_reasons),
     }
 
 

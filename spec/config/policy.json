@@ -129,6 +129,10 @@
   ],
   "sink_classification": [
     {
+      "type": "ai_chat",
+      "tokens": ["chatgpt", "gpt", "deepseek", "kimi", "claude", "gemini", "cherry studio", "默认助手", "大模型", "智能助手"]
+    },
+    {
       "type": "mail_attachment",
       "tokens": ["mail", "email", "attachment", "attach", "邮件", "附件"]
     },

@@ -29,6 +29,7 @@ FALLBACK_POLICY: dict[str, Any] = {
     "normal_activity_tokens": ("normal", "reading", "正常", "阅读", "浏览"),
     "unknown_risk_tokens": ("外发", "泄露", "隐藏", "截图", "录屏", "共享", "粘贴"),
     "sink_classification": [
+        {"type": "ai_chat", "tokens": ("chatgpt", "gpt", "deepseek", "kimi", "claude", "gemini", "cherry studio", "大模型", "智能助手", "默认助手")},
         {"type": "mail_attachment", "tokens": ("mail", "email", "attachment", "attach", "邮件", "附件")},
         {"type": "cloud_sync", "tokens": ("cloud", "drive", "网盘", "云盘")},
         {"type": "chat_upload", "tokens": ("wechat", "qq", "chatgpt", "chat", "微信")},

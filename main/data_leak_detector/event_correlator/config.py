@@ -18,3 +18,4 @@ class EventCorrelatorConfig:
     upload_confidence: float = 0.86
     transfer_confidence: float = 0.72
     infer_sensitive_from_logs: bool = False
+    non_vlm_enabled: bool = True

@@ -22,15 +22,41 @@ def classify_frontend_app(app_name: str, window_title: str = "") -> str:
 
 def original_file_from_metadata(record: dict[str, Any]) -> str:
     upload = record.get("upload_detection") if isinstance(record.get("upload_detection"), dict) else {}
-    return normalize_path(record.get("source_file") or record.get("original_file") or upload.get("original_file") or "")
+    extra = record.get("extra") if isinstance(record.get("extra"), dict) else {}
+    return normalize_path(
+        record.get("source_file")
+        or record.get("original_file")
+        or record.get("src_path")
+        or record.get("source_path")
+        or record.get("from_path")
+        or extra.get("source_file")
+        or extra.get("original_file")
+        or extra.get("src_path")
+        or extra.get("source_path")
+        or upload.get("original_file")
+        or ""
+    )
 
 
 def target_file_from_metadata(record: dict[str, Any]) -> str:
     upload = record.get("upload_detection") if isinstance(record.get("upload_detection"), dict) else {}
+    extra = record.get("extra") if isinstance(record.get("extra"), dict) else {}
     return normalize_path(
         record.get("destination_path")
         or record.get("target_file")
         or record.get("derived_file")
+        or record.get("dst_path")
+        or record.get("target_path")
+        or record.get("to_path")
+        or record.get("output_file")
+        or record.get("output_path")
+        or extra.get("destination_path")
+        or extra.get("target_file")
+        or extra.get("derived_file")
+        or extra.get("dst_path")
+        or extra.get("target_path")
+        or extra.get("output_file")
+        or extra.get("output_path")
         or upload.get("temp_file")
         or record.get("file_path")
         or ""

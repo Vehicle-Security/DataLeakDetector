@@ -7,6 +7,7 @@ EventCorrelator 是流水线的中间阶段：它把规范化后的原始活动�
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -29,13 +30,18 @@ class EventCorrelator:
         self.config = config or EventCorrelatorConfig()
 
     def run(self, payload: dict[str, Any]) -> dict[str, Any]:
+        config = self.config
+        if "non_vlm_enabled" in payload:
+            config = replace(config, non_vlm_enabled=bool(payload.get("non_vlm_enabled")))
         session_start_ms = int(payload.get("recording_start_ms") or 0) or None
         logs = normalize_logs([item for item in payload.get("log_events") or [] if isinstance(item, dict)], session_start_ms=session_start_ms)
         observations = normalize_observations(payload.get("frame_segments") or [])
-        sensitive_files = self._collect_sensitive_files(logs, payload.get("sensitive_files") or [])
-        lineage = self._build_lineage(logs, sensitive_files)
-        correlated = self._correlate(logs, observations, sensitive_files, lineage)
-        uploads = build_upload_candidates(correlated, default_confidence=self.config.upload_confidence)
+        if not config.non_vlm_enabled:
+            observations = [item for item in observations if item.source == "vlm"]
+        sensitive_files = self._collect_sensitive_files(logs, payload.get("sensitive_files") or [], config=config)
+        lineage = self._build_lineage(logs, sensitive_files) if config.non_vlm_enabled else Lineage()
+        correlated = self._correlate(logs, observations, sensitive_files, lineage, config=config)
+        uploads = build_upload_candidates(correlated, default_confidence=config.upload_confidence)
         facts = build_datalog_facts(correlated, uploads, lineage)
 
         return {
@@ -55,18 +61,20 @@ class EventCorrelator:
                 "upload_candidates_output": len(uploads),
                 "lineage_direct_mappings": len(lineage.direct),
                 "datalog_facts_output": len(facts),
+                "non_vlm_enabled": config.non_vlm_enabled,
             },
             "errors": [],
         }
 
-    def _collect_sensitive_files(self, logs, explicit: list[Any]) -> list[str]:
+    def _collect_sensitive_files(self, logs, explicit: list[Any], *, config: EventCorrelatorConfig | None = None) -> list[str]:
+        config = config or self.config
         sensitive: list[str] = []
         for item in explicit:
             path = normalize_path(item)
             if path and not any(same_file(path, existing) for existing in sensitive):
                 sensitive.append(path)
 
-        if not self.config.infer_sensitive_from_logs:
+        if not config.infer_sensitive_from_logs:
             return sensitive
 
         source_events = {"file_open", "open", "opened", "read", "file_read", "access", "file_access"}
@@ -110,7 +118,16 @@ class EventCorrelator:
                     _remember_known(target, known, known_keys, known_stems)
         return lineage
 
-    def _correlate(self, logs, observations, sensitive_files: list[str], lineage: Lineage) -> list[CorrelatedEvent]:
+    def _correlate(
+        self,
+        logs,
+        observations,
+        sensitive_files: list[str],
+        lineage: Lineage,
+        *,
+        config: EventCorrelatorConfig | None = None,
+    ) -> list[CorrelatedEvent]:
+        config = config or self.config
         correlated: list[CorrelatedEvent] = []
         recent_sensitive: tuple[str, int] | None = None
         observation_time_mode = self._observation_time_mode(observations)
@@ -139,6 +156,8 @@ class EventCorrelator:
 
             if not original and observation:
                 original = self._resolve_observation_original(observation, sensitive_files, lineage)
+            if not config.non_vlm_enabled and observation is None:
+                continue
             if not original:
                 continue
             text = " ".join(
@@ -172,6 +191,7 @@ class EventCorrelator:
                     evidence_refs=tuple(
                         [f"log:{log.event_id}"] + ([f"frame:{observation.observation_id}"] if observation else [])
                     ),
+                    join_reasons=tuple(self._join_reasons(log, observation, original, sensitive_files, lineage)),
                 )
             )
         correlated.extend(self._correlate_visual_only(observations, sensitive_files, lineage, start_index=len(correlated)))
@@ -226,6 +246,26 @@ class EventCorrelator:
         if observation.source != "log_anchored":
             score += 1
         return score
+
+    def _join_reasons(self, log, observation, original: str, sensitive_files: list[str], lineage: Lineage) -> list[str]:
+        reasons = ["log_event"]
+        if original:
+            reasons.append("sensitive_file_resolved")
+        if _is_sink_log(log):
+            reasons.append("explicit_sink_log")
+        if observation is not None:
+            distance = abs(self._log_observation_time(log, self._observation_time_mode([observation])) - self._observation_center(observation))
+            if distance <= self.config.nearby_window_ms:
+                reasons.append(f"nearby_frame:{distance}ms")
+            resolved = self._resolve_observation_original(observation, sensitive_files, lineage)
+            if resolved and original and same_file(resolved, original):
+                reasons.append("ocr_mentions_sensitive_file")
+            text = _observation_search_text(observation)
+            if observation.operation_type == "external_sink_interaction" or contains_any(text, SINK_TOKENS):
+                reasons.append("ocr_sink_context")
+            if contains_any(text, TRANSFER_TOKENS):
+                reasons.append("ocr_transfer_context")
+        return reasons
 
     @staticmethod
     def _observation_center(observation) -> int:
@@ -289,6 +329,7 @@ class EventCorrelator:
                     behavior_category=behavior,
                     confidence=round(min(max(observation.confidence, 0.70), 1.0), 3),
                     evidence_refs=(f"frame:{observation.observation_id}",),
+                    join_reasons=tuple(_visual_join_reasons(observation, original)),
                 )
             )
         return visual_events
@@ -362,6 +403,18 @@ def _is_sink_log(log) -> bool:
     raw_operation = str(log.raw.get("operation") or extra.get("raw_operation") or "")
     category = str(extra.get("category") or "")
     return raw_operation in {"file_selected", "file_upload", "upload", "send_click"} or contains_any(category, ("文件上传", "直接外发"))
+
+
+def _visual_join_reasons(observation, original: str) -> list[str]:
+    reasons = ["visual_only"]
+    if original:
+        reasons.append("ocr_mentions_sensitive_file")
+    text = _observation_search_text(observation)
+    if observation.operation_type == "external_sink_interaction" or contains_any(text, SINK_TOKENS):
+        reasons.append("ocr_sink_context")
+    if contains_any(text, TRANSFER_TOKENS):
+        reasons.append("ocr_transfer_context")
+    return reasons
 
 
 def _mentions_file(text: str, file_path: str) -> bool:

@@ -34,6 +34,7 @@ def run_pipeline(
     groundtruth_file: str | Path | None = None,
     neo4j_log_miner: bool | None = None,
     reuse_neo4j_import: bool | None = None,
+    non_vlm_enabled: bool | None = None,
     case_name: str | None = None,
     session_start_ms: int | None = None,
 ) -> dict[str, Any]:
@@ -85,6 +86,7 @@ def run_pipeline(
             "frame_segments": frame_bundle["observations"],
             "sensitive_files": sensitive_files or [],
             "recording_start_ms": int(session_start_ms or 0),
+            "non_vlm_enabled": True if non_vlm_enabled is None else bool(non_vlm_enabled),
         }
     )
 
@@ -293,6 +295,7 @@ def run_data_case(
     max_vlm_frames: int | None = None,
     neo4j_log_miner: bool | None = None,
     reuse_neo4j_import: bool | None = None,
+    non_vlm_enabled: bool | None = None,
 ) -> dict[str, Any]:
     """Run a real spec/data sample directory."""
 
@@ -312,6 +315,7 @@ def run_data_case(
         groundtruth_file=case.groundtruth_file,
         neo4j_log_miner=neo4j_log_miner,
         reuse_neo4j_import=reuse_neo4j_import,
+        non_vlm_enabled=non_vlm_enabled,
         case_name=case.case_dir.name,
         session_start_ms=case.recording_start_ms,
     )

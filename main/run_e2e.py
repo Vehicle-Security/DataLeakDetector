@@ -23,6 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--vision", action="store_true", help="Enable OCR/VLM-assisted frame analysis.")
     parser.add_argument("--vision-mode", choices=["hybrid", "ocr", "vlm"], default="", help="Frame analysis mode.")
     parser.add_argument("--max-vlm-frames", type=int, default=0, help="Maximum keyframes sent to VLM.")
+    parser.add_argument("--no-non-vlm", action="store_true", help="Disable deterministic OCR/log evidence in correlation; useful for VLM-only evaluation.")
     parser.add_argument("--neo4j", action="store_true", help="Write the report graph to Neo4j for this run.")
     parser.add_argument("--neo4j-strict", action="store_true", help="Fail if Neo4j writing fails.")
     parser.add_argument("--neo4j-log-miner", action="store_true", help="Use Neo4j to mine analysis windows before frame extraction.")
@@ -40,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
         "vision_enabled": True if args.vision else None,
         "vision_mode": args.vision_mode or None,
         "max_vlm_frames": args.max_vlm_frames or None,
+        "non_vlm_enabled": False if args.no_non_vlm else None,
     }
     if args.case:
         report = run_data_case(args.case, **common_args)

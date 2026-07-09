@@ -65,10 +65,12 @@ class CorrelatedEvent:
     behavior_category: str
     confidence: float
     evidence_refs: tuple[str, ...] = ()
+    join_reasons: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["evidence_refs"] = list(self.evidence_refs)
+        payload["join_reasons"] = list(self.join_reasons)
         return payload
 
 

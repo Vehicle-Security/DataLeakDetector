@@ -62,6 +62,12 @@ python main/run_e2e.py --case spec\data\nas_samples\stage1\0-normal-ai-chatgpt-1
 python main/run_e2e.py --case spec\data\nas_samples\stage2\2-filestruct-pdfconvert-2 --vision --max-vlm-frames 8
 ```
 
+对比 VLM 与非 VLM 效果时，可以关闭确定性 OCR/log 证据，只保留 VLM 观察进入关联和推理：
+
+```powershell
+python main/run_e2e.py --case spec\data\nas_samples\stage1\2-ai-gpt cherystudio-2 --vision --vision-mode hybrid --max-vlm-frames 8 --no-non-vlm
+```
+
 使用 `--case` 时，程序会自动发现：
 
 - 优先使用 `logs/logs.json`，不存在时回退到 `logs/keyevents.json`
