@@ -339,8 +339,11 @@ def _filter_visual_context_windows(windows: list[AnalysisWindow], config: Vision
         return windows
 
     kept = [window for window in windows if window.priority != "medium" or window.anchor_ms]
-    has_direct_evidence = any(window.priority == "strong" or window.anchor_ms for window in windows)
+    has_strong_evidence = any(window.priority == "strong" for window in windows)
+    has_direct_evidence = has_strong_evidence or any(window.anchor_ms for window in windows)
     if has_direct_evidence:
+        if has_strong_evidence:
+            kept = [_with_context_medium_budget(window, config) for window in kept]
         return sorted(kept, key=lambda item: (_priority_sort_key(item.priority), item.start_ms, item.end_ms))
 
     medium_windows = [window for window in windows if window.priority == "medium"]
@@ -349,12 +352,29 @@ def _filter_visual_context_windows(windows: list[AnalysisWindow], config: Vision
     return sorted(kept, key=lambda item: (_priority_sort_key(item.priority), item.start_ms, item.end_ms))
 
 
+def _with_context_medium_budget(window: AnalysisWindow, config: VisionConfig) -> AnalysisWindow:
+    if window.priority != "medium":
+        return window
+    budget = max(config.max_keyframes_per_medium_window, len(window.anchor_ms))
+    return AnalysisWindow(
+        start_ms=window.start_ms,
+        end_ms=window.end_ms,
+        reason=window.reason,
+        priority=window.priority,
+        step_ms=window.step_ms,
+        max_keyframes=budget,
+        diff_threshold=window.diff_threshold,
+        anchor_ms=window.anchor_ms,
+        active_apps=window.active_apps,
+    )
+
+
 def _thin_dense_window_anchors(windows: list[AnalysisWindow], config: VisionConfig) -> list[AnalysisWindow]:
     return [_with_thinned_anchors(window, config) for window in windows]
 
 
 def _with_thinned_anchors(window: AnalysisWindow, config: VisionConfig) -> AnalysisWindow:
-    base_budget = _base_keyframe_budget(window.priority, config)
+    base_budget = min(window.max_keyframes, _base_keyframe_budget(window.priority, config))
     anchors = (
         _thin_anchors(window.anchor_ms, _anchor_min_gap_ms(window.priority, config))
         if len(window.anchor_ms) > base_budget

@@ -480,6 +480,37 @@ def test_medium_analysis_windows_keep_raw_keyframe_budget() -> None:
     assert windows[0].max_keyframes == VisionConfig().max_keyframes_per_window
 
 
+def test_medium_windows_use_context_budget_when_strong_evidence_exists() -> None:
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T00:00:30",
+                "event_type": "app_switch",
+                "process_info": {"process_name": "QQ.exe"},
+                "window_info": {"window_title": "QQ"},
+                "extra": {"source": "window_monitor", "category": "即时通讯", "relative_timestamp": 30.0},
+            },
+            {
+                "timestamp": "2026-01-01T00:01:00",
+                "event_type": "file_selected",
+                "file_path": "C:/Users/alice/Documents/secret.docx",
+                "window_info": {"window_title": "Upload files - Unknown Cloud"},
+                "extra": {
+                    "source": "file_dialog_monitor",
+                    "category": "文件上传",
+                    "raw_operation": "file_selected",
+                    "relative_timestamp": 60.0,
+                },
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [], VisionConfig())
+
+    medium = [window for window in windows if window.priority == "medium"][0]
+    assert medium.max_keyframes == VisionConfig().max_keyframes_per_medium_window
+
+
 def test_long_windows_have_temporal_coverage_targets() -> None:
     window = AnalysisWindow(0, 156_000, "medium", priority="medium", step_ms=1_000, max_keyframes=18)
 
