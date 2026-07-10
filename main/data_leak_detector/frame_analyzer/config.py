@@ -56,6 +56,7 @@ class VisionConfig:
     vlm_dry_run: bool = False
     vlm_frame_strategy: str = "ocr_triage"
     vlm_grid_size: int = 1
+    vlm_workers: int = 1
     vlm_include_empty_ocr_strong_frames: bool = True
     vlm_max_frames_per_window: int = 3
 
@@ -111,6 +112,7 @@ class VisionConfig:
             vlm_dry_run=_env_bool("DLD_VLM_DRY_RUN", False),
             vlm_frame_strategy=os.getenv("DLD_VLM_FRAME_STRATEGY", "ocr_triage"),
             vlm_grid_size=max(1, _env_int("DLD_VLM_GRID_SIZE", 1)),
+            vlm_workers=max(1, _env_int("DLD_VLM_WORKERS", 1)),
             vlm_include_empty_ocr_strong_frames=_env_bool("DLD_VLM_INCLUDE_EMPTY_OCR_STRONG_FRAMES", True),
             vlm_max_frames_per_window=max(1, _env_int("DLD_VLM_MAX_FRAMES_PER_WINDOW", 3)),
         )
@@ -170,6 +172,7 @@ class VisionConfig:
             vlm_dry_run=self.vlm_dry_run,
             vlm_frame_strategy=self.vlm_frame_strategy,
             vlm_grid_size=self.vlm_grid_size,
+            vlm_workers=self.vlm_workers,
             vlm_include_empty_ocr_strong_frames=self.vlm_include_empty_ocr_strong_frames,
             vlm_max_frames_per_window=self.vlm_max_frames_per_window,
         )

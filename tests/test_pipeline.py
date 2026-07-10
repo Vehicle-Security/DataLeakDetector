@@ -11,7 +11,16 @@ from data_leak_detector import run_pipeline
 from data_leak_detector.datasets import discover_data_case
 from data_leak_detector.event_correlator import EventCorrelator
 from data_leak_detector.frame_analyzer import analyze_video_behavior
-from data_leak_detector.frame_analyzer.analyzer import _dedupe_ocr_results, _export_vision_artifacts, _ocr_observations, _select_ocr_frames_for_ocr
+from data_leak_detector.frame_analyzer.analyzer import (
+    _combine_vlm_request_metrics,
+    _combine_vlm_usage,
+    _dedupe_ocr_results,
+    _export_vision_artifacts,
+    _ocr_observations,
+    _select_ocr_frames_for_ocr,
+    _vlm_frame_batches,
+    _vlm_request_artifact_payload,
+)
 from data_leak_detector.frame_analyzer.apps import identify_frontend_app
 from data_leak_detector.frame_analyzer.config import VisionConfig
 from data_leak_detector.frame_analyzer.frames import (
@@ -1026,6 +1035,58 @@ def test_vlm_grid_builder_keeps_source_frame_mapping(tmp_path: Path) -> None:
     assert grids[0].frame.frame_id == "vlm_grid_0"
     assert [item["frame_id"] for item in grids[0].source_frames] == ["frame_0", "frame_1", "frame_2"]
     assert [item["cell_id"] for item in grids[0].source_frames] == ["A1", "A2", "B1"]
+
+
+def test_vlm_grid_builder_uses_screen_aspect_ratio_without_empty_row(tmp_path: Path) -> None:
+    Image = pytest.importorskip("PIL.Image")
+    frames = []
+    for index in range(2):
+        image_path = tmp_path / f"wide_{index}.jpg"
+        Image.new("RGB", (1600, 900), (index * 50, 120, 180)).save(image_path)
+        keyframe = KeyFrame(f"wide_{index}", index * 1000, str(image_path), 0.9, "strong:anchor", window_id="window_0")
+        frames.append(OcrResult(keyframe, f"OCR text {index}", 0.95, "unit"))
+    selected = choose_vlm_frames(frames, min_confidence=0.70, max_frames=4, strategy="ocr_all")
+
+    grids = build_vlm_frame_grids(selected, grid_size=2, output_dir=tmp_path / "grid")
+    image = Image.open(grids[0].frame.image_path)
+
+    assert image.size == (1440, 437)
+
+
+def test_vlm_workers_split_frames_into_contiguous_batches() -> None:
+    frames = list(range(5))
+
+    batches = _vlm_frame_batches(frames, workers=3)
+
+    assert batches == [[0, 1], [2, 3], [4]]
+    assert _vlm_frame_batches(frames, workers=1) == [frames]
+
+
+def test_vlm_worker_artifacts_combine_real_metrics_and_usage() -> None:
+    summaries = [
+        {"request_metrics": {"prompt_chars": 10, "image_count": 2, "image_pixels": 100, "image_megapixels": 0.1}},
+        {"request_metrics": {"prompt_chars": 20, "image_count": 1, "image_pixels": 50, "image_megapixels": 0.05}},
+    ]
+
+    metrics = _combine_vlm_request_metrics(summaries)
+    usage = _combine_vlm_usage(
+        [
+            {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120},
+            {"prompt_tokens": 80, "completion_tokens": 10, "total_tokens": 90},
+        ]
+    )
+    request_payload = _vlm_request_artifact_payload(summaries, workers=2)
+
+    assert metrics["prompt_chars"] == 30
+    assert metrics["image_count"] == 3
+    assert metrics["image_pixels"] == 150
+    assert metrics["image_megapixels"] == 0.15
+    assert usage["prompt_tokens"] == 180
+    assert usage["completion_tokens"] == 30
+    assert usage["total_tokens"] == 210
+    assert usage["batches"][0]["total_tokens"] == 120
+    assert request_payload["workers"] == 2
+    assert request_payload["batch_count"] == 2
 
 
 def test_vlm_frame_selection_prioritizes_strong_late_sink_frame() -> None:

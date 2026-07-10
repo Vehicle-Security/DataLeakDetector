@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
@@ -266,24 +267,54 @@ def _run_vision_pipeline(
     vlm_events = 0
     vlm_seconds = 0.0
     vlm_parse_errors = 0
+    vlm_request_metrics: dict[str, Any] = {}
+    vlm_usage: dict[str, Any] = {}
     if vlm_request_frames and config.mode.lower() in {"hybrid", "vlm"}:
         try:
             vlm_started = time.perf_counter()
             active_apps = sorted({app for window in windows for app in window.active_apps})
             client = OpenAICompatibleVlmClient(config)
-            request_summary = client.request_summary(
-                vlm_request_frames,
+            vlm_batches = _vlm_frame_batches(vlm_request_frames, config.vlm_workers)
+            request_summaries = [
+                _vlm_batch_request_summary(
+                    client,
+                    batch,
+                    batch_index=index,
+                    batch_count=len(vlm_batches),
+                    workers=config.vlm_workers,
+                    sensitive_files=sensitive_files,
+                    active_apps=active_apps,
+                )
+                for index, batch in enumerate(vlm_batches)
+            ]
+            vlm_request_metrics = _combine_vlm_request_metrics(request_summaries)
+            _write_vlm_request_artifact(
+                artifact_dir,
+                _vlm_request_artifact_payload(request_summaries, workers=config.vlm_workers),
+                artifact_manifest,
+            )
+            vlm_results = _run_vlm_batches(
+                client,
+                vlm_batches,
                 sensitive_files=sensitive_files,
                 active_apps=active_apps,
+                workers=config.vlm_workers,
             )
-            _write_vlm_request_artifact(artifact_dir, request_summary, artifact_manifest)
-            response = client.analyze(vlm_request_frames, sensitive_files=sensitive_files, active_apps=active_apps)
-            _write_vlm_response_artifact(artifact_dir, response, artifact_manifest)
-            parse_result = parse_vlm_response_detailed(response.text, keywords=sensitive_files)
-            _write_vlm_parse_artifact(artifact_dir, parse_result.to_dict(), artifact_manifest)
-            events = parse_result.events
+            errors.extend(str(item) for item in vlm_results.get("errors", []))
+            vlm_usage = dict(vlm_results.get("usage") or {})
+            _write_vlm_response_payload_artifact(
+                artifact_dir,
+                _vlm_response_artifact_payload(vlm_results),
+                artifact_manifest,
+            )
+            _write_vlm_parse_artifact(
+                artifact_dir,
+                _vlm_parse_artifact_payload(vlm_results),
+                artifact_manifest,
+            )
+            events = list(vlm_results.get("events") or [])
             vlm_events = len(events)
-            vlm_parse_errors = len(parse_result.parse_errors)
+            vlm_parse_errors = len(vlm_results.get("parse_errors") or [])
             observations.extend(
                 vision_events_to_observations(events, source="vlm", start_index=start_index + len(observations))
             )
@@ -312,8 +343,12 @@ def _run_vision_pipeline(
         "vlm_dry_run": config.vlm_dry_run,
         "vlm_frame_strategy": config.vlm_frame_strategy,
         "vlm_grid_size": config.vlm_grid_size,
+        "vlm_workers": config.vlm_workers,
+        "vlm_batches": len(_vlm_frame_batches(vlm_request_frames, config.vlm_workers)) if vlm_request_frames else 0,
         "ocr_skipped_for_direct_vlm": direct_keyframes_to_vlm,
         "vlm_parse_errors": vlm_parse_errors,
+        "vlm_request_metrics": vlm_request_metrics,
+        "vlm_usage": vlm_usage,
         "timing_seconds": {
             "windows": round(windows_seconds, 3),
             "keyframes": round(keyframes_seconds, 3),
@@ -326,6 +361,207 @@ def _run_vision_pipeline(
         "artifacts": artifact_manifest,
     }
     return observations, stats, warnings, errors
+
+
+def _vlm_frame_batches(frames: list[Any], workers: int) -> list[list[Any]]:
+    if not frames:
+        return []
+    batch_count = min(max(1, workers), len(frames))
+    batch_size = (len(frames) + batch_count - 1) // batch_count
+    return [frames[index : index + batch_size] for index in range(0, len(frames), batch_size)]
+
+
+def _vlm_batch_request_summary(
+    client: OpenAICompatibleVlmClient,
+    frames: list[Any],
+    *,
+    batch_index: int,
+    batch_count: int,
+    workers: int,
+    sensitive_files: list[str],
+    active_apps: list[str],
+) -> dict[str, Any]:
+    summary = client.request_summary(frames, sensitive_files=sensitive_files, active_apps=active_apps)
+    if batch_count > 1:
+        summary["batch_index"] = batch_index
+        summary["batch_count"] = batch_count
+        summary["workers"] = workers
+    return summary
+
+
+def _vlm_request_artifact_payload(request_summaries: list[dict[str, Any]], *, workers: int) -> dict[str, Any]:
+    if len(request_summaries) == 1:
+        return request_summaries[0]
+    first = request_summaries[0] if request_summaries else {}
+    return {
+        "provider": first.get("provider", ""),
+        "model": first.get("model", ""),
+        "chat_url": first.get("chat_url", ""),
+        "dry_run": first.get("dry_run", False),
+        "frame_strategy": first.get("frame_strategy", ""),
+        "grid_size": first.get("grid_size", 1),
+        "workers": workers,
+        "batch_count": len(request_summaries),
+        "request_metrics": _combine_vlm_request_metrics(request_summaries),
+        "batches": request_summaries,
+    }
+
+
+def _combine_vlm_request_metrics(request_summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    metrics = [item.get("request_metrics") for item in request_summaries if isinstance(item.get("request_metrics"), dict)]
+    if not metrics:
+        return {}
+    if len(metrics) == 1:
+        return dict(metrics[0])
+    combined: dict[str, Any] = {"batches": [dict(item) for item in metrics]}
+    for item in metrics:
+        for key, value in item.items():
+            if key == "image_sizes" and isinstance(value, list):
+                combined.setdefault(key, []).extend(value)
+            elif isinstance(value, int | float):
+                combined[key] = combined.get(key, 0) + value
+    if "image_megapixels" in combined:
+        combined["image_megapixels"] = round(float(combined["image_megapixels"]), 3)
+    return combined
+
+
+def _run_vlm_batches(
+    client: OpenAICompatibleVlmClient,
+    batches: list[list[Any]],
+    *,
+    sensitive_files: list[str],
+    active_apps: list[str],
+    workers: int,
+) -> dict[str, Any]:
+    def run_one(batch_index: int, frames: list[Any]) -> dict[str, Any]:
+        response = client.analyze(frames, sensitive_files=sensitive_files, active_apps=active_apps)
+        parse_result = parse_vlm_response_detailed(response.text, keywords=sensitive_files)
+        return {
+            "batch_index": batch_index,
+            "frame_count": len(frames),
+            "response": response,
+            "parse_result": parse_result,
+        }
+
+    results: list[dict[str, Any]] = []
+    errors: list[str] = []
+    max_workers = min(max(1, workers), len(batches) or 1)
+    if max_workers <= 1:
+        for index, batch in enumerate(batches):
+            try:
+                results.append(run_one(index, batch))
+            except Exception as exc:
+                errors.append(f"vlm_batch_failed[{index}]: {type(exc).__name__}: {exc}")
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_index = {executor.submit(run_one, index, batch): index for index, batch in enumerate(batches)}
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    errors.append(f"vlm_batch_failed[{index}]: {type(exc).__name__}: {exc}")
+
+    results.sort(key=lambda item: int(item.get("batch_index", 0)))
+    events: list[Any] = []
+    parse_errors: list[str] = []
+    usages: list[dict[str, Any]] = []
+    for result in results:
+        parse_result = result["parse_result"]
+        events.extend(parse_result.events)
+        parse_errors.extend(parse_result.parse_errors)
+        usage = result["response"].usage
+        if isinstance(usage, dict):
+            usages.append(usage)
+    return {
+        "batches": results,
+        "errors": errors,
+        "events": events,
+        "parse_errors": parse_errors,
+        "usage": _combine_vlm_usage(usages),
+    }
+
+
+def _combine_vlm_usage(usages: list[dict[str, Any]]) -> dict[str, Any]:
+    if not usages:
+        return {}
+    if len(usages) == 1:
+        return dict(usages[0])
+    combined: dict[str, Any] = {"batches": [dict(item) for item in usages]}
+    for usage in usages:
+        for key, value in usage.items():
+            if isinstance(value, int | float):
+                combined[key] = combined.get(key, 0) + value
+    return combined
+
+
+def _vlm_response_artifact_payload(vlm_results: dict[str, Any]) -> dict[str, Any]:
+    batch_results = list(vlm_results.get("batches") or [])
+    errors = list(vlm_results.get("errors") or [])
+    if len(batch_results) == 1 and not errors:
+        return _vlm_response_to_dict(batch_results[0]["response"])
+    first_response = batch_results[0]["response"] if batch_results else None
+    return {
+        "provider": getattr(first_response, "provider", ""),
+        "model": getattr(first_response, "model", ""),
+        "dry_run": bool(getattr(first_response, "dry_run", False)) if first_response is not None else False,
+        "usage": vlm_results.get("usage") or {},
+        "errors": errors,
+        "batch_count": len(batch_results) + len(errors),
+        "responses": [
+            {
+                "batch_index": result.get("batch_index"),
+                "frame_count": result.get("frame_count"),
+                **_vlm_response_to_dict(result["response"]),
+            }
+            for result in batch_results
+        ],
+    }
+
+
+def _vlm_response_to_dict(response: Any) -> dict[str, Any]:
+    return {
+        "provider": response.provider,
+        "model": response.model,
+        "dry_run": response.dry_run,
+        "usage": response.usage,
+        "text": response.text,
+        "raw_payload": response.raw_payload,
+    }
+
+
+def _vlm_parse_artifact_payload(vlm_results: dict[str, Any]) -> dict[str, Any]:
+    batch_results = list(vlm_results.get("batches") or [])
+    errors = list(vlm_results.get("errors") or [])
+    if len(batch_results) == 1 and not errors:
+        return batch_results[0]["parse_result"].to_dict()
+
+    events: list[dict[str, Any]] = []
+    raw_events: list[dict[str, Any]] = []
+    dropped_events: list[dict[str, Any]] = []
+    parse_errors: list[str] = []
+    batches: list[dict[str, Any]] = []
+    for result in batch_results:
+        parse_payload = result["parse_result"].to_dict()
+        events.extend(parse_payload.get("events", []))
+        raw_events.extend(parse_payload.get("raw_events", []))
+        dropped_events.extend(parse_payload.get("dropped_events", []))
+        parse_errors.extend(parse_payload.get("parse_errors", []))
+        batches.append(
+            {
+                "batch_index": result.get("batch_index"),
+                "frame_count": result.get("frame_count"),
+                "parse_result": parse_payload,
+            }
+        )
+    return {
+        "events": events,
+        "raw_events": raw_events,
+        "dropped_events": dropped_events,
+        "parse_errors": parse_errors,
+        "errors": errors,
+        "batches": batches,
+    }
 
 
 def _write_vlm_request_artifact(
@@ -352,9 +588,22 @@ def _write_vlm_response_artifact(
         "provider": response.provider,
         "model": response.model,
         "dry_run": response.dry_run,
+        "usage": response.usage,
         "text": response.text,
         "raw_payload": response.raw_payload,
     }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifest["vlm_response_file"] = str(path)
+
+
+def _write_vlm_response_payload_artifact(
+    artifact_dir: str | Path | None,
+    payload: dict[str, Any],
+    manifest: dict[str, Any],
+) -> None:
+    if artifact_dir is None:
+        return
+    path = Path(artifact_dir) / "vlm_response.json"
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     manifest["vlm_response_file"] = str(path)
 

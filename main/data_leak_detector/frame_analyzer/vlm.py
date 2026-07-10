@@ -34,6 +34,7 @@ class VlmResponse:
     provider: str
     model: str
     raw_payload: dict[str, Any] | None = None
+    usage: dict[str, Any] | None = None
     dry_run: bool = False
 
 
@@ -50,6 +51,7 @@ class OpenAICompatibleVlmClient:
     ) -> dict[str, Any]:
         """Build a replayable request summary without embedding large base64 images."""
 
+        prompt = _prompt(frames, sensitive_files, active_apps)
         return {
             "provider": self.config.vlm_provider,
             "model": self.config.vlm_model,
@@ -58,10 +60,11 @@ class OpenAICompatibleVlmClient:
             "frame_strategy": self.config.vlm_frame_strategy,
             "grid_size": self.config.vlm_grid_size,
             "temperature": 0,
-            "prompt": _prompt(frames, sensitive_files, active_apps),
+            "prompt": prompt,
             "sensitive_context": _sensitive_context(sensitive_files),
             "active_apps": active_apps,
             "frames": [_request_frame_to_dict(item) for item in frames],
+            "request_metrics": record_vlm_request_metrics(frames, prompt),
         }
 
     def analyze(
@@ -96,7 +99,8 @@ class OpenAICompatibleVlmClient:
             raise RuntimeError(f"vlm_http_error: {exc.code} {detail}") from exc
 
         text = payload["choices"][0]["message"]["content"]
-        return VlmResponse(text=str(text), provider=self.config.vlm_provider, model=self.config.vlm_model, raw_payload=payload)
+        usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else None
+        return VlmResponse(text=str(text), provider=self.config.vlm_provider, model=self.config.vlm_model, raw_payload=payload, usage=usage)
 
     def _request_body(
         self,
@@ -235,16 +239,17 @@ def build_vlm_frame_grids(
     grid_frames: list[VlmRequestFrame] = []
     for grid_index, group in enumerate(_chunks(frames, cells_per_grid)):
         source_images = [(item, Image.open(item.frame.image_path).convert("RGB")) for item in group]
-        cell_width = max(min(image.width, 720) for _, image in source_images)
-        cell_height = max(min(image.height, 720) for _, image in source_images)
+        columns = min(grid_size, len(source_images))
+        rows = (len(source_images) + columns - 1) // columns
+        cell_width, cell_height = _grid_cell_size([image for _, image in source_images])
         label_height = 32
-        canvas = Image.new("RGB", (grid_size * cell_width, grid_size * (cell_height + label_height)), "white")
+        canvas = Image.new("RGB", (columns * cell_width, rows * (cell_height + label_height)), "white")
         draw = ImageDraw.Draw(canvas)
         source_payload: list[dict[str, Any]] = []
 
         for index, (item, image) in enumerate(source_images):
-            row = index // grid_size
-            column = index % grid_size
+            row = index // columns
+            column = index % columns
             cell_id = f"{chr(ord('A') + row)}{column + 1}"
             x = column * cell_width
             y = row * (cell_height + label_height)
@@ -277,6 +282,19 @@ def build_vlm_frame_grids(
             )
         )
     return grid_frames
+
+
+def record_vlm_request_metrics(frames: list[VlmRequestFrame], prompt: str) -> dict[str, Any]:
+    image_sizes = [_image_size(item.frame.image_path) for item in frames]
+    image_pixels = sum(width * height for width, height in image_sizes)
+    prompt_chars = len(prompt)
+    return {
+        "prompt_chars": prompt_chars,
+        "image_count": len(frames),
+        "image_pixels": image_pixels,
+        "image_megapixels": round(image_pixels / 1_000_000, 3),
+        "image_sizes": [{"width": width, "height": height} for width, height in image_sizes],
+    }
 
 
 def _vlm_frame_score(result: OcrResult, *, suspicious_text: bool, low_confidence: bool, empty_strong: bool = False) -> int:
@@ -425,6 +443,26 @@ def _normalize_frame_strategy(value: str) -> str:
 
 def _chunks(items: list[VlmRequestFrame], size: int) -> list[list[VlmRequestFrame]]:
     return [items[index : index + size] for index in range(0, len(items), size)]
+
+
+def _grid_cell_size(images: list[object]) -> tuple[int, int]:
+    widths = [max(1, int(getattr(image, "width", 1))) for image in images]
+    heights = [max(1, int(getattr(image, "height", 1))) for image in images]
+    cell_width = max(1, min(max(widths), 720))
+    aspects = sorted(width / height for width, height in zip(widths, heights, strict=False) if height > 0)
+    aspect = aspects[len(aspects) // 2] if aspects else 16 / 9
+    cell_height = max(1, int(round(cell_width / max(aspect, 0.1))))
+    return cell_width, min(cell_height, 720)
+
+
+def _image_size(path: str) -> tuple[int, int]:
+    try:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            return int(image.width), int(image.height)
+    except Exception:
+        return 0, 0
 
 
 def _grid_source_line(grid: VlmRequestFrame, source: dict[str, Any]) -> str:
