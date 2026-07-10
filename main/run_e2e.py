@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 from data_leak_detector import run_data_case, run_pipeline
@@ -23,12 +24,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--vision", action="store_true", help="Enable OCR/VLM-assisted frame analysis.")
     parser.add_argument("--vision-mode", choices=["hybrid", "ocr", "vlm"], default="", help="Frame analysis mode.")
     parser.add_argument("--max-vlm-frames", type=int, default=0, help="Maximum keyframes sent to VLM.")
+    parser.add_argument("--vlm-dry-run", action="store_true", help="Write VLM request artifacts without calling the model API.")
+    parser.add_argument("--vlm-grid-size", type=int, default=0, help="Pack selected VLM frames into NxN grid images before calling the model.")
+    parser.add_argument(
+        "--vlm-frame-strategy",
+        choices=["ocr_triage", "ocr_all", "direct_keyframes"],
+        default="",
+        help="How to choose frames for VLM: OCR triage, all OCR-kept frames, or direct keyframes without OCR.",
+    )
     parser.add_argument("--no-non-vlm", action="store_true", help="Disable deterministic OCR/log evidence in correlation; useful for VLM-only evaluation.")
     parser.add_argument("--neo4j", action="store_true", help="Write the report graph to Neo4j for this run.")
     parser.add_argument("--neo4j-strict", action="store_true", help="Fail if Neo4j writing fails.")
     parser.add_argument("--neo4j-log-miner", action="store_true", help="Use Neo4j to mine analysis windows before frame extraction.")
     parser.add_argument("--no-reuse-neo4j-import", action="store_true", help="Reimport logs even when the case fingerprint already exists in Neo4j.")
     args = parser.parse_args(argv)
+    if args.vlm_dry_run:
+        os.environ["DLD_VLM_DRY_RUN"] = "1"
+    if args.vlm_frame_strategy:
+        os.environ["DLD_VLM_FRAME_STRATEGY"] = args.vlm_frame_strategy
+    if args.vlm_grid_size:
+        os.environ["DLD_VLM_GRID_SIZE"] = str(max(1, args.vlm_grid_size))
 
     common_args = {
         "output_dir": args.output_dir or None,

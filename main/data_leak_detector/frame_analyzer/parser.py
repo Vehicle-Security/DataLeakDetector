@@ -23,19 +23,56 @@ class ParsedVisionEvent:
     modified_resource: str
     description: str
     confidence: float = 0.80
+    evidence_frame_ids: tuple[str, ...] = ()
+    sink_type: str = ""
+
+
+@dataclass(frozen=True)
+class VlmParseResult:
+    events: list[ParsedVisionEvent]
+    raw_events: list[dict[str, Any]]
+    dropped_events: list[dict[str, Any]]
+    parse_errors: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "events": [_event_to_dict(item) for item in self.events],
+            "raw_events": self.raw_events,
+            "dropped_events": self.dropped_events,
+            "parse_errors": self.parse_errors,
+        }
 
 
 def parse_vlm_response(response_text: str, *, keywords: list[str] | None = None) -> list[ParsedVisionEvent]:
-    payload = _extract_json(response_text)
+    return parse_vlm_response_detailed(response_text, keywords=keywords).events
+
+
+def parse_vlm_response_detailed(response_text: str, *, keywords: list[str] | None = None) -> VlmParseResult:
+    try:
+        payload = _extract_json(response_text)
+    except Exception as exc:
+        return VlmParseResult(events=[], raw_events=[], dropped_events=[], parse_errors=[f"{type(exc).__name__}: {exc}"])
     raw_events = payload.get("events", payload if isinstance(payload, list) else [])
     events: list[ParsedVisionEvent] = []
+    raw_event_dicts: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    errors: list[str] = []
     for item in raw_events if isinstance(raw_events, list) else []:
         if not isinstance(item, dict):
+            dropped.append({"reason": "not_object", "event": item})
             continue
-        event = _normalize_event(item)
+        raw_event_dicts.append(item)
+        try:
+            event = _normalize_event(item)
+        except Exception as exc:
+            errors.append(f"event_parse_failed: {type(exc).__name__}: {exc}")
+            dropped.append({"reason": "parse_failed", "event": item})
+            continue
         if _is_relevant(event, keywords or []):
             events.append(event)
-    return _dedupe(events)
+        else:
+            dropped.append({"reason": "not_relevant", "event": item})
+    return VlmParseResult(events=_dedupe(events), raw_events=raw_event_dicts, dropped_events=dropped, parse_errors=errors)
 
 
 def vision_events_to_observations(
@@ -61,7 +98,7 @@ def vision_events_to_observations(
                 operation_type=_operation_to_pipeline(event),
                 resource=resource,
                 related_resources=related,
-                description=f"{event.behavior_category}: {event.operation_type}. {event.description}",
+                description=_observation_description(event),
                 confidence=event.confidence,
                 source=source,
             )
@@ -89,11 +126,17 @@ def _extract_json(text: str) -> Any:
 
 def _normalize_event(item: dict[str, Any]) -> ParsedVisionEvent:
     start_ms, end_ms = _parse_time_range(str(item.get("time_range") or item.get("time") or ""))
+    timestamp_ms = _parse_timestamp_ms_field(item.get("timestamp_ms") or item.get("frame_timestamp_ms"))
+    if not start_ms and timestamp_ms:
+        start_ms = timestamp_ms
+    if not end_ms and start_ms:
+        end_ms = start_ms
     original = _first_text(item, "original_filename", "original_file", "file_name", "filename", "resource")
     modified = _first_text(item, "modified_filename", "modified_file", "target_file", "derived_file")
     operation = _first_text(item, "operation_type", "operation", "action")
     behavior = _first_text(item, "behavior_category", "category", "risk_type")
     description = _first_text(item, "description", "reason", "evidence")
+    evidence_frame_ids = _text_tuple(item.get("evidence_frame_ids") or item.get("frame_ids") or item.get("frame_id"))
     return ParsedVisionEvent(
         start_ms=start_ms,
         end_ms=end_ms or start_ms,
@@ -103,7 +146,9 @@ def _normalize_event(item: dict[str, Any]) -> ParsedVisionEvent:
         original_resource=original or "unknown",
         modified_resource=modified or "unknown",
         description=description,
-        confidence=float(item.get("confidence") or 0.80),
+        confidence=_confidence(item.get("confidence")),
+        evidence_frame_ids=evidence_frame_ids,
+        sink_type=_first_text(item, "sink_type", "sink", "channel"),
     )
 
 
@@ -123,6 +168,33 @@ def _first_text(item: dict[str, Any], *names: str) -> str:
     return ""
 
 
+def _parse_timestamp_ms_field(value: Any) -> int:
+    if value is None or value == "":
+        return 0
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return parse_timestamp_ms(value)
+
+
+def _text_tuple(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value.strip(),) if value.strip() else ()
+    if isinstance(value, list | tuple | set):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    return (str(value).strip(),) if str(value).strip() else ()
+
+
+def _confidence(value: Any) -> float:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        confidence = 0.80
+    return max(0.0, min(confidence, 1.0))
+
+
 def _is_relevant(event: ParsedVisionEvent, keywords: list[str]) -> bool:
     text = " ".join(
         [
@@ -132,6 +204,8 @@ def _is_relevant(event: ParsedVisionEvent, keywords: list[str]) -> bool:
             event.original_resource,
             event.modified_resource,
             event.description,
+            event.sink_type,
+            " ".join(event.evidence_frame_ids),
         ]
     ).lower()
     if _is_normal_only(text):
@@ -153,12 +227,39 @@ def _is_normal_only(text: str) -> bool:
 
 
 def _operation_to_pipeline(event: ParsedVisionEvent) -> str:
-    text = f"{event.behavior_category} {event.operation_type} {event.description}".lower()
+    text = f"{event.behavior_category} {event.operation_type} {event.description} {event.sink_type}".lower()
     if contains_any(text, SINK_TOKENS):
         return "external_sink_interaction"
     if contains_any(text, TRANSFER_TOKENS):
         return "file_or_content_transfer"
     return event.operation_type or "visual_review"
+
+
+def _observation_description(event: ParsedVisionEvent) -> str:
+    parts = [f"{event.behavior_category}: {event.operation_type}."]
+    if event.evidence_frame_ids:
+        parts.append("evidence_frame_ids=" + "|".join(event.evidence_frame_ids) + ".")
+    if event.sink_type:
+        parts.append(f"sink_type={event.sink_type}.")
+    if event.description:
+        parts.append(event.description)
+    return " ".join(parts)
+
+
+def _event_to_dict(event: ParsedVisionEvent) -> dict[str, Any]:
+    return {
+        "start_ms": event.start_ms,
+        "end_ms": event.end_ms,
+        "app_name": event.app_name,
+        "behavior_category": event.behavior_category,
+        "operation_type": event.operation_type,
+        "original_resource": event.original_resource,
+        "modified_resource": event.modified_resource,
+        "description": event.description,
+        "confidence": event.confidence,
+        "evidence_frame_ids": list(event.evidence_frame_ids),
+        "sink_type": event.sink_type,
+    }
 
 
 def _dedupe(events: list[ParsedVisionEvent]) -> list[ParsedVisionEvent]:

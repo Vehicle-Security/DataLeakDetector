@@ -18,9 +18,9 @@ from .apps import identify_frontend_app
 from .config import VisionConfig
 from .frames import AnalysisWindow, KeyFrameDuplicate, select_keyframes_detailed
 from .ocr import OcrResult, run_ocr
-from .parser import parse_vlm_response, vision_events_to_observations
+from .parser import parse_vlm_response_detailed, vision_events_to_observations
 from .roi import OcrFrameCandidate, prepare_ocr_candidates
-from .vlm import OpenAICompatibleVlmClient, choose_vlm_frames
+from .vlm import OpenAICompatibleVlmClient, build_vlm_frame_grids, choose_keyframes_for_vlm, choose_vlm_frames
 
 
 def analyze_video_behavior(
@@ -204,31 +204,50 @@ def _run_vision_pipeline(
     keyframes = keyframe_selection.keyframes
     warnings.extend(keyframe_selection.warnings)
 
-    ocr_prepare_started = time.perf_counter()
-    ocr_frames = _select_ocr_frames_for_ocr(keyframes, config)
-    if config.ocr_roi_enabled:
-        ocr_candidates = prepare_ocr_candidates(ocr_frames, config)
-        ocr_candidate_frames = [candidate.frame for candidate in ocr_candidates if candidate.selected_for_ocr]
-    else:
+    direct_keyframes_to_vlm = _vlm_uses_direct_keyframes(config)
+    if direct_keyframes_to_vlm:
+        ocr_frames = []
         ocr_candidates = []
-        ocr_candidate_frames = ocr_frames
-    ocr_prepare_seconds = time.perf_counter() - ocr_prepare_started
+        ocr_candidate_frames = []
+        raw_ocr_results = []
+        ocr_results = []
+        ocr_prepare_seconds = 0.0
+        ocr_seconds = 0.0
+        ocr_postprocess_seconds = 0.0
+        vlm_frames = choose_keyframes_for_vlm(
+            keyframes,
+            max_frames=config.max_vlm_frames,
+            max_frames_per_window=config.vlm_max_frames_per_window,
+        )
+    else:
+        ocr_prepare_started = time.perf_counter()
+        ocr_frames = _select_ocr_frames_for_ocr(keyframes, config)
+        if config.ocr_roi_enabled:
+            ocr_candidates = prepare_ocr_candidates(ocr_frames, config)
+            ocr_candidate_frames = [candidate.frame for candidate in ocr_candidates if candidate.selected_for_ocr]
+        else:
+            ocr_candidates = []
+            ocr_candidate_frames = ocr_frames
+        ocr_prepare_seconds = time.perf_counter() - ocr_prepare_started
 
-    ocr_started = time.perf_counter()
-    raw_roi_ocr_results = run_ocr(ocr_candidate_frames, config) if ocr_candidate_frames else []
-    ocr_seconds = time.perf_counter() - ocr_started
+        ocr_started = time.perf_counter()
+        raw_roi_ocr_results = run_ocr(ocr_candidate_frames, config) if ocr_candidate_frames else []
+        ocr_seconds = time.perf_counter() - ocr_started
 
-    ocr_postprocess_started = time.perf_counter()
-    raw_ocr_results = _merge_roi_ocr_results(raw_roi_ocr_results, ocr_candidates) if config.ocr_roi_enabled else raw_roi_ocr_results
-    ocr_results = _dedupe_ocr_results(raw_ocr_results, config)
-    observations.extend(_ocr_observations(ocr_results, config, sensitive_files=sensitive_files, start_index=start_index))
-    ocr_postprocess_seconds = time.perf_counter() - ocr_postprocess_started
+        ocr_postprocess_started = time.perf_counter()
+        raw_ocr_results = _merge_roi_ocr_results(raw_roi_ocr_results, ocr_candidates) if config.ocr_roi_enabled else raw_roi_ocr_results
+        ocr_results = _dedupe_ocr_results(raw_ocr_results, config)
+        observations.extend(_ocr_observations(ocr_results, config, sensitive_files=sensitive_files, start_index=start_index))
+        ocr_postprocess_seconds = time.perf_counter() - ocr_postprocess_started
 
-    vlm_frames = choose_vlm_frames(
-        ocr_results,
-        min_confidence=config.ocr_min_confidence,
-        max_frames=config.max_vlm_frames,
-    )
+        vlm_frames = choose_vlm_frames(
+            ocr_results,
+            min_confidence=config.ocr_min_confidence,
+            max_frames=config.max_vlm_frames,
+            strategy=config.vlm_frame_strategy,
+            include_empty_ocr_strong_frames=config.vlm_include_empty_ocr_strong_frames,
+            max_frames_per_window=config.vlm_max_frames_per_window,
+        )
     artifact_manifest = _export_vision_artifacts(
         artifact_dir=artifact_dir,
         keyframes=keyframes,
@@ -238,19 +257,33 @@ def _run_vision_pipeline(
         ocr_selected_frames=[item.frame for item in vlm_frames],
         ocr_results=ocr_results,
     )
+    vlm_request_frames = _prepare_vlm_request_frames(
+        vlm_frames,
+        config=config,
+        artifact_dir=artifact_dir,
+        manifest=artifact_manifest,
+    )
     vlm_events = 0
     vlm_seconds = 0.0
-    if vlm_frames and config.mode.lower() in {"hybrid", "vlm"}:
+    vlm_parse_errors = 0
+    if vlm_request_frames and config.mode.lower() in {"hybrid", "vlm"}:
         try:
             vlm_started = time.perf_counter()
             active_apps = sorted({app for window in windows for app in window.active_apps})
-            response = OpenAICompatibleVlmClient(config).analyze(
-                vlm_frames,
+            client = OpenAICompatibleVlmClient(config)
+            request_summary = client.request_summary(
+                vlm_request_frames,
                 sensitive_files=sensitive_files,
                 active_apps=active_apps,
             )
-            events = parse_vlm_response(response.text, keywords=sensitive_files)
+            _write_vlm_request_artifact(artifact_dir, request_summary, artifact_manifest)
+            response = client.analyze(vlm_request_frames, sensitive_files=sensitive_files, active_apps=active_apps)
+            _write_vlm_response_artifact(artifact_dir, response, artifact_manifest)
+            parse_result = parse_vlm_response_detailed(response.text, keywords=sensitive_files)
+            _write_vlm_parse_artifact(artifact_dir, parse_result.to_dict(), artifact_manifest)
+            events = parse_result.events
             vlm_events = len(events)
+            vlm_parse_errors = len(parse_result.parse_errors)
             observations.extend(
                 vision_events_to_observations(events, source="vlm", start_index=start_index + len(observations))
             )
@@ -273,8 +306,14 @@ def _run_vision_pipeline(
         "ocr_roi_selected": len(ocr_candidate_frames) if config.ocr_roi_enabled else 0,
         "ocr_frames": len(ocr_results),
         "ocr_raw_frames": len(raw_ocr_results),
-        "vlm_frames": len(vlm_frames),
+        "vlm_frames": len(vlm_request_frames),
+        "vlm_source_frames": len(vlm_frames),
         "vlm_events": vlm_events,
+        "vlm_dry_run": config.vlm_dry_run,
+        "vlm_frame_strategy": config.vlm_frame_strategy,
+        "vlm_grid_size": config.vlm_grid_size,
+        "ocr_skipped_for_direct_vlm": direct_keyframes_to_vlm,
+        "vlm_parse_errors": vlm_parse_errors,
         "timing_seconds": {
             "windows": round(windows_seconds, 3),
             "keyframes": round(keyframes_seconds, 3),
@@ -287,6 +326,84 @@ def _run_vision_pipeline(
         "artifacts": artifact_manifest,
     }
     return observations, stats, warnings, errors
+
+
+def _write_vlm_request_artifact(
+    artifact_dir: str | Path | None,
+    request_summary: dict[str, Any],
+    manifest: dict[str, Any],
+) -> None:
+    if artifact_dir is None:
+        return
+    path = Path(artifact_dir) / "vlm_request.json"
+    path.write_text(json.dumps(request_summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifest["vlm_request_file"] = str(path)
+
+
+def _write_vlm_response_artifact(
+    artifact_dir: str | Path | None,
+    response: Any,
+    manifest: dict[str, Any],
+) -> None:
+    if artifact_dir is None:
+        return
+    path = Path(artifact_dir) / "vlm_response.json"
+    payload = {
+        "provider": response.provider,
+        "model": response.model,
+        "dry_run": response.dry_run,
+        "text": response.text,
+        "raw_payload": response.raw_payload,
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifest["vlm_response_file"] = str(path)
+
+
+def _write_vlm_parse_artifact(
+    artifact_dir: str | Path | None,
+    parse_payload: dict[str, Any],
+    manifest: dict[str, Any],
+) -> None:
+    if artifact_dir is None:
+        return
+    path = Path(artifact_dir) / "vlm_parse_result.json"
+    path.write_text(json.dumps(parse_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifest["vlm_parse_result_file"] = str(path)
+
+
+def _prepare_vlm_request_frames(
+    frames: list[Any],
+    *,
+    config: VisionConfig,
+    artifact_dir: str | Path | None,
+    manifest: dict[str, Any],
+) -> list[Any]:
+    if config.vlm_grid_size <= 1:
+        return frames
+    grid_dir = Path(artifact_dir) / "keyframes_vlm_grid" if artifact_dir is not None else None
+    if grid_dir is not None:
+        if grid_dir.exists():
+            shutil.rmtree(grid_dir)
+        grid_dir.mkdir(parents=True, exist_ok=True)
+    grid_frames = build_vlm_frame_grids(frames, grid_size=config.vlm_grid_size, output_dir=grid_dir)
+    if grid_dir is not None:
+        grid_files = [item.frame.image_path for item in grid_frames]
+        manifest["keyframes_vlm_grid_dir"] = str(grid_dir)
+        manifest["keyframes_vlm_grid_files"] = grid_files
+        counts = manifest.setdefault("counts", {})
+        if isinstance(counts, dict):
+            counts["keyframes_vlm_grid_files"] = len(grid_files)
+    return grid_frames
+
+
+def _vlm_uses_direct_keyframes(config: VisionConfig) -> bool:
+    strategy = config.vlm_frame_strategy.strip().lower().replace("-", "_")
+    direct_aliases = {"direct", "direct_keyframes", "all_keyframes", "keyframes"}
+    return (
+        strategy in direct_aliases
+        and config.mode.lower() in {"hybrid", "vlm"}
+        and config.max_vlm_frames > 0
+    )
 
 
 def _export_vision_artifacts(

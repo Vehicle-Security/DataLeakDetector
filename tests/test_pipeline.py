@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from data_leak_detector import run_pipeline
 from data_leak_detector.datasets import discover_data_case
 from data_leak_detector.event_correlator import EventCorrelator
@@ -22,9 +24,9 @@ from data_leak_detector.frame_analyzer.frames import (
     merge_analysis_windows,
 )
 from data_leak_detector.frame_analyzer.ocr import OcrResult, RapidOcrProvider, _rapidocr_provider_name
-from data_leak_detector.frame_analyzer.parser import parse_vlm_response, vision_events_to_observations
+from data_leak_detector.frame_analyzer.parser import parse_vlm_response, parse_vlm_response_detailed, vision_events_to_observations
 from data_leak_detector.frame_analyzer.roi import detect_foreground_window_region, detect_text_regions
-from data_leak_detector.frame_analyzer.vlm import choose_vlm_frames
+from data_leak_detector.frame_analyzer.vlm import build_vlm_frame_grids, choose_keyframes_for_vlm, choose_vlm_frames
 from data_leak_detector.log_mining import build_analysis_windows, mine_analysis_windows
 from data_leak_detector.neo4j.importer import fingerprint_records, records_to_graph_events
 from data_leak_detector.neo4j.store import Neo4jGraphStore
@@ -664,6 +666,46 @@ def test_qwen_response_parser_keeps_risky_aliases_and_drops_normal_events() -> N
     assert events[0].operation_type == "paste_exfiltration"
 
 
+def test_vlm_parser_preserves_evidence_frames_and_relative_timestamp() -> None:
+    result = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "evidence_frame_ids": ["frame_0_0", "frame_0_1"],
+                        "timestamp_ms": 33000,
+                        "app_name": "豆包AI",
+                        "behavior_category": "direct_leak",
+                        "operation_type": "ai_chat_upload",
+                        "original_filename": "员工薪资明细表Q4.xlsx",
+                        "modified_filename": "屏幕截图 2026-06-03 003300.png",
+                        "sink_type": "ai_chat",
+                        "description": "截图文件上传到 AI 网站",
+                        "confidence": 0.91,
+                    },
+                    {
+                        "evidence_frame_ids": ["frame_0_2"],
+                        "timestamp_ms": 1000,
+                        "app_name": "Excel",
+                        "behavior_category": "normal",
+                        "operation_type": "read",
+                        "original_filename": "员工薪资明细表Q4.xlsx",
+                        "description": "正常查看表格",
+                    },
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        keywords=["员工薪资明细表Q4.xlsx"],
+    )
+
+    assert len(result.events) == 1
+    assert result.events[0].start_ms == 33000
+    assert result.events[0].evidence_frame_ids == ("frame_0_0", "frame_0_1")
+    assert result.events[0].sink_type == "ai_chat"
+    assert result.dropped_events[0]["reason"] == "not_relevant"
+
+
 def test_visual_observation_can_create_datalog_fact_without_file_path_log() -> None:
     original = "C:/Users/alice/Documents/customer_salary.xlsx"
     records = [
@@ -926,6 +968,66 @@ def test_vlm_frame_selection_requires_real_ocr_before_low_confidence_fallback() 
     assert choose_vlm_frames([weak_ocr], min_confidence=0.70, max_frames=4)
 
 
+def test_vlm_frame_selection_ocr_all_sends_normal_ocr_frames() -> None:
+    frame = KeyFrame("normal", 1000, "frame.jpg", 0.9, "medium:visual_change", window_id="window_0")
+    ocr = OcrResult(frame=frame, text="Excel 正常查看普通文本", confidence=0.99, provider="rapidocr_cuda")
+
+    assert choose_vlm_frames([ocr], min_confidence=0.70, max_frames=4) == []
+
+    selected = choose_vlm_frames([ocr], min_confidence=0.70, max_frames=4, strategy="ocr_all")
+
+    assert selected and selected[0].selection_reason == "ocr_all_to_vlm"
+
+
+def test_vlm_frame_selection_can_include_empty_strong_anchor() -> None:
+    frame = KeyFrame("frame_1", 1000, "frame.jpg", 0.9, "strong:anchor", window_id="window_0")
+    no_ocr = OcrResult(frame=frame, text="", confidence=0.0, provider="none")
+
+    selected = choose_vlm_frames(
+        [no_ocr],
+        min_confidence=0.70,
+        max_frames=4,
+        include_empty_ocr_strong_frames=True,
+        max_frames_per_window=1,
+    )
+
+    assert selected and selected[0].frame.frame_id == "frame_1"
+    assert selected[0].selection_reason == "empty_ocr_strong_anchor"
+
+
+def test_direct_keyframe_vlm_selection_does_not_need_ocr() -> None:
+    frames = [
+        KeyFrame("medium", 1_000, "medium.jpg", 0.5, "medium:visual_change", window_id="window_0"),
+        KeyFrame("strong", 2_000, "strong.jpg", 0.2, "strong:anchor", window_id="window_0"),
+        KeyFrame("weak", 3_000, "weak.jpg", 1.0, "weak:visual_change", window_id="window_1"),
+    ]
+
+    selected = choose_keyframes_for_vlm(frames, max_frames=2, max_frames_per_window=1)
+
+    assert [item.frame.frame_id for item in selected] == ["strong", "weak"]
+    assert all(item.selection_reason == "direct_keyframe" for item in selected)
+    assert all(item.ocr_text == "" for item in selected)
+
+
+def test_vlm_grid_builder_keeps_source_frame_mapping(tmp_path: Path) -> None:
+    Image = pytest.importorskip("PIL.Image")
+    frames = []
+    for index, color in enumerate(((255, 0, 0), (0, 255, 0), (0, 0, 255))):
+        image_path = tmp_path / f"frame_{index}.jpg"
+        Image.new("RGB", (120, 80), color).save(image_path)
+        keyframe = KeyFrame(f"frame_{index}", index * 1000, str(image_path), 0.9, "strong:anchor", window_id="window_0")
+        frames.append(OcrResult(keyframe, f"OCR text {index}", 0.95, "unit"))
+    selected = choose_vlm_frames(frames, min_confidence=0.70, max_frames=4, strategy="ocr_all")
+
+    grids = build_vlm_frame_grids(selected, grid_size=2, output_dir=tmp_path / "grid")
+
+    assert len(grids) == 1
+    assert Path(grids[0].frame.image_path).exists()
+    assert grids[0].frame.frame_id == "vlm_grid_0"
+    assert [item["frame_id"] for item in grids[0].source_frames] == ["frame_0", "frame_1", "frame_2"]
+    assert [item["cell_id"] for item in grids[0].source_frames] == ["A1", "A2", "B1"]
+
+
 def test_vlm_frame_selection_prioritizes_strong_late_sink_frame() -> None:
     early = OcrResult(
         frame=KeyFrame("early", 1_000, "early.jpg", 0.9, "medium:visual_change"),
@@ -972,6 +1074,41 @@ def test_groundtruth_verdict_uses_configurable_dataset_criteria(tmp_path: Path) 
     assert verdict.conclusion == "data_leak_risk_detected"
     assert len(verdict.leak_operations) == 1
     assert len(verdict.non_leak_operations) == 1
+
+
+def test_sensitive_source_extraction_ignores_derived_groundtruth_paths(tmp_path: Path) -> None:
+    groundtruth = tmp_path / "groundtruth.json"
+    source = "C:/Users/admin/Desktop/Sensitive/员工薪资明细表Q4.xlsx"
+    screenshot = "C:/Users/王佳瑶/Pictures/Screenshots/屏幕截图 2026-06-03 003300.png"
+    groundtruth.write_text(
+        json.dumps(
+            {
+                "operations": [
+                    {
+                        "operation_time": "2026-06-02 23:48:39",
+                        "sensitive_file_path": source,
+                        "operation": "正常操作-打开查看",
+                    },
+                    {
+                        "operation_time": "2026-06-03 00:33:00",
+                        "sensitive_file_path": source,
+                        "operation": f"潜在隐藏行为-屏幕截图-{screenshot}",
+                    },
+                    {
+                        "operation_time": "2026-06-03 00:47:42",
+                        "sensitive_file_path": screenshot,
+                        "operation": "直接外发-豆包AI网站上传",
+                    },
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    sources = extract_sensitive_sources(groundtruth)
+
+    assert sources == (source,)
 
 
 def test_pipeline_conclusion_prefers_groundtruth_when_available(tmp_path: Path) -> None:
