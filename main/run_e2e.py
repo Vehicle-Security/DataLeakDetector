@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--vlm-dry-run", action="store_true", help="Write VLM request artifacts without calling the model API.")
     parser.add_argument("--vlm-grid-size", type=int, default=0, help="Pack selected VLM frames into NxN grid images before calling the model.")
     parser.add_argument("--vlm-workers", type=int, default=0, help="Parallel VLM request workers for selected frame batches.")
+    parser.add_argument("--vlm-max-image-side", type=int, default=-1, help="Resize VLM input images to this max side; 0 keeps originals.")
     parser.add_argument(
         "--vlm-frame-strategy",
         choices=["ocr_triage", "ocr_all", "direct_keyframes"],
@@ -47,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["DLD_VLM_GRID_SIZE"] = str(max(1, args.vlm_grid_size))
     if args.vlm_workers:
         os.environ["DLD_VLM_WORKERS"] = str(max(1, args.vlm_workers))
+    if args.vlm_max_image_side >= 0:
+        os.environ["DLD_VLM_MAX_IMAGE_SIDE"] = str(max(0, args.vlm_max_image_side))
 
     common_args = {
         "output_dir": args.output_dir or None,

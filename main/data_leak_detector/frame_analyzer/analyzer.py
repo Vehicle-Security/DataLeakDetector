@@ -21,7 +21,7 @@ from .frames import AnalysisWindow, KeyFrameDuplicate, select_keyframes_detailed
 from .ocr import OcrResult, run_ocr
 from .parser import parse_vlm_response_detailed, vision_events_to_observations
 from .roi import OcrFrameCandidate, prepare_ocr_candidates
-from .vlm import OpenAICompatibleVlmClient, build_vlm_frame_grids, choose_keyframes_for_vlm, choose_vlm_frames
+from .vlm import OpenAICompatibleVlmClient, build_vlm_frame_grids, choose_keyframes_for_vlm, choose_vlm_frames, prepare_vlm_frame_images
 
 
 def analyze_video_behavior(
@@ -345,6 +345,7 @@ def _run_vision_pipeline(
         "vlm_frame_strategy": config.vlm_frame_strategy,
         "vlm_grid_size": config.vlm_grid_size,
         "vlm_workers": config.vlm_workers,
+        "vlm_max_image_side": config.vlm_max_image_side,
         "vlm_batches": len(_vlm_frame_batches(vlm_request_frames, config.vlm_workers)) if vlm_request_frames else 0,
         "ocr_skipped_for_direct_vlm": direct_keyframes_to_vlm,
         "vlm_parse_errors": vlm_parse_errors,
@@ -628,14 +629,29 @@ def _prepare_vlm_request_frames(
     artifact_dir: str | Path | None,
     manifest: dict[str, Any],
 ) -> list[Any]:
+    input_dir = Path(artifact_dir) / "keyframes_vlm_input" if artifact_dir is not None and config.vlm_max_image_side > 0 else None
+    if input_dir is not None:
+        if input_dir.exists():
+            shutil.rmtree(input_dir)
+        input_dir.mkdir(parents=True, exist_ok=True)
+    prepared_frames = prepare_vlm_frame_images(frames, max_image_side=config.vlm_max_image_side, output_dir=input_dir)
+    if input_dir is not None:
+        input_files = [item.frame.image_path for item in prepared_frames if Path(item.frame.image_path).parent == input_dir]
+        if input_files:
+            manifest["keyframes_vlm_input_dir"] = str(input_dir)
+            manifest["keyframes_vlm_input_files"] = input_files
+            counts = manifest.setdefault("counts", {})
+            if isinstance(counts, dict):
+                counts["keyframes_vlm_input_files"] = len(input_files)
+            _update_artifact_manifest_file(manifest, {"keyframes_vlm_input_files": input_files})
     if config.vlm_grid_size <= 1:
-        return frames
+        return prepared_frames
     grid_dir = Path(artifact_dir) / "keyframes_vlm_grid" if artifact_dir is not None else None
     if grid_dir is not None:
         if grid_dir.exists():
             shutil.rmtree(grid_dir)
         grid_dir.mkdir(parents=True, exist_ok=True)
-    grid_frames = build_vlm_frame_grids(frames, grid_size=config.vlm_grid_size, output_dir=grid_dir)
+    grid_frames = build_vlm_frame_grids(prepared_frames, grid_size=config.vlm_grid_size, output_dir=grid_dir)
     if grid_dir is not None:
         grid_files = [item.frame.image_path for item in grid_frames]
         manifest["keyframes_vlm_grid_dir"] = str(grid_dir)

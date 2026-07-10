@@ -143,7 +143,7 @@ class Neo4jLogMiner:
         if not windows:
             windows = build_analysis_windows(logs, sensitive_files, vision_config)
 
-        merged = _merge_windows_by_case_segment(windows, vision_config)
+        merged = _thin_dense_window_anchors(_merge_windows_by_case_segment(windows, vision_config), vision_config)
         return LogMiningResult(
             windows=merged,
             source="neo4j",
@@ -210,7 +210,7 @@ def build_analysis_windows(
         )
         if window is not None:
             windows.append(window)
-    segmented = _filter_visual_context_windows(_merge_windows_by_case_segment(windows, config), config)
+    segmented = _thin_dense_window_anchors(_filter_visual_context_windows(_merge_windows_by_case_segment(windows, config), config), config)
     return _attach_active_apps_to_windows(segmented, app_index)
 
 
@@ -228,12 +228,14 @@ def build_analysis_window_for_event(
 
     sensitive = tuple(sensitive_files) if normalized_sensitive else tuple(normalize_path(item).lower() for item in sensitive_files)
     text = _event_search_text(event)
+    context_text = _nearby_event_search_text(logs, event.video_time_ms, 4_000) if _needs_nearby_context(event) else ""
+    combined_text = f"{text} {context_text}".strip()
     file_text = normalize_path(event.file_path).lower()
-    sensitive_hit = _matches_sensitive_source(file_text, text, sensitive) or looks_sensitive(file_text)
-    transfer_hit = contains_any(text, TRANSFER_TOKENS)
-    sink_hit = contains_any(text, SINK_TOKENS)
+    sensitive_hit = _matches_sensitive_source(file_text, combined_text, sensitive) or looks_sensitive(file_text)
+    transfer_hit = contains_any(combined_text, TRANSFER_TOKENS)
+    sink_hit = contains_any(combined_text, SINK_TOKENS) or _is_cloud_drive_context(combined_text)
     action_hit = transfer_hit or sink_hit
-    priority = _window_priority(event, text, sensitive_hit, transfer_hit, sink_hit)
+    priority = _window_priority(event, combined_text, sensitive_hit, transfer_hit, sink_hit)
     if priority == "none" or event.video_time_ms < 0:
         return None
     if priority == "weak" and not config.include_weak_windows:
@@ -248,7 +250,7 @@ def build_analysis_window_for_event(
         step_ms=step_ms,
         max_keyframes=max_keyframes,
         diff_threshold=diff_threshold,
-        anchor_ms=_event_anchors(event, sensitive_hit, action_hit),
+        anchor_ms=_event_anchors(event, sensitive_hit, action_hit, combined_text),
         active_apps=active_apps
         if active_apps is not None
         else _active_apps_near(logs, event.video_time_ms, after_ms, index=active_app_index),
@@ -347,6 +349,57 @@ def _filter_visual_context_windows(windows: list[AnalysisWindow], config: Vision
     return sorted(kept, key=lambda item: (_priority_sort_key(item.priority), item.start_ms, item.end_ms))
 
 
+def _thin_dense_window_anchors(windows: list[AnalysisWindow], config: VisionConfig) -> list[AnalysisWindow]:
+    return [_with_thinned_anchors(window, config) for window in windows]
+
+
+def _with_thinned_anchors(window: AnalysisWindow, config: VisionConfig) -> AnalysisWindow:
+    base_budget = _base_keyframe_budget(window.priority, config)
+    anchors = (
+        _thin_anchors(window.anchor_ms, _anchor_min_gap_ms(window.priority, config))
+        if len(window.anchor_ms) > base_budget
+        else window.anchor_ms
+    )
+    return AnalysisWindow(
+        start_ms=window.start_ms,
+        end_ms=window.end_ms,
+        reason=window.reason,
+        priority=window.priority,
+        step_ms=window.step_ms,
+        max_keyframes=max(base_budget, len(anchors)),
+        diff_threshold=window.diff_threshold,
+        anchor_ms=anchors,
+        active_apps=window.active_apps,
+    )
+
+
+def _thin_anchors(anchors: tuple[int, ...], min_gap_ms: int) -> tuple[int, ...]:
+    if min_gap_ms <= 0 or len(anchors) <= 1:
+        return anchors
+    thinned: list[int] = []
+    for anchor in sorted(set(anchors)):
+        if thinned and anchor - thinned[-1] < min_gap_ms:
+            continue
+        thinned.append(anchor)
+    return tuple(thinned)
+
+
+def _anchor_min_gap_ms(priority: str, config: VisionConfig) -> int:
+    if priority == "strong":
+        return max(config.strong_frame_step_ms * 12, 3_000)
+    if priority == "weak":
+        return max(config.weak_frame_step_ms, 2_000)
+    return max(config.frame_step_ms, 1_000)
+
+
+def _base_keyframe_budget(priority: str, config: VisionConfig) -> int:
+    if priority == "strong":
+        return config.max_keyframes_per_strong_window
+    if priority == "weak":
+        return config.max_keyframes_per_weak_window
+    return config.max_keyframes_per_window
+
+
 def _window_source_event_ms(window: AnalysisWindow, config: VisionConfig) -> int:
     if window.priority == "strong":
         return max(0, window.end_ms - config.strong_window_after_ms)
@@ -398,6 +451,24 @@ def _event_search_text(event: LogEvent) -> str:
     return " ".join(item.strip() for item in parts if item and item.strip())
 
 
+def _nearby_event_search_text(logs: list[LogEvent], center_ms: int, radius_ms: int) -> str:
+    if center_ms < 0 or radius_ms <= 0:
+        return ""
+    parts: list[str] = []
+    for item in logs:
+        if item.video_time_ms < 0 or abs(item.video_time_ms - center_ms) > radius_ms:
+            continue
+        parts.append(_event_search_text(item))
+    return " ".join(parts)
+
+
+def _needs_nearby_context(event: LogEvent) -> bool:
+    event_type = event.event_type.lower()
+    if event_type in {"app_switch", "window_changed", "window_closed"}:
+        return True
+    return _looks_like_file_selection_dialog(event.window_title)
+
+
 def _flatten_search_parts(value: Any) -> list[str]:
     if isinstance(value, dict):
         parts: list[str] = []
@@ -441,6 +512,7 @@ def _window_priority(event: LogEvent, text: str, sensitive_hit: bool, transfer_h
     upload_status = str(upload.get("upload_status") or "").lower()
     process_name = (event.process_name or "").lower()
     window_title = event.window_title or ""
+    sink_context = sink_hit or _is_sink_context(process_name, text)
 
     strong_event_types = {"file_selected", "file_upload", "upload", "uploaded", "upload_complete"}
     strong_raw_ops = {"file_selected", "file_upload", "upload", "send_click"}
@@ -457,6 +529,10 @@ def _window_priority(event: LogEvent, text: str, sensitive_hit: bool, transfer_h
     )
     if is_upload_detection and sensitive_hit:
         return "strong"
+    if _looks_like_file_selection_dialog(window_title) and sink_context:
+        return "strong"
+    if event_type in {"app_switch", "window_changed", "window_closed"} and sink_context and _looks_like_upload_progress(text):
+        return "strong"
 
     if event_type in {"clipboard_image", "screenshot", "screen_capture"}:
         return "medium"
@@ -465,7 +541,7 @@ def _window_priority(event: LogEvent, text: str, sensitive_hit: bool, transfer_h
 
     if sensitive_hit:
         return "medium"
-    if sink_hit and event_type in {"clipboard_text", "app_switch", "window_changed", "window_closed"}:
+    if sink_context and event_type in {"clipboard_text", "app_switch", "window_changed", "window_closed"}:
         return "medium"
 
     if str(extra.get("risk_level") or "").lower() in {"高", "high"}:
@@ -473,7 +549,7 @@ def _window_priority(event: LogEvent, text: str, sensitive_hit: bool, transfer_h
     return "none"
 
 
-def _event_anchors(event: LogEvent, sensitive_hit: bool, action_hit: bool) -> tuple[int, ...]:
+def _event_anchors(event: LogEvent, sensitive_hit: bool, action_hit: bool, text: str = "") -> tuple[int, ...]:
     process_name = (event.process_name or "").lower()
     window_title = event.window_title or ""
     event_type = event.event_type.lower()
@@ -483,9 +559,15 @@ def _event_anchors(event: LogEvent, sensitive_hit: bool, action_hit: bool) -> tu
         return (event.video_time_ms, event.video_time_ms + 3_000, event.video_time_ms + 8_000)
     if event_type in {"app_switch", "window_changed"} and sensitive_hit:
         return (event.video_time_ms,)
+    if _looks_like_file_selection_dialog(window_title) and _is_sink_context(process_name, text):
+        if event_type in {"app_switch", "window_changed", "window_closed"}:
+            return (event.video_time_ms, event.video_time_ms + 3_000)
+        return (event.video_time_ms,)
     if _looks_like_print_or_save_dialog(window_title):
         return (event.video_time_ms,)
     if event.event_type.lower() in {"app_switch", "window_changed", "window_closed"} and _is_sink_app_process(process_name):
+        return (event.video_time_ms,)
+    if event_type in {"app_switch", "window_changed", "window_closed"} and _is_sink_context(process_name, text) and _looks_like_upload_progress(text):
         return (event.video_time_ms,)
     if sensitive_hit and _looks_like_screenshot_path(event.file_path):
         return (event.video_time_ms,)
@@ -503,7 +585,58 @@ def _is_sink_app_process(process_name: str) -> bool:
         "dingtalk.exe",
         "feishu.exe",
         "lark.exe",
+        "baidunetdisk.exe",
+        "baidunetdiskunite.exe",
     }
+
+
+def _is_sink_context(process_name: str, text: str) -> bool:
+    return _is_sink_app_process(process_name) or _is_cloud_drive_context(text)
+
+
+def _is_cloud_drive_context(text: str) -> bool:
+    lowered = (text or "").lower()
+    return any(
+        token in lowered
+        for token in (
+            "cloud drive",
+            "netdisk",
+            "onedrive",
+            "dropbox",
+            "google drive",
+            "pan.baidu",
+            "pan.quark",
+            "baidunetdisk",
+            "baidu netdisk",
+            "quark",
+            "夸克网盘",
+            "百度网盘",
+            "网盘",
+            "云盘",
+            "缃戠洏",
+            "浜戠洏",
+        )
+    )
+
+
+def _looks_like_upload_progress(text: str) -> bool:
+    lowered = (text or "").lower()
+    return any(
+        token in lowered
+        for token in (
+            "uploading",
+            "upload in progress",
+            "file upload",
+            "上传中",
+            "正在上传",
+            "上传至",
+            "等待扫描",
+            "文件已选择",
+            "文件上传中",
+            "涓婁紶",
+            "鏂囦欢涓婁紶",
+        )
+    )
 
 
 def _looks_like_screenshot_path(path: str) -> bool:
@@ -522,6 +655,27 @@ def _looks_like_print_or_save_dialog(window_title: str) -> bool:
     if not title:
         return False
     return any(token in title for token in ("print", "save as", "save print output", "打印", "另存", "保存"))
+
+
+def _looks_like_file_selection_dialog(window_title: str) -> bool:
+    title = (window_title or "").lower()
+    if not title:
+        return False
+    if title.strip() in {"open", "打开", "请选择"}:
+        return True
+    return any(
+        token in title
+        for token in (
+            "open file",
+            "choose file",
+            "select file",
+            "browse",
+            "打开",
+            "请选择",
+            "选择文件",
+            "文件选择",
+        )
+    )
 
 
 def _window_profile(priority: str, config: VisionConfig) -> tuple[int, int, int, int, float]:
@@ -545,7 +699,7 @@ def _window_profile(priority: str, config: VisionConfig) -> tuple[int, int, int,
         config.frame_window_before_ms,
         config.frame_window_after_ms,
         config.frame_step_ms,
-        config.max_keyframes_per_medium_window,
+        config.max_keyframes_per_window,
         config.frame_diff_threshold,
     )
 

@@ -43,7 +43,8 @@ def build_datalog_facts(
 
     for upload in uploads:
         proc = upload.app_name or "unknown"
+        leaked_file = upload.original_file or upload.current_file
         if not same_file(upload.original_file, upload.current_file):
-            facts.append(DatalogFact("CrossProcessTransfer", (f"{upload.candidate_id}:bind", "system", proc, upload.current_file, 0)))
-        facts.append(DatalogFact("LeakFile", (f"{upload.candidate_id}:leak", proc, upload.current_file, upload.sink_type, 0)))
+            facts.append(DatalogFact("TransferFile", (f"{upload.candidate_id}:upload_bind", proc, upload.original_file, upload.current_file, 0)))
+        facts.append(DatalogFact("LeakFile", (f"{upload.candidate_id}:leak", proc, leaked_file, upload.sink_type, 0)))
     return facts

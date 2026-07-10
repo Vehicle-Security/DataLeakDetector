@@ -180,12 +180,18 @@ def _loads_relaxed(text: str) -> Any | None:
     candidates = [text]
     if '""' in text:
         candidates.append(text.replace('""', '"'))
+    for candidate in list(candidates):
+        candidates.append(_repair_backslashes(candidate))
     for candidate in candidates:
         try:
             return json.loads(candidate, strict=False)
         except json.JSONDecodeError:
             continue
     return None
+
+
+def _repair_backslashes(text: str) -> str:
+    return re.sub(r'(?<!\\)\\(?!["\\/bfnrtu])', r"\\\\", text)
 
 
 def _collect_by_field(value: Any, fields: set[str]) -> list[str]:

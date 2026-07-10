@@ -22,6 +22,7 @@ class VisionConfig:
     frame_diff_threshold: float = 0.08
     strong_frame_diff_threshold: float = 0.015
     frame_exact_duplicate_threshold: float = 0.001
+    frame_near_duplicate_threshold: float = 0.01
     frame_hash_distance_threshold: int = 12
     frame_min_keep_gap_ms: int = 0
     frame_probe_multiplier: int = 6
@@ -29,7 +30,7 @@ class VisionConfig:
     frame_anchor_duplicate_gap_ms: int = 500
     ocr_text_similarity_threshold: float = 0.92
     max_keyframes_per_window: int = 18
-    max_keyframes_per_strong_window: int = 24
+    max_keyframes_per_strong_window: int = 8
     max_keyframes_per_medium_window: int = 2
     max_keyframes_per_weak_window: int = 2
     include_weak_windows: bool = False
@@ -59,6 +60,7 @@ class VisionConfig:
     vlm_workers: int = 1
     vlm_include_empty_ocr_strong_frames: bool = True
     vlm_max_frames_per_window: int = 3
+    vlm_max_image_side: int = 1_280
 
     @classmethod
     def from_env(cls) -> "VisionConfig":
@@ -78,6 +80,7 @@ class VisionConfig:
             frame_diff_threshold=_env_float("DLD_FRAME_DIFF_THRESHOLD", 0.08),
             strong_frame_diff_threshold=_env_float("DLD_STRONG_FRAME_DIFF_THRESHOLD", 0.015),
             frame_exact_duplicate_threshold=_env_float("DLD_FRAME_EXACT_DUPLICATE_THRESHOLD", 0.001),
+            frame_near_duplicate_threshold=_env_float("DLD_FRAME_NEAR_DUPLICATE_THRESHOLD", 0.01),
             frame_hash_distance_threshold=_env_int("DLD_FRAME_HASH_DISTANCE_THRESHOLD", 12),
             frame_min_keep_gap_ms=_env_int("DLD_FRAME_MIN_KEEP_GAP_MS", 0),
             frame_probe_multiplier=max(1, _env_int("DLD_FRAME_PROBE_MULTIPLIER", 6)),
@@ -85,7 +88,7 @@ class VisionConfig:
             frame_anchor_duplicate_gap_ms=max(0, _env_int("DLD_FRAME_ANCHOR_DUPLICATE_GAP_MS", 500)),
             ocr_text_similarity_threshold=_env_float("DLD_OCR_TEXT_SIMILARITY_THRESHOLD", 0.92),
             max_keyframes_per_window=_env_int("DLD_MAX_KEYFRAMES_PER_WINDOW", 18),
-            max_keyframes_per_strong_window=_env_int("DLD_MAX_KEYFRAMES_PER_STRONG_WINDOW", 24),
+            max_keyframes_per_strong_window=_env_int("DLD_MAX_KEYFRAMES_PER_STRONG_WINDOW", 8),
             max_keyframes_per_medium_window=_env_int("DLD_MAX_KEYFRAMES_PER_MEDIUM_WINDOW", 2),
             max_keyframes_per_weak_window=_env_int("DLD_MAX_KEYFRAMES_PER_WEAK_WINDOW", 2),
             include_weak_windows=_env_bool("DLD_INCLUDE_WEAK_WINDOWS", False),
@@ -115,6 +118,7 @@ class VisionConfig:
             vlm_workers=max(1, _env_int("DLD_VLM_WORKERS", 1)),
             vlm_include_empty_ocr_strong_frames=_env_bool("DLD_VLM_INCLUDE_EMPTY_OCR_STRONG_FRAMES", True),
             vlm_max_frames_per_window=max(1, _env_int("DLD_VLM_MAX_FRAMES_PER_WINDOW", 3)),
+            vlm_max_image_side=max(0, _env_int("DLD_VLM_MAX_IMAGE_SIDE", 1_280)),
         )
 
     def with_overrides(
@@ -138,6 +142,7 @@ class VisionConfig:
             frame_diff_threshold=self.frame_diff_threshold,
             strong_frame_diff_threshold=self.strong_frame_diff_threshold,
             frame_exact_duplicate_threshold=self.frame_exact_duplicate_threshold,
+            frame_near_duplicate_threshold=self.frame_near_duplicate_threshold,
             frame_hash_distance_threshold=self.frame_hash_distance_threshold,
             frame_min_keep_gap_ms=self.frame_min_keep_gap_ms,
             frame_probe_multiplier=self.frame_probe_multiplier,
@@ -175,6 +180,7 @@ class VisionConfig:
             vlm_workers=self.vlm_workers,
             vlm_include_empty_ocr_strong_frames=self.vlm_include_empty_ocr_strong_frames,
             vlm_max_frames_per_window=self.vlm_max_frames_per_window,
+            vlm_max_image_side=self.vlm_max_image_side,
         )
 
 

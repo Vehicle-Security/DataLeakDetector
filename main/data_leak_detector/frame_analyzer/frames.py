@@ -102,6 +102,8 @@ def select_keyframes_detailed(
     if fps <= 0:
         capture.release()
         return KeyFrameSelection([], [], [], ["video_fps_unavailable"])
+    frame_count = capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0
+    duration_ms = int(round(frame_count * 1000.0 / fps)) if frame_count > 0 else 0
 
     temp_dir = Path(tempfile.mkdtemp(prefix="dld_frames_"))
     candidates: list[_FrameCandidate] = []
@@ -114,7 +116,9 @@ def select_keyframes_detailed(
             retained_hashes: list[tuple[int, int]] = []
             retained_small_frames = []
             last_kept_ms = -10**9
-            timestamps = _probe_timestamps(window, config)
+            probe_window = _clamp_window_to_duration(window, duration_ms)
+            timestamps = _probe_timestamps(probe_window, config)
+            coverage_ms = _coverage_timestamps(probe_window)
             frames_by_timestamp = _read_frames_for_timestamps(cv2, capture, timestamps, fps, config)
             for timestamp in timestamps:
                 if retained_for_window >= window.max_keyframes:
@@ -127,7 +131,9 @@ def select_keyframes_detailed(
                 gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
                 score = 1.0 if previous_small is None else _frame_delta(cv2, previous_small, gray)
                 frame_hash = _average_hash(cv2, gray)
-                force_keep = _is_near_anchor(timestamp, window.anchor_ms, window.step_ms)
+                force_anchor = _is_near_anchor(timestamp, window.anchor_ms, window.step_ms)
+                force_coverage = _is_near_anchor(timestamp, coverage_ms, window.step_ms)
+                force_keep = force_anchor or force_coverage
                 exact_duplicate = _is_exact_duplicate(cv2, gray, retained_small_frames, config.frame_exact_duplicate_threshold)
                 keep = _should_keep_frame(
                     timestamp_ms=timestamp,
@@ -145,8 +151,10 @@ def select_keyframes_detailed(
                     frame_id = f"frame_{window_index}_{retained_for_window}"
                     image_path = temp_dir / f"{frame_id}_{timestamp}.jpg"
                     cv2.imwrite(str(image_path), frame)
-                    if force_keep:
+                    if force_anchor:
                         reason = f"{window.priority}:anchor"
+                    elif force_coverage:
+                        reason = f"{window.priority}:coverage"
                     elif previous_small is None:
                         reason = f"{window.priority}:window_start"
                     else:
@@ -219,6 +227,8 @@ def _dedupe_keyframes_globally(
             candidate,
             kept,
             config.frame_exact_duplicate_threshold,
+            config.frame_near_duplicate_threshold,
+            config.frame_hash_distance_threshold,
             config.frame_anchor_duplicate_gap_ms,
         )
         if duplicate_of is None:
@@ -242,22 +252,39 @@ def _find_global_duplicate(
     candidate: _FrameCandidate,
     kept: list[_FrameCandidate],
     exact_threshold: float,
+    near_threshold: float,
+    hash_distance_threshold: int,
     anchor_duplicate_gap_ms: int,
 ) -> tuple[_FrameCandidate, float, int] | None:
     candidate_is_anchor = "anchor" in candidate.frame.reason
+    candidate_can_near_dedupe = _can_near_dedupe(candidate.frame)
     for retained in kept:
         retained_is_anchor = "anchor" in retained.frame.reason
-        if candidate_is_anchor and not (
-            retained_is_anchor
-            and anchor_duplicate_gap_ms > 0
-            and abs(candidate.frame.timestamp_ms - retained.frame.timestamp_ms) <= anchor_duplicate_gap_ms
-        ):
+        if candidate_is_anchor and not retained_is_anchor:
             continue
         delta = _frame_delta(cv2, retained.gray, candidate.gray)
         hash_distance = _hamming(candidate.frame_hash, retained.frame_hash)
         if candidate.frame.timestamp_ms == retained.frame.timestamp_ms or delta <= exact_threshold:
             return retained, delta, hash_distance
+        anchor_near_duplicate = (
+            candidate_is_anchor
+            and retained_is_anchor
+            and delta <= near_threshold
+            and hash_distance <= hash_distance_threshold
+        )
+        close_anchor_near_duplicate = (
+            anchor_near_duplicate
+            and anchor_duplicate_gap_ms > 0
+            and abs(candidate.frame.timestamp_ms - retained.frame.timestamp_ms) <= anchor_duplicate_gap_ms
+        )
+        if (candidate_can_near_dedupe or close_anchor_near_duplicate or anchor_near_duplicate) and delta <= near_threshold and hash_distance <= hash_distance_threshold:
+            return retained, delta, hash_distance
     return None
+
+
+def _can_near_dedupe(frame: KeyFrame) -> bool:
+    reason = frame.reason.lower()
+    return "coverage" in reason or "window_start" in reason
 
 
 def _should_keep_frame(
@@ -289,6 +316,34 @@ def _should_keep_frame(
 def _is_near_anchor(timestamp_ms: int, anchors: tuple[int, ...], step_ms: int) -> bool:
     tolerance = max(step_ms // 2, 125)
     return any(abs(timestamp_ms - anchor) <= tolerance for anchor in anchors)
+
+
+def _coverage_timestamps(window: AnalysisWindow) -> tuple[int, ...]:
+    if window.end_ms <= window.start_ms or window.max_keyframes <= 3:
+        return ()
+    slots = min(window.max_keyframes, 12)
+    if slots <= 1:
+        return (window.start_ms,)
+    span = window.end_ms - window.start_ms
+    return tuple(window.start_ms + round(slot * span / (slots - 1)) for slot in range(slots))
+
+
+def _clamp_window_to_duration(window: AnalysisWindow, duration_ms: int) -> AnalysisWindow:
+    if duration_ms <= 0:
+        return window
+    end_ms = min(window.end_ms, duration_ms)
+    start_ms = min(window.start_ms, end_ms)
+    return AnalysisWindow(
+        start_ms=start_ms,
+        end_ms=end_ms,
+        reason=window.reason,
+        priority=window.priority,
+        step_ms=window.step_ms,
+        max_keyframes=window.max_keyframes,
+        diff_threshold=window.diff_threshold,
+        anchor_ms=tuple(anchor for anchor in window.anchor_ms if start_ms <= anchor <= end_ms),
+        active_apps=window.active_apps,
+    )
 
 
 def _probe_timestamps(window: AnalysisWindow, config: VisionConfig) -> list[int]:

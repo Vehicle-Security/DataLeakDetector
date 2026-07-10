@@ -7,7 +7,7 @@ import json
 import tempfile
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -205,18 +205,76 @@ def choose_keyframes_for_vlm(
         )
         for frame in frames
     ]
+    if max_frames_per_window is not None:
+        candidates_by_window: dict[str, list[tuple[int, int, VlmRequestFrame]]] = {}
+        for candidate in candidates:
+            window_id = candidate[2].frame.window_id or "window_unknown"
+            candidates_by_window.setdefault(window_id, []).append(candidate)
+        limited_candidates: list[tuple[int, int, VlmRequestFrame]] = []
+        for window_candidates in candidates_by_window.values():
+            limited_candidates.extend(_select_temporally_diverse_candidates(window_candidates, max_frames_per_window))
+        candidates = limited_candidates
+    elif len(candidates) > max_frames:
+        candidates = _select_temporally_diverse_candidates(candidates, max_frames)
+
     selected: list[VlmRequestFrame] = []
-    per_window: dict[str, int] = {}
     for _, _, frame in sorted(candidates, key=lambda item: (-item[0], item[1])):
-        if max_frames_per_window is not None:
-            window_id = frame.frame.window_id or "window_unknown"
-            if per_window.get(window_id, 0) >= max_frames_per_window:
-                continue
-            per_window[window_id] = per_window.get(window_id, 0) + 1
         selected.append(frame)
         if len(selected) >= max_frames:
             break
     return sorted(selected, key=lambda item: item.frame.timestamp_ms)
+
+
+def _select_temporally_diverse_candidates(
+    candidates: list[tuple[int, int, VlmRequestFrame]],
+    limit: int,
+) -> list[tuple[int, int, VlmRequestFrame]]:
+    if limit <= 0 or len(candidates) <= limit:
+        return candidates
+    max_score = max(score for score, _, _ in candidates)
+    preferred = [candidate for candidate in candidates if candidate[0] >= max_score - 10]
+    selected = _pick_evenly_by_time(preferred, min(limit, len(preferred)))
+    if len(selected) < limit:
+        selected_keys = {(candidate[2].frame.frame_id, candidate[1]) for candidate in selected}
+        remainder = [
+            candidate
+            for candidate in sorted(candidates, key=lambda item: (-item[0], item[1]))
+            if (candidate[2].frame.frame_id, candidate[1]) not in selected_keys
+        ]
+        selected.extend(remainder[: limit - len(selected)])
+    return selected
+
+
+def _pick_evenly_by_time(
+    candidates: list[tuple[int, int, VlmRequestFrame]],
+    limit: int,
+) -> list[tuple[int, int, VlmRequestFrame]]:
+    if not candidates or limit <= 0:
+        return []
+    if limit == 1:
+        return [max(candidates, key=lambda item: (item[0], -item[1]))]
+
+    ordered = sorted(candidates, key=lambda item: item[1])
+    start = ordered[0][1]
+    end = ordered[-1][1]
+    if start == end:
+        return sorted(ordered, key=lambda item: (-item[0], item[1]))[:limit]
+
+    selected: list[tuple[int, int, VlmRequestFrame]] = []
+    selected_keys: set[tuple[str, int]] = set()
+    for index in range(limit):
+        target = start + round((end - start) * index / (limit - 1))
+        available = [
+            candidate
+            for candidate in ordered
+            if (candidate[2].frame.frame_id, candidate[1]) not in selected_keys
+        ]
+        if not available:
+            break
+        chosen = min(available, key=lambda item: (abs(item[1] - target), -item[0], item[1]))
+        selected.append(chosen)
+        selected_keys.add((chosen[2].frame.frame_id, chosen[1]))
+    return selected
 
 
 def build_vlm_frame_grids(
@@ -282,6 +340,37 @@ def build_vlm_frame_grids(
             )
         )
     return grid_frames
+
+
+def prepare_vlm_frame_images(
+    frames: list[VlmRequestFrame],
+    *,
+    max_image_side: int,
+    output_dir: str | Path | None,
+) -> list[VlmRequestFrame]:
+    if max_image_side <= 0 or not frames:
+        return frames
+
+    try:
+        from PIL import Image, ImageOps
+    except ImportError as exc:
+        raise RuntimeError("pillow_not_installed: install data-leak-detector[vision] to resize VLM images") from exc
+
+    root = Path(output_dir) if output_dir is not None else Path(tempfile.mkdtemp(prefix="dld_vlm_input_"))
+    root.mkdir(parents=True, exist_ok=True)
+    prepared: list[VlmRequestFrame] = []
+    for index, item in enumerate(frames):
+        source = Path(item.frame.image_path)
+        with Image.open(source) as image:
+            rgb = image.convert("RGB")
+            fitted = ImageOps.contain(rgb, (max_image_side, max_image_side))
+            if fitted.size == rgb.size:
+                prepared.append(item)
+                continue
+            target = root / f"{index:03d}_{item.frame.timestamp_ms}ms_{source.stem}.jpg"
+            fitted.save(target, quality=88, optimize=True)
+        prepared.append(replace(item, frame=replace(item.frame, image_path=str(target))))
+    return prepared
 
 
 def record_vlm_request_metrics(frames: list[VlmRequestFrame], prompt: str) -> dict[str, Any]:

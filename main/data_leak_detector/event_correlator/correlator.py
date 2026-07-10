@@ -285,7 +285,7 @@ class EventCorrelator:
         if not file_path:
             return ""
         for sensitive in sensitive_files:
-            if same_file(file_path, sensitive):
+            if same_file(file_path, sensitive) or _matches_sensitive_file_reference(file_path, sensitive):
                 return sensitive
         root = lineage.root(file_path)
         for sensitive in sensitive_files:
@@ -316,7 +316,7 @@ class EventCorrelator:
             if not (contains_any(text, SINK_TOKENS) or contains_any(text, TRANSFER_TOKENS)):
                 continue
             behavior = behavior_category(text)
-            current_file = observation.resource or original
+            current_file = self._visual_current_file(observation, original, sensitive_files)
             visual_events.append(
                 CorrelatedEvent(
                     event_id=f"corr_{start_index + len(visual_events)}",
@@ -333,6 +333,17 @@ class EventCorrelator:
                 )
             )
         return visual_events
+
+    def _visual_current_file(self, observation, original: str, sensitive_files: list[str]) -> str:
+        current_file = observation.resource or original
+        if not current_file:
+            return original
+        for sensitive in sensitive_files:
+            if same_file(current_file, sensitive) or _matches_sensitive_file_reference(current_file, sensitive):
+                return sensitive
+        if original and _mentions_file(observation.description, original) and not _mentions_file(current_file, original):
+            return original
+        return current_file
 
     def _analysis_windows(self, logs, sensitive_files: list[str]) -> list[dict[str, Any]]:
         windows: list[dict[str, Any]] = []
@@ -425,6 +436,21 @@ def _mentions_file(text: str, file_path: str) -> bool:
     name = Path(normalized_file).name.lower()
     stem = Path(name).stem.lower()
     return normalized_file in normalized_text or (name and name in normalized_text) or (len(stem) >= 4 and stem in normalized_text)
+
+
+def _matches_sensitive_file_reference(file_path: str, sensitive_file: str) -> bool:
+    normalized_ref = normalize_path(file_path).lower()
+    normalized_sensitive = normalize_path(sensitive_file).lower()
+    if not normalized_ref or not normalized_sensitive:
+        return False
+    ref_name = Path(normalized_ref).name.lower()
+    sensitive_name = Path(normalized_sensitive).name.lower()
+    sensitive_stem = Path(sensitive_name).stem.lower()
+    if not ref_name or not sensitive_name or not sensitive_stem:
+        return False
+    if Path(ref_name).suffix:
+        return False
+    return len(ref_name) >= 4 and ref_name == sensitive_stem
 
 
 def _flatten_search_parts(value: Any) -> list[str]:

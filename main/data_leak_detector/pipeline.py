@@ -49,6 +49,8 @@ def run_pipeline(
     report_id = _build_report_id(log_path, len(records), case_name)
     target_dir = Path(output_dir) if output_dir is not None else None
     vision_artifact_dir = target_dir / report_id if target_dir is not None else None
+    if vision_artifact_dir is not None:
+        _copy_groundtruth_file({"input": {"groundtruth_file": str(groundtruth_file or "")}}, vision_artifact_dir)
     vision_config = VisionConfig.from_env().with_overrides(
         enabled=vision_enabled,
         mode=vision_mode,
@@ -97,7 +99,7 @@ def run_pipeline(
     leak_paths = engine.query_leak()
     detector_conclusion = "data_leak_risk_detected" if leak_paths else "no_confirmed_data_leak"
     groundtruth_verdict = evaluate_groundtruth(groundtruth_file)
-    final_conclusion = groundtruth_verdict.conclusion if groundtruth_verdict.available else detector_conclusion
+    final_conclusion = detector_conclusion
 
     report = DetectionReport(
         report_id=report_id,
@@ -129,9 +131,10 @@ def run_pipeline(
     )
     payload = report.to_dict()
     payload["verdict"] = {
-        "source": "groundtruth" if groundtruth_verdict.available else "reasoner",
+        "source": "reasoner",
         "conclusion": final_conclusion,
         "detector_conclusion": detector_conclusion,
+        "groundtruth_conclusion": groundtruth_verdict.conclusion if groundtruth_verdict.available else "",
     }
     payload["detection_core"] = _build_detection_core(
         frame_bundle=frame_bundle,
@@ -139,6 +142,7 @@ def run_pipeline(
         leak_paths=[item.to_dict() for item in leak_paths],
         detector_conclusion=detector_conclusion,
         verdict_source=payload["verdict"]["source"],
+        groundtruth_available=groundtruth_verdict.available,
     )
     payload["groundtruth"] = groundtruth_verdict.to_dict()
     payload["log_miner"] = {"source": log_mining.source, **log_mining.metadata}
@@ -204,6 +208,7 @@ def _copy_groundtruth_file(payload: dict[str, Any], detail_dir: Path) -> str:
     if not source.exists() or not source.is_file():
         return ""
     target = detail_dir / "groundtruth.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
     return str(target)
 
@@ -280,6 +285,7 @@ def _build_detection_core(
     leak_paths: list[dict[str, Any]],
     detector_conclusion: str,
     verdict_source: str,
+    groundtruth_available: bool,
 ) -> dict[str, Any]:
     vision = dict(frame_bundle.get("statistics", {}).get("vision", {}))
     datalog_facts = correlation_bundle.get("datalog_facts", [])
@@ -316,7 +322,7 @@ def _build_detection_core(
         },
         "evaluation": {
             "final_conclusion_source": verdict_source,
-            "groundtruth_is_evaluation_only": verdict_source == "groundtruth",
+            "groundtruth_is_evaluation_only": groundtruth_available,
         },
     }
 
