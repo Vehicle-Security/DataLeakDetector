@@ -102,6 +102,8 @@ def extract_sensitive_sources(path: str | Path | None, config: SensitiveSourceCo
     normalized: list[str] = []
     for value in values:
         path_text = normalize_path(value)
+        if not _is_valid_source_path(path_text):
+            continue
         if not path_text and not config.allow_empty:
             continue
         if path_text and path_text not in normalized:
@@ -163,6 +165,15 @@ def _looks_initial_source_operation(text: str, config: SensitiveSourceConfig) ->
     if any(token.casefold() in normalized for token in config.derived_operation_tokens):
         return False
     return any(token.casefold() in normalized for token in config.source_operation_tokens)
+
+
+def _is_valid_source_path(value: str) -> bool:
+    normalized = normalize_path(value).strip().strip("\"'").lower()
+    if not normalized:
+        return False
+    if normalized in {"n/a", "na", "none", "null", "unknown", "-", "无", "空"} or normalized.startswith("n/a "):
+        return False
+    return "/" in normalized or "\\" in value
 
 
 def _loads_relaxed(text: str) -> Any | None:

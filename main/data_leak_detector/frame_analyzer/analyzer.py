@@ -215,10 +215,11 @@ def _run_vision_pipeline(
         ocr_prepare_seconds = 0.0
         ocr_seconds = 0.0
         ocr_postprocess_seconds = 0.0
+        # direct_keyframes means VLM sees the selected keyframes themselves.
+        # Keep only the explicit global VLM budget; do not apply OCR/window triage caps.
         vlm_frames = choose_keyframes_for_vlm(
             keyframes,
             max_frames=config.max_vlm_frames,
-            max_frames_per_window=config.vlm_max_frames_per_window,
         )
     else:
         ocr_prepare_started = time.perf_counter()
@@ -642,7 +643,26 @@ def _prepare_vlm_request_frames(
         counts = manifest.setdefault("counts", {})
         if isinstance(counts, dict):
             counts["keyframes_vlm_grid_files"] = len(grid_files)
+        _update_artifact_manifest_file(manifest, {"keyframes_vlm_grid_files": grid_files})
     return grid_frames
+
+
+def _update_artifact_manifest_file(manifest: dict[str, Any], updates: dict[str, Any]) -> None:
+    manifest_file = str(manifest.get("artifact_manifest_file") or "")
+    if not manifest_file:
+        return
+    path = Path(manifest_file)
+    if path.exists():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            payload = {}
+    else:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    payload.update(updates)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _vlm_uses_direct_keyframes(config: VisionConfig) -> bool:
@@ -958,7 +978,7 @@ def _ocr_observations(
             continue
         app = identify_frontend_app(ocr_text=result.text)
         mentioned_files = _ocr_mentioned_files(result.text, sensitive_files)
-        sink_context = app.risk_hint.startswith("external_capable") or contains_any(result.text, SINK_TOKENS)
+        sink_context = contains_any(result.text, SINK_TOKENS)
         transfer_context = contains_any(result.text, TRANSFER_TOKENS)
         if sink_context:
             operation = "external_sink_interaction"

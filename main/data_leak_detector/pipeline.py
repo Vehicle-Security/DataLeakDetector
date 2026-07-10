@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 from typing import Any
 
 from .datasets import discover_data_case
@@ -183,12 +184,50 @@ def _write_detail_files(payload: dict[str, Any], detail_dir: Path) -> dict[str, 
     details["event_correlator_details"] = _write_json(detail_dir / "event_correlator_details.json", event_detail)
     details["frame_observations"] = _write_json(detail_dir / "frame_observations.json", frame_analyzer.get("observations", []))
     details["leak_paths"] = _write_json(detail_dir / "leak_paths.json", leak_reasoner.get("leak_paths", []))
+    details["verdict_check"] = _write_json(detail_dir / "verdict_check.json", _build_verdict_check(payload))
+    groundtruth_copy = _copy_groundtruth_file(payload, detail_dir)
+    if groundtruth_copy:
+        details["groundtruth"] = groundtruth_copy
     return details
 
 
 def _write_json(path: Path, payload: Any) -> str:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return str(path)
+
+
+def _copy_groundtruth_file(payload: dict[str, Any], detail_dir: Path) -> str:
+    source_text = str(payload.get("input", {}).get("groundtruth_file") or "")
+    if not source_text:
+        return ""
+    source = Path(source_text)
+    if not source.exists() or not source.is_file():
+        return ""
+    target = detail_dir / "groundtruth.json"
+    shutil.copy2(source, target)
+    return str(target)
+
+
+def _build_verdict_check(payload: dict[str, Any]) -> dict[str, Any]:
+    groundtruth = payload.get("groundtruth", {})
+    verdict = payload.get("verdict", {})
+    leak_reasoner = payload.get("leak_reasoner", {})
+    expected = str(groundtruth.get("conclusion") or "")
+    detector = str(leak_reasoner.get("detector_conclusion") or "")
+    final = str(payload.get("conclusion") or "")
+    available = bool(groundtruth.get("available"))
+    return {
+        "groundtruth_available": available,
+        "expected_conclusion": expected,
+        "detector_conclusion": detector,
+        "final_conclusion": final,
+        "final_conclusion_source": verdict.get("source", ""),
+        "detector_correct": detector == expected if available and expected else None,
+        "final_correct": final == expected if available and expected else None,
+        "detector_leak_paths": len(leak_reasoner.get("leak_paths", [])),
+        "groundtruth_operations": int(payload.get("summary", {}).get("groundtruth_operations") or 0),
+        "groundtruth_leak_operations": int(payload.get("summary", {}).get("groundtruth_leak_operations") or 0),
+    }
 
 
 def _env_bool(name: str, default: bool) -> bool:

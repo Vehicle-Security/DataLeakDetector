@@ -154,14 +154,32 @@ def same_file(left: object, right: object) -> bool:
 
     lhs = normalize_path(left).lower()
     rhs = normalize_path(right).lower()
-    if not lhs or not rhs:
+    if not lhs or not rhs or _is_placeholder_file_ref(lhs) or _is_placeholder_file_ref(rhs):
         return False
-    return lhs == rhs or basename(lhs).lower() == basename(rhs).lower()
+    if lhs == rhs:
+        return True
+    lhs_name = basename(lhs).lower()
+    rhs_name = basename(rhs).lower()
+    if _safe_basename_match(lhs_name) and _safe_basename_match(rhs_name):
+        return lhs_name == rhs_name
+    return False
 
 
 def looks_sensitive(value: object) -> bool:
     text = str(value or "").lower()
     return any(token.lower() in text for token in SENSITIVE_TOKENS)
+
+
+def _is_placeholder_file_ref(value: str) -> bool:
+    normalized = value.strip().strip("\"'").lower()
+    return normalized in {"n/a", "na", "none", "null", "unknown", "-", "无", "空"} or normalized.startswith("n/a ")
+
+
+def _safe_basename_match(name: str) -> bool:
+    if _is_placeholder_file_ref(name):
+        return False
+    path = Path(name)
+    return bool(path.suffix and len(path.stem) >= 2)
 
 
 def parse_timestamp_ms(value: object) -> int:

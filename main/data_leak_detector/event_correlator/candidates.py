@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 from ..io import normalize_path
 from ..models import CorrelatedEvent, UploadCandidate
@@ -23,11 +24,10 @@ def build_upload_candidates(
     uploads: list[UploadCandidate] = []
     for event in correlated:
         text = f"{event.event_type} {event.operation_type} {event.app_name} {event.behavior_category}"
-        if (
-            event.behavior_category != "data_exfiltration_candidate"
-            and event.operation_type != "external_sink_interaction"
-            and not contains_any(text, SINK_TOKENS)
-        ):
+        current_file = event.current_file or event.original_file
+        if not _is_explicit_upload_event(event, text):
+            continue
+        if _is_noise_or_placeholder_path(current_file):
             continue
         uploads.append(
             UploadCandidate(
@@ -35,7 +35,7 @@ def build_upload_candidates(
                 timestamp=event.timestamp,
                 app_name=event.app_name,
                 original_file=event.original_file,
-                current_file=event.current_file or event.original_file,
+                current_file=current_file,
                 sink_type=classify_sink(text),
                 risk_level=risk_level_for_sink(text),
                 confidence=max(event.confidence, default_confidence),
@@ -67,3 +67,41 @@ def _prefer_upload_candidate(left: UploadCandidate, right: UploadCandidate) -> t
     if right.confidence > left.confidence:
         return right, left
     return left, right
+
+
+def _is_explicit_upload_event(event: CorrelatedEvent, text: str) -> bool:
+    if event.operation_type != "external_sink_interaction" and not contains_any(text, SINK_TOKENS):
+        return False
+    reasons = set(event.join_reasons)
+    if {"explicit_sink_log", "ocr_sink_context", "visual_only"} & reasons:
+        return True
+    return any(ref.startswith("frame:vlm") for ref in event.evidence_refs) and event.operation_type == "external_sink_interaction"
+
+
+def _is_noise_or_placeholder_path(value: str) -> bool:
+    path = normalize_path(value).strip().strip("\"'")
+    lowered = path.lower()
+    if not lowered or lowered in {"n/a", "na", "none", "null", "unknown", "-", "无", "空"} or lowered.startswith("n/a "):
+        return True
+    markers = (
+        "/appdata/local/google/chrome/user data/",
+        "/appdata/local/microsoft/edge/user data/",
+        "/appdata/roaming/cursor/",
+        "/appdata/roaming/code/",
+        "/appdata/roaming/larkshell/",
+        "/tencent files/",
+        "/nt_qq/",
+        "/driverstore/",
+        "/screenmonitor/",
+        "/recordings/session_",
+        "/logs/",
+        "/cache/",
+        "/cache_data/",
+        "/cacheddata/",
+    )
+    if any(marker in lowered for marker in markers):
+        return True
+    suffix = Path(lowered).suffix
+    if suffix in {".tmp", ".temp", ".log", ".xlog", ".db", ".db-journal", ".db-wal", ".db-shm"}:
+        return True
+    return False

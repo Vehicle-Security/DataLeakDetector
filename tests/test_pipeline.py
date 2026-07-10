@@ -40,7 +40,7 @@ from data_leak_detector.log_mining import build_analysis_windows, mine_analysis_
 from data_leak_detector.neo4j.importer import fingerprint_records, records_to_graph_events
 from data_leak_detector.neo4j.store import Neo4jGraphStore
 from data_leak_detector.groundtruth import evaluate_groundtruth
-from data_leak_detector.io import normalize_logs
+from data_leak_detector.io import normalize_logs, same_file
 from data_leak_detector.io import load_json_records
 from data_leak_detector.leak_reasoner import DatalogEngine
 from data_leak_detector.policy import contains_any, load_policy_config
@@ -630,6 +630,63 @@ def test_event_correlator_does_not_infer_initial_sensitive_files_from_logs() -> 
     assert bundle["datalog_facts"] == []
 
 
+def test_event_correlator_ignores_placeholder_sensitive_sources() -> None:
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "created",
+            "file_path": "C:/Users/alice/AppData/Local/Google/Chrome/User Data/Default/Cache/Cache_Data/f_000123",
+            "process_info": {"process_name": "chrome.exe"},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:01",
+            "event_type": "file_upload",
+            "file_path": "N/A",
+            "process_info": {"process_name": "chrome.exe"},
+            "extra": {"category": "upload"},
+        },
+    ]
+
+    bundle = EventCorrelator().run({"log_events": records, "frame_segments": [], "sensitive_files": ["N/A"]})
+
+    assert same_file("N/A", "N/A") is False
+    assert bundle["upload_candidates"] == []
+    assert bundle["datalog_facts"] == []
+
+
+def test_event_correlator_does_not_promote_browser_cache_noise_to_upload() -> None:
+    original = "C:/Users/alice/Desktop/secret.docx"
+    cache_file = "C:/Users/alice/AppData/Local/Google/Chrome/User Data/Default/Cache/Cache_Data/f_000123"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "file_open",
+            "file_path": original,
+            "process_info": {"process_name": "winword.exe"},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:01",
+            "event_type": "created",
+            "file_path": cache_file,
+            "source_file": original,
+            "process_info": {"process_name": "chrome.exe"},
+            "extra": {"raw_operation": "upload"},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:02",
+            "event_type": "file_upload",
+            "file_path": cache_file,
+            "process_info": {"process_name": "chrome.exe"},
+            "extra": {"category": "upload"},
+        },
+    ]
+
+    bundle = EventCorrelator().run({"log_events": records, "frame_segments": [], "sensitive_files": [original]})
+
+    assert bundle["upload_candidates"] == []
+    assert not any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
+
+
 def test_datalog_engine_finds_derived_file_leak() -> None:
     engine = DatalogEngine()
     engine.add_fact("OpenFile", "open_1", "excel.exe", "secret.xlsx", 1)
@@ -1172,6 +1229,29 @@ def test_sensitive_source_extraction_ignores_derived_groundtruth_paths(tmp_path:
     assert sources == (source,)
 
 
+def test_sensitive_source_extraction_ignores_placeholder_sources(tmp_path: Path) -> None:
+    groundtruth = tmp_path / "groundtruth.json"
+    source = "C:/Users/alice/Desktop/secret.docx"
+    derived = "E:/secret.docx"
+    groundtruth.write_text(
+        json.dumps(
+            {
+                "operations": [
+                    {"sensitive_file_path": "N/A", "operation": "normal clipboard copy"},
+                    {"sensitive_file_path": source, "operation": "normal open and read"},
+                    {"sensitive_file_path": derived, "operation": "hidden transfer to removable media"},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    sources = extract_sensitive_sources(groundtruth)
+
+    assert sources == (source,)
+
+
 def test_pipeline_conclusion_prefers_groundtruth_when_available(tmp_path: Path) -> None:
     log_file = tmp_path / "logs.json"
     groundtruth = tmp_path / "groundtruth.json"
@@ -1199,6 +1279,35 @@ def test_pipeline_conclusion_prefers_groundtruth_when_available(tmp_path: Path) 
     assert report["leak_reasoner"]["detector_conclusion"] == "no_confirmed_data_leak"
     assert report["detection_core"]["method"] == "non_uniform_keyframes_ocr_vlm_datalog"
     assert report["detection_core"]["evaluation"]["groundtruth_is_evaluation_only"] is True
+
+
+def test_pipeline_writes_verdict_check_into_detail_dir(tmp_path: Path) -> None:
+    log_file = tmp_path / "logs.json"
+    groundtruth = tmp_path / "groundtruth.json"
+    log_file.write_text(
+        json.dumps([{"timestamp": "2026-01-01T00:00:00", "event_type": "heartbeat"}]),
+        encoding="utf-8",
+    )
+    groundtruth.write_text(
+        json.dumps({"operations": [{"operation": "leak", "sensitive_file_path": "C:/secret.docx"}]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    report = run_pipeline(
+        log_file=log_file,
+        output_dir=tmp_path / "out",
+        groundtruth_file=groundtruth,
+        neo4j_enabled=False,
+    )
+
+    verdict_file = Path(report["detail_files"]["verdict_check"])
+    verdict = json.loads(verdict_file.read_text(encoding="utf-8"))
+    assert verdict_file.parent.name == report["report_id"]
+    assert verdict["groundtruth_available"] is True
+    assert verdict["expected_conclusion"] == "data_leak_risk_detected"
+    assert verdict["detector_conclusion"] == "no_confirmed_data_leak"
+    assert verdict["detector_correct"] is False
+    assert verdict["final_correct"] is True
 
 
 def test_json_loader_keeps_escaped_windows_paths(tmp_path: Path) -> None:
