@@ -14,7 +14,7 @@ from typing import Any, Iterable
 
 from .frame_analyzer.config import VisionConfig
 from .frame_analyzer.frames import AnalysisWindow, merge_analysis_windows
-from .io import looks_sensitive, normalize_path
+from .io import looks_sensitive, normalize_path, parse_timestamp_ms, same_file
 from .models import LogEvent
 from .neo4j.config import Neo4jConfig
 from .neo4j.importer import Neo4jLogImporter
@@ -232,17 +232,20 @@ def build_analysis_window_for_event(
     combined_text = f"{text} {context_text}".strip()
     file_text = normalize_path(event.file_path).lower()
     sensitive_hit = _matches_sensitive_source(file_text, combined_text, sensitive) or looks_sensitive(file_text)
+    sensitive_context_hit = sensitive_hit or (
+        _is_clipboard_or_capture_event(event, combined_text) and _has_sensitive_open_context(logs, event.video_time_ms, sensitive)
+    )
     transfer_hit = contains_any(combined_text, TRANSFER_TOKENS)
     sink_hit = contains_any(combined_text, SINK_TOKENS) or _is_cloud_drive_context(combined_text)
     action_hit = transfer_hit or sink_hit
-    priority = _window_priority(event, combined_text, sensitive_hit, transfer_hit, sink_hit)
+    priority = _window_priority(event, combined_text, sensitive_hit, transfer_hit, sink_hit, sensitive_context_hit)
     if priority == "none" or event.video_time_ms < 0:
         return None
     if priority == "weak" and not config.include_weak_windows:
         return None
 
     before_ms, after_ms, step_ms, max_keyframes, diff_threshold = _window_profile(priority, config)
-    anchors = _event_anchors(event, sensitive_hit, action_hit, combined_text)
+    anchors = _event_anchors(event, sensitive_hit, action_hit, combined_text, sensitive_context_hit)
     end_ms = event.video_time_ms + after_ms
     if anchors:
         end_ms = max(end_ms, max(anchors))
@@ -537,7 +540,14 @@ def _matches_sensitive_source(file_text: str, text: str, sensitive_files: tuple[
     return False
 
 
-def _window_priority(event: LogEvent, text: str, sensitive_hit: bool, transfer_hit: bool, sink_hit: bool) -> str:
+def _window_priority(
+    event: LogEvent,
+    text: str,
+    sensitive_hit: bool,
+    transfer_hit: bool,
+    sink_hit: bool,
+    sensitive_context_hit: bool = False,
+) -> str:
     extra = event.raw.get("extra") if isinstance(event.raw.get("extra"), dict) else {}
     upload = event.raw.get("upload_detection") if isinstance(event.raw.get("upload_detection"), dict) else {}
     event_type = event.event_type.lower()
@@ -570,11 +580,11 @@ def _window_priority(event: LogEvent, text: str, sensitive_hit: bool, transfer_h
     if event_type in {"app_switch", "window_changed", "window_closed"} and sink_context and _looks_like_upload_progress(text):
         return "strong"
 
-    if event_type in {"clipboard_image", "screenshot", "screen_capture"}:
-        return "medium"
+    if _is_clipboard_or_capture_event(event, text) and sensitive_context_hit:
+        return "strong"
     if event_type in {"app_switch", "window_changed", "window_closed"} and _is_sink_app_process(process_name):
         return "medium"
-    if _is_derivation_candidate_event(event, text):
+    if _is_derivation_candidate_event(event, text, sensitive_context_hit=sensitive_context_hit):
         return "medium"
 
     if sensitive_hit:
@@ -587,7 +597,13 @@ def _window_priority(event: LogEvent, text: str, sensitive_hit: bool, transfer_h
     return "none"
 
 
-def _event_anchors(event: LogEvent, sensitive_hit: bool, action_hit: bool, text: str = "") -> tuple[int, ...]:
+def _event_anchors(
+    event: LogEvent,
+    sensitive_hit: bool,
+    action_hit: bool,
+    text: str = "",
+    sensitive_context_hit: bool = False,
+) -> tuple[int, ...]:
     process_name = (event.process_name or "").lower()
     window_title = event.window_title or ""
     event_type = event.event_type.lower()
@@ -610,65 +626,185 @@ def _event_anchors(event: LogEvent, sensitive_hit: bool, action_hit: bool, text:
         return (event.video_time_ms,)
     if event_type in {"app_switch", "window_changed", "window_closed"} and _is_sink_context(process_name, text) and _looks_like_upload_progress(text):
         return (event.video_time_ms,)
-    if _is_derivation_candidate_event(event, text):
+    if _is_clipboard_or_capture_event(event, text) and sensitive_context_hit:
+        return (event.video_time_ms,)
+    if _is_derivation_candidate_event(event, text, sensitive_context_hit=sensitive_context_hit):
         return (event.video_time_ms,)
     if sensitive_hit and action_hit:
         return (event.video_time_ms,)
     if sensitive_hit and _looks_like_screenshot_path(event.file_path):
         return (event.video_time_ms,)
-    if event_type in {"clipboard_image", "screenshot", "screen_capture", "file_selected", "file_upload", "upload", "uploaded", "upload_complete"}:
+    if event_type in {"file_selected", "file_upload", "upload", "uploaded", "upload_complete"}:
         return (event.video_time_ms,)
     return ()
 
 
-def _is_derivation_candidate_event(event: LogEvent, text: str) -> bool:
+def _is_derivation_candidate_event(event: LogEvent, text: str, *, sensitive_context_hit: bool = False) -> bool:
     event_type = event.event_type.lower()
     extra = event.raw.get("extra") if isinstance(event.raw.get("extra"), dict) else {}
     raw_operation = str(event.raw.get("operation") or extra.get("raw_operation") or "").lower()
     window_title = event.window_title or ""
-    derivation_events = {
+    direct_derivation_events = {
+        "print_to_pdf",
+        "save_as",
+        "export",
+        "copied",
+    }
+    file_change_events = {
         "created",
         "modified",
         "renamed",
         "moved",
-        "copied",
-        "clipboard_text",
-        "clipboard_image",
-        "screenshot",
-        "screen_capture",
-        "print_to_pdf",
-        "save_as",
-        "export",
         "file_created",
         "file_modified",
         "file_renamed",
     }
-    derivation_ops = {
+    context_bound_ops = {
         "copy",
         "paste",
+        "clipboard",
+        "screenshot",
+        "screen_capture",
+    }
+    derivation_ops = {
         "export",
         "print",
         "print_to_pdf",
         "save_as",
-        "screenshot",
-        "screen_capture",
         "rename",
         "compress",
         "translate",
         "base64",
     }
     lowered_text = text.lower()
-    if event_type in derivation_events or raw_operation in derivation_ops:
+    if event_type in direct_derivation_events:
+        return True
+    if any(token in raw_operation for token in context_bound_ops):
+        return sensitive_context_hit
+    if raw_operation in derivation_ops:
         return True
     if any(token in raw_operation for token in derivation_ops):
         return True
+    if event_type in file_change_events:
+        return sensitive_context_hit and _looks_like_screenshot_path(event.file_path)
     if any(token in lowered_text for token in ("translation", "translate", "base64", "encode", "decode")):
         return True
     if _looks_like_print_or_save_dialog(window_title):
         return True
+    if event_type in {"app_switch", "window_changed", "window_closed"} and (
+        _looks_like_capture_context(text) or _looks_like_capture_context(window_title)
+    ):
+        return sensitive_context_hit
     if event_type in {"app_switch", "window_changed", "window_closed"} and contains_any(text, TRANSFER_TOKENS):
         return True
     return False
+
+
+def _is_clipboard_or_capture_event(event: LogEvent, text: str = "") -> bool:
+    event_type = event.event_type.lower()
+    extra = event.raw.get("extra") if isinstance(event.raw.get("extra"), dict) else {}
+    raw_operation = str(event.raw.get("operation") or extra.get("raw_operation") or "").lower()
+    foreground_event = event_type in {"app_switch", "window_changed", "window_closed"}
+    return (
+        event_type in {"clipboard_text", "clipboard_image", "screenshot", "screen_capture"}
+        or any(token in raw_operation for token in ("copy", "paste", "clipboard", "screenshot", "screen_capture"))
+        or _looks_like_screenshot_path(event.file_path)
+        or (foreground_event and (_looks_like_capture_context(text) or _looks_like_capture_context(event.window_title)))
+    )
+
+
+def _has_sensitive_open_context(logs: list[LogEvent], center_ms: int, sensitive_files: tuple[str, ...]) -> bool:
+    if center_ms < 0:
+        return False
+
+    for item in logs:
+        if not _is_open_context_event(item):
+            continue
+        if _event_has_sensitive_context_signal(item, sensitive_files):
+            if _event_interval_contains(item, center_ms) or _event_is_open_until_closed(logs, item, center_ms):
+                return True
+        elif _foreground_interval_contains_sensitive_title(logs, item, center_ms, sensitive_files):
+            return True
+    return False
+
+
+def _is_open_context_event(event: LogEvent) -> bool:
+    return event.event_type.lower() in {
+        "app_switch",
+        "window_changed",
+        "window_closed",
+        "file_open",
+        "opened",
+        "open",
+        "read",
+        "modified",
+        "created",
+        "renamed",
+        "file_created",
+        "file_modified",
+        "file_renamed",
+        "save_as",
+        "export",
+    }
+
+
+def _event_has_sensitive_context_signal(event: LogEvent, sensitive_files: tuple[str, ...]) -> bool:
+    text = _event_search_text(event)
+    file_text = normalize_path(event.file_path).lower()
+    return _matches_sensitive_source(file_text, text, sensitive_files) or looks_sensitive(file_text) or looks_sensitive(text)
+
+
+def _event_interval_contains(event: LogEvent, center_ms: int) -> bool:
+    end_time = parse_timestamp_ms(event.raw.get("end_time"))
+    if not end_time or not event.timestamp_ms or event.video_time_ms < 0:
+        return False
+    end_video_ms = event.video_time_ms + max(end_time - event.timestamp_ms, 0)
+    return event.video_time_ms <= center_ms <= end_video_ms
+
+
+def _event_is_open_until_closed(logs: list[LogEvent], event: LogEvent, center_ms: int) -> bool:
+    if event.video_time_ms < 0 or event.video_time_ms > center_ms:
+        return False
+    if parse_timestamp_ms(event.raw.get("end_time")):
+        return False
+    if event.event_type.lower() not in {"file_open", "opened", "open", "read"}:
+        return False
+    if not event.file_path:
+        return False
+    for item in logs:
+        if item.video_time_ms <= event.video_time_ms or item.video_time_ms > center_ms:
+            continue
+        if item.event_type.lower() not in {"closed", "file_closed", "close"}:
+            continue
+        if same_file(item.file_path, event.file_path):
+            return False
+    return True
+
+
+def _foreground_interval_contains_sensitive_title(
+    logs: list[LogEvent],
+    event: LogEvent,
+    center_ms: int,
+    sensitive_files: tuple[str, ...],
+) -> bool:
+    if event.video_time_ms < 0 or event.video_time_ms > center_ms:
+        return False
+    if event.event_type.lower() not in {"app_switch", "window_changed"}:
+        return False
+    if not _event_has_sensitive_context_signal(event, sensitive_files):
+        return False
+
+    next_foreground_ms = None
+    for item in logs:
+        if item.video_time_ms <= event.video_time_ms:
+            continue
+        if item.event_type.lower() not in {"app_switch", "window_changed", "window_closed"}:
+            continue
+        next_foreground_ms = item.video_time_ms
+        break
+    if next_foreground_ms is None:
+        return True
+    return center_ms <= next_foreground_ms
 
 
 def _is_sink_app_process(process_name: str) -> bool:
@@ -712,8 +848,6 @@ def _is_cloud_drive_context(text: str) -> bool:
             "百度网盘",
             "网盘",
             "云盘",
-            "缃戠洏",
-            "浜戠洏",
         )
     )
 
@@ -732,8 +866,6 @@ def _looks_like_upload_progress(text: str) -> bool:
             "等待扫描",
             "文件已选择",
             "文件上传中",
-            "涓婁紶",
-            "鏂囦欢涓婁紶",
         )
     )
 
@@ -742,10 +874,32 @@ def _looks_like_screenshot_path(path: str) -> bool:
     text = normalize_path(path).lower()
     if not text:
         return False
+    if text.endswith(".svg") or "/resource/icons/" in text or "/resources/app/resource/icons/" in text:
+        return False
+    image_ext = text.endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp"))
+    filename = text.rsplit("/", 1)[-1]
     return (
-        "/screenshots/" in text
-        or "screenshot" in text
-        or text.endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp"))
+        "screenshot" in filename
+        or "screen shot" in filename
+        or "屏幕截图" in filename
+        or ("/screenshots/" in text and image_ext)
+    )
+
+
+def _looks_like_capture_context(text: str) -> bool:
+    lowered = (text or "").lower()
+    if not lowered:
+        return False
+    return any(
+        token in lowered
+        for token in (
+            "screenshot",
+            "screen capture",
+            "snipping tool",
+            "截图",
+            "截屏",
+            "屏幕截图",
+        )
     )
 
 

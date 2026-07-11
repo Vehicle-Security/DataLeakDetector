@@ -213,6 +213,105 @@ def test_derivation_action_without_known_sensitive_file_gets_vlm_window() -> Non
     assert windows[0].anchor_ms == (30_000,)
 
 
+def test_clipboard_copy_is_strong_only_while_sensitive_file_is_open() -> None:
+    sensitive = "C:/Users/alice/Desktop/secret.docx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "file_open",
+                "file_path": sensitive,
+                "end_time": "2026-01-01T12:01:00",
+                "extra": {"relative_timestamp": 0.0},
+                "process_info": {"process_name": "WINWORD.EXE"},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:30",
+                "event_type": "clipboard_text",
+                "content_preview": "copied confidential paragraph",
+                "extra": {"raw_operation": "clipboard_text", "relative_timestamp": 30.0},
+                "process_info": {"process_name": "WINWORD.EXE"},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:30",
+                "event_type": "clipboard_text",
+                "content_preview": "copied unrelated text",
+                "extra": {"raw_operation": "clipboard_text", "relative_timestamp": 90.0},
+                "process_info": {"process_name": "msedge.exe"},
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [sensitive], VisionConfig(include_unanchored_medium_windows=True))
+
+    assert any(window.priority == "strong" and 30_000 in window.anchor_ms for window in windows)
+    assert not any(window.priority == "strong" and 90_000 in window.anchor_ms for window in windows)
+
+
+def test_screenshot_file_anchor_requires_active_sensitive_context() -> None:
+    sensitive = "C:/Users/alice/Desktop/secret.docx"
+    screenshot = "C:/Users/alice/Pictures/Screenshots/screenshot.png"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "file_open",
+                "file_path": sensitive,
+                "end_time": "2026-01-01T12:00:20",
+                "extra": {"relative_timestamp": 0.0},
+                "process_info": {"process_name": "WINWORD.EXE"},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:10",
+                "event_type": "modified",
+                "file_path": screenshot,
+                "extra": {"raw_operation": "modified", "relative_timestamp": 10.0},
+                "process_info": {"process_name": "SnippingTool.exe"},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:40",
+                "event_type": "modified",
+                "file_path": "C:/Users/alice/Pictures/Screenshots/later.png",
+                "extra": {"raw_operation": "modified", "relative_timestamp": 40.0},
+                "process_info": {"process_name": "SnippingTool.exe"},
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [sensitive], VisionConfig(include_unanchored_medium_windows=True))
+
+    assert any(window.priority == "strong" and 10_000 in window.anchor_ms for window in windows)
+    assert not any(window.priority == "strong" and 40_000 in window.anchor_ms for window in windows)
+
+
+def test_screenshot_tool_cache_file_does_not_become_capture_anchor() -> None:
+    sensitive = "C:/Users/alice/Desktop/secret.docx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "file_open",
+                "file_path": sensitive,
+                "end_time": "2026-01-01T12:00:20",
+                "extra": {"relative_timestamp": 0.0},
+                "process_info": {"process_name": "WINWORD.EXE"},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:10",
+                "event_type": "modified",
+                "file_path": "C:/Users/alice/AppData/Local/SnippingTool/Cache/data_2",
+                "window_info": {"window_title": "截图工具覆盖"},
+                "extra": {"raw_operation": "modified", "relative_timestamp": 10.0},
+                "process_info": {"process_name": "SnippingTool.exe"},
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [sensitive], VisionConfig(include_unanchored_medium_windows=True))
+
+    assert not any(window.priority == "strong" and 10_000 in window.anchor_ms for window in windows)
+
+
 def test_sink_file_selection_dialog_foreground_logs_become_strong_anchors() -> None:
     logs = normalize_logs(
         [

@@ -169,3 +169,41 @@
 
 - 若该样例应使用 20260309 会话，应修正 `INDEX.md` 指向 `video/recording_20260309_095252.mp4`，或删除/移动不属于该样例的 20260420 视频与索引。
 - 若该样例应使用 20260420 会话，则应同步修正 `groundtruth.json` 的 `record_id`、`recording_start_time`、日志和敏感文件标注。
+
+## stage2_vlm correct=false 中明确的数据问题
+
+本节只记录 `artifacts/all_data_release_matrix_neo4j/stage2_vlm.log` 中 `correct=false`，且在 `spec/docs/错误.md` 里明确标注为“数据问题”的条目。仅“没截到关键帧/没截到图”的条目属于抽帧或代码问题，不放在这里。
+
+### stage1 / 8-git-GitCode-1
+
+- 样例路径：`spec/data/nas_samples/stage1/8-git-GitCode-1`
+- 当前输出：`artifacts/all_data_release_matrix_neo4j/vision_precompute/8-git-GitCode-1/8-git-GitCode-1_logs_1056`
+- stage2_vlm：line 824，`detector=no_confirmed_data_leak`，`expected=data_leak_risk_detected`
+- 问题类型：样例标识/场景与标注不匹配。
+
+当前 `groundtruth.json` 的 `record_id` 为 `1`，operation 写有 `直接外发-上传文件发送`、`直接外发-粘贴外发`，但复核备注指出该样例未涉及 GitCode。建议人工核对该目录的视频、日志、groundtruth 是否串入了其他上传/粘贴样例；如果该视频不是 GitCode 场景，应修正目录/record_id/标注，或移出 `8-git-GitCode-1` 正例集合。
+
+### stage2 / 4-contentchange-transfer-2
+
+- 样例路径：`spec/data/nas_samples/stage2/4-contentchange-transfer-2`
+- 当前输出：`artifacts/all_data_release_matrix_neo4j/vision_precompute/4-contentchange-transfer-2/4-contentchange-transfer-2_logs_556`
+- stage2_vlm：line 944，`detector=no_confirmed_data_leak`，`expected=data_leak_risk_detected`
+- 问题类型：groundtruth 标注文件上传，但样例片段中没有文件上传。
+
+`groundtruth.json` 的 `record_id` 为 `1-clipboard-email-1`，与目录 `4-contentchange-transfer-2` 不一致；operation 中两次写 `直接外发-文件上传-WPS`。复核备注明确指出该样例没有文件上传。建议核对 groundtruth 是否串入 clipboard/email/WPS 上传样例；若当前视频只包含复制/翻译等中间行为，应改为 `suspicious_behavior_detected` 或补齐真正的上传片段。
+
+### stage2 / 5-screen-screenshot-3
+
+- 样例路径：`spec/data/nas_samples/stage2/5-screen-screenshot-3`
+- 当前输出：`artifacts/all_data_release_matrix_neo4j/vision_precompute/5-screen-screenshot-3/5-screen-screenshot-3_logs_2553`
+- stage2_vlm：line 964，`detector=no_confirmed_data_leak`，`expected=data_leak_risk_detected`
+- 问题类型：groundtruth 标注截图外发，但样例未覆盖截图外发。
+
+建议将该例从 `data_leak_risk_detected` 调整为只记录截图派生/可疑行为。
+
+### stage2 / 5-screen-screenshot-4
+
+- 样例路径：`spec/data/nas_samples/stage2/5-screen-screenshot-4`
+- 当前输出：`artifacts/all_data_release_matrix_neo4j/vision_precompute/5-screen-screenshot-4/5-screen-screenshot-4_logs_1363`
+- stage2_vlm：line 974，`detector=no_confirmed_data_leak`，`expected=data_leak_risk_detected`
+- 问题类型：groundtruth 标注截图工具截图敏感文件，但样例未覆盖截图外发。
