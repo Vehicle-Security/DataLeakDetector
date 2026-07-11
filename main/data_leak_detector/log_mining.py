@@ -242,15 +242,19 @@ def build_analysis_window_for_event(
         return None
 
     before_ms, after_ms, step_ms, max_keyframes, diff_threshold = _window_profile(priority, config)
+    anchors = _event_anchors(event, sensitive_hit, action_hit, combined_text)
+    end_ms = event.video_time_ms + after_ms
+    if anchors:
+        end_ms = max(end_ms, max(anchors))
     return AnalysisWindow(
         start_ms=max(event.video_time_ms - before_ms, 0),
-        end_ms=event.video_time_ms + after_ms,
+        end_ms=end_ms,
         reason=_window_reason(event, priority),
         priority=priority,
         step_ms=step_ms,
         max_keyframes=max_keyframes,
         diff_threshold=diff_threshold,
-        anchor_ms=_event_anchors(event, sensitive_hit, action_hit, combined_text),
+        anchor_ms=anchors,
         active_apps=active_apps
         if active_apps is not None
         else _active_apps_near(logs, event.video_time_ms, after_ms, index=active_app_index),
@@ -355,7 +359,7 @@ def _filter_visual_context_windows(windows: list[AnalysisWindow], config: Vision
 def _with_context_medium_budget(window: AnalysisWindow, config: VisionConfig) -> AnalysisWindow:
     if window.priority != "medium":
         return window
-    budget = max(config.max_keyframes_per_medium_window, len(window.anchor_ms))
+    budget = config.max_keyframes_per_medium_window
     return AnalysisWindow(
         start_ms=window.start_ms,
         end_ms=window.end_ms,
@@ -376,7 +380,7 @@ def _thin_dense_window_anchors(windows: list[AnalysisWindow], config: VisionConf
 def _with_thinned_anchors(window: AnalysisWindow, config: VisionConfig) -> AnalysisWindow:
     base_budget = min(window.max_keyframes, _base_keyframe_budget(window.priority, config))
     anchors = (
-        _thin_anchors(window.anchor_ms, _anchor_min_gap_ms(window.priority, config))
+        _thin_anchors(window.anchor_ms, _anchor_min_gap_ms(window.priority, config), limit=base_budget)
         if len(window.anchor_ms) > base_budget
         else window.anchor_ms
     )
@@ -393,15 +397,27 @@ def _with_thinned_anchors(window: AnalysisWindow, config: VisionConfig) -> Analy
     )
 
 
-def _thin_anchors(anchors: tuple[int, ...], min_gap_ms: int) -> tuple[int, ...]:
+def _thin_anchors(anchors: tuple[int, ...], min_gap_ms: int, *, limit: int | None = None) -> tuple[int, ...]:
     if min_gap_ms <= 0 or len(anchors) <= 1:
-        return anchors
+        thinned = tuple(sorted(set(anchors)))
+        return _pick_evenly_spaced(thinned, limit) if limit is not None else thinned
     thinned: list[int] = []
     for anchor in sorted(set(anchors)):
         if thinned and anchor - thinned[-1] < min_gap_ms:
             continue
         thinned.append(anchor)
-    return tuple(thinned)
+    result = tuple(thinned)
+    return _pick_evenly_spaced(result, limit) if limit is not None else result
+
+
+def _pick_evenly_spaced(values: tuple[int, ...], limit: int | None) -> tuple[int, ...]:
+    if limit is None or limit <= 0 or len(values) <= limit:
+        return values
+    if limit == 1:
+        return (values[0],)
+    last = len(values) - 1
+    picked = [values[round(index * last / (limit - 1))] for index in range(limit)]
+    return tuple(dict.fromkeys(picked))
 
 
 def _anchor_min_gap_ms(priority: str, config: VisionConfig) -> int:
@@ -581,7 +597,10 @@ def _event_anchors(event: LogEvent, sensitive_hit: bool, action_hit: bool, text:
         return (event.video_time_ms,)
     if _looks_like_file_selection_dialog(window_title) and _is_sink_context(process_name, text):
         if event_type in {"app_switch", "window_changed", "window_closed"}:
-            return (event.video_time_ms, event.video_time_ms + 3_000)
+            offsets = (0, 3_000)
+            if _is_workspace_upload_process(process_name):
+                offsets = (0, 3_000, 8_000, 16_000, 20_000)
+            return tuple(event.video_time_ms + offset for offset in offsets)
         return (event.video_time_ms,)
     if _looks_like_print_or_save_dialog(window_title):
         return (event.video_time_ms,)
@@ -608,6 +627,10 @@ def _is_sink_app_process(process_name: str) -> bool:
         "baidunetdisk.exe",
         "baidunetdiskunite.exe",
     }
+
+
+def _is_workspace_upload_process(process_name: str) -> bool:
+    return process_name.lower() in {"feishu.exe", "lark.exe"}
 
 
 def _is_sink_context(process_name: str, text: str) -> bool:

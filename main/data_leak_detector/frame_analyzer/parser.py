@@ -228,11 +228,42 @@ def _is_normal_only(text: str) -> bool:
 
 def _operation_to_pipeline(event: ParsedVisionEvent) -> str:
     text = f"{event.behavior_category} {event.operation_type} {event.description} {event.sink_type}".lower()
+    if _is_suspicious_content_transform(event, text):
+        return "file_or_content_transfer"
     if contains_any(text, SINK_TOKENS):
         return "external_sink_interaction"
     if contains_any(text, TRANSFER_TOKENS):
         return "file_or_content_transfer"
     return event.operation_type or "visual_review"
+
+
+def _is_suspicious_content_transform(event: ParsedVisionEvent, text: str) -> bool:
+    operation = (event.operation_type or "").lower()
+    if operation in {"cloud_sync_access", "cloud sync access"}:
+        return True
+    return any(
+        token in text
+        for token in (
+            "translation",
+            "translate",
+            "translating",
+            "rewrite",
+            "rewriting",
+            "paraphrase",
+            "base64",
+            "encode",
+            "encoding",
+            "decode",
+            "decoding",
+            "翻译",
+            "全文翻译",
+            "改写",
+            "润色",
+            "编码",
+            "解码",
+            "转码",
+        )
+    )
 
 
 def _observation_description(event: ParsedVisionEvent) -> str:

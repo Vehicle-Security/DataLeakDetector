@@ -241,7 +241,7 @@ class EventCorrelator:
             score += 2
         if observation.operation_type == "external_sink_interaction" or contains_any(text, SINK_TOKENS):
             score += 3
-        if contains_any(text, TRANSFER_TOKENS):
+        if _is_transfer_observation(observation):
             score += 1
         if observation.source != "log_anchored":
             score += 1
@@ -263,7 +263,7 @@ class EventCorrelator:
             text = _observation_search_text(observation)
             if observation.operation_type == "external_sink_interaction" or contains_any(text, SINK_TOKENS):
                 reasons.append("ocr_sink_context")
-            if contains_any(text, TRANSFER_TOKENS):
+            if _is_transfer_observation(observation):
                 reasons.append("ocr_transfer_context")
         return reasons
 
@@ -313,7 +313,7 @@ class EventCorrelator:
             if not original:
                 continue
             text = f"{observation.description} {observation.operation_type} {observation.resource} {' '.join(observation.related_resources)}"
-            if not (contains_any(text, SINK_TOKENS) or contains_any(text, TRANSFER_TOKENS)):
+            if not (contains_any(text, SINK_TOKENS) or _is_transfer_observation(observation)):
                 continue
             behavior = behavior_category(text)
             current_file = self._visual_current_file(observation, original, sensitive_files)
@@ -399,6 +399,11 @@ def _is_external_observation(observation) -> bool:
     return observation.operation_type == "external_sink_interaction" or contains_any(text, SINK_TOKENS)
 
 
+def _is_transfer_observation(observation) -> bool:
+    text = _observation_search_text(observation)
+    return observation.operation_type == "file_or_content_transfer" or contains_any(text, TRANSFER_TOKENS)
+
+
 def _observation_allowed_for_log(log, observation) -> bool:
     if observation.source == "log_anchored":
         return False
@@ -423,7 +428,7 @@ def _visual_join_reasons(observation, original: str) -> list[str]:
     text = _observation_search_text(observation)
     if observation.operation_type == "external_sink_interaction" or contains_any(text, SINK_TOKENS):
         reasons.append("ocr_sink_context")
-    if contains_any(text, TRANSFER_TOKENS):
+    if _is_transfer_observation(observation):
         reasons.append("ocr_transfer_context")
     return reasons
 

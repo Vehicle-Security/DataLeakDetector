@@ -70,6 +70,8 @@ def _prefer_upload_candidate(left: UploadCandidate, right: UploadCandidate) -> t
 
 
 def _is_explicit_upload_event(event: CorrelatedEvent, text: str) -> bool:
+    if event.operation_type == "file_or_content_transfer":
+        return False
     if event.operation_type != "external_sink_interaction" and not contains_any(text, SINK_TOKENS):
         return False
     reasons = set(event.join_reasons)

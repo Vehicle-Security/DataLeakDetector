@@ -24,7 +24,21 @@ DEFAULT_GROUNDTRUTH_POLICY_PATH = REPO_ROOT / "spec" / "config" / "groundtruth_p
 FALLBACK_GROUNDTRUTH_POLICY: dict[str, Any] = {
     "operation_paths": ("operations",),
     "operation_text_fields": ("operation", "operation_type", "description", "label", "risk_type"),
-    "leak_tokens": ("直接外发", "完成外传", "泄露", "外传", "上传", "发送", "exfiltration", "leak"),
+    "leak_tokens": (
+        "直接外发",
+        "邮箱外发",
+        "复制内容外发",
+        "内容外发",
+        "完成外传",
+        "泄露",
+        "外传",
+        "上传",
+        "发送",
+        "屏幕共享展示敏感文件",
+        "共享屏幕展示敏感文件",
+        "exfiltration",
+        "leak",
+    ),
     "non_leak_tokens": ("正常操作", "normal"),
     "unknown_risk_tokens": ("潜在隐藏行为", "可疑", "隐藏行为"),
 }
@@ -106,12 +120,23 @@ def evaluate_groundtruth(path: str | Path | None, policy: GroundTruthPolicy | No
     return GroundTruthVerdict(
         available=True,
         source=str(path),
-        conclusion="data_leak_risk_detected" if leak_ops else "no_confirmed_data_leak",
+        conclusion=_groundtruth_conclusion(leak_ops, unknown_ops),
         total_operations=len(operations),
         leak_operations=leak_ops,
         non_leak_operations=non_leak_ops,
         unknown_risk_operations=unknown_ops,
     )
+
+
+def _groundtruth_conclusion(
+    leak_ops: tuple[GroundTruthOperation, ...],
+    unknown_ops: tuple[GroundTruthOperation, ...],
+) -> str:
+    if leak_ops:
+        return "data_leak_risk_detected"
+    if unknown_ops:
+        return "suspicious_behavior_detected"
+    return "no_confirmed_data_leak"
 
 
 def _extract_operations(payload: Any, policy: GroundTruthPolicy) -> tuple[GroundTruthOperation, ...]:
@@ -171,12 +196,12 @@ def _operation_text(item: dict[str, Any], policy: GroundTruthPolicy) -> str:
 
 def _label_operation(text: str, policy: GroundTruthPolicy) -> str:
     normalized = normalize_text(text)
+    if _contains_any(normalized, policy.non_leak_tokens):
+        return "non_leak"
     if _contains_any(normalized, policy.leak_tokens):
         return "leak"
     if _contains_any(normalized, policy.unknown_risk_tokens):
         return "unknown_risk"
-    if _contains_any(normalized, policy.non_leak_tokens):
-        return "non_leak"
     return "none"
 
 

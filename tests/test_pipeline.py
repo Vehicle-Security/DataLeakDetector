@@ -37,7 +37,7 @@ from data_leak_detector.frame_analyzer.frames import (
     merge_analysis_windows,
 )
 from data_leak_detector.frame_analyzer.ocr import OcrResult, RapidOcrProvider, _rapidocr_provider_name
-from data_leak_detector.frame_analyzer.parser import parse_vlm_response, parse_vlm_response_detailed, vision_events_to_observations
+from data_leak_detector.frame_analyzer.parser import ParsedVisionEvent, parse_vlm_response, parse_vlm_response_detailed, vision_events_to_observations
 from data_leak_detector.frame_analyzer.roi import detect_foreground_window_region, detect_text_regions
 from data_leak_detector.frame_analyzer.vlm import VlmRequestFrame, build_vlm_frame_grids, choose_keyframes_for_vlm, choose_vlm_frames, prepare_vlm_frame_images
 from data_leak_detector.log_mining import build_analysis_windows, mine_analysis_windows
@@ -241,6 +241,28 @@ def test_browser_cloud_drive_file_selection_uses_nearby_context() -> None:
 
     assert windows[0].priority == "strong"
     assert windows[0].anchor_ms == (18_925, 21_925)
+
+
+def test_workspace_file_selection_keeps_upload_followup_anchors() -> None:
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:10.644",
+                "event_type": "app_switch",
+                "file_path": "",
+                "app_name": "Lark",
+                "process_info": {"process_name": "Lark.exe"},
+                "window_info": {"window_title": "Open"},
+                "extra": {"source": "window_monitor", "category": "workplace", "relative_timestamp": 10.644},
+            }
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [], VisionConfig())
+
+    assert windows[0].priority == "strong"
+    assert windows[0].anchor_ms == (10_644, 13_644, 18_644, 26_644, 30_644)
+    assert windows[0].end_ms == 30_644
 
 
 def test_default_log_miner_keeps_in_memory_window_contract() -> None:
@@ -491,6 +513,20 @@ def test_medium_windows_use_context_budget_when_strong_evidence_exists() -> None
                 "extra": {"source": "window_monitor", "category": "即时通讯", "relative_timestamp": 30.0},
             },
             {
+                "timestamp": "2026-01-01T00:00:32",
+                "event_type": "app_switch",
+                "process_info": {"process_name": "QQ.exe"},
+                "window_info": {"window_title": "QQ"},
+                "extra": {"source": "window_monitor", "category": "即时通讯", "relative_timestamp": 32.0},
+            },
+            {
+                "timestamp": "2026-01-01T00:00:35",
+                "event_type": "app_switch",
+                "process_info": {"process_name": "QQ.exe"},
+                "window_info": {"window_title": "QQ"},
+                "extra": {"source": "window_monitor", "category": "即时通讯", "relative_timestamp": 35.0},
+            },
+            {
                 "timestamp": "2026-01-01T00:01:00",
                 "event_type": "file_selected",
                 "file_path": "C:/Users/alice/Documents/secret.docx",
@@ -509,6 +545,7 @@ def test_medium_windows_use_context_budget_when_strong_evidence_exists() -> None
 
     medium = [window for window in windows if window.priority == "medium"][0]
     assert medium.max_keyframes == VisionConfig().max_keyframes_per_medium_window
+    assert len(medium.anchor_ms) == VisionConfig().max_keyframes_per_medium_window
 
 
 def test_long_windows_have_temporal_coverage_targets() -> None:
@@ -1071,6 +1108,58 @@ def test_vlm_parser_preserves_evidence_frames_and_relative_timestamp() -> None:
     assert result.dropped_events[0]["reason"] == "not_relevant"
 
 
+def test_vlm_content_transform_observation_is_not_external_sink() -> None:
+    event = ParsedVisionEvent(
+        start_ms=12000,
+        end_ms=15000,
+        app_name="ChatGPT",
+        behavior_category="direct_leak",
+        operation_type="AI translation",
+        original_resource="product_design.docx",
+        modified_resource="unknown",
+        description="Sensitive document content is translated in an online service",
+        confidence=0.92,
+        sink_type="ai_chat",
+        evidence_frame_ids=("frame_0_1",),
+    )
+
+    observations = vision_events_to_observations([event])
+
+    assert observations[0].operation_type == "file_or_content_transfer"
+    assert "AI translation" in observations[0].description
+
+
+def test_vlm_content_transform_is_recorded_without_leakfile() -> None:
+    original = "C:/Users/alice/Documents/product_design.docx"
+    event = ParsedVisionEvent(
+        start_ms=12000,
+        end_ms=15000,
+        app_name="ChatGPT",
+        behavior_category="direct_leak",
+        operation_type="AI translation",
+        original_resource="product_design.docx",
+        modified_resource="unknown",
+        description="Sensitive document content is translated in an online service",
+        confidence=0.92,
+        sink_type="ai_chat",
+        evidence_frame_ids=("frame_0_1",),
+    )
+    observations = [item.to_dict() for item in vision_events_to_observations([event])]
+
+    bundle = EventCorrelator().run(
+        {
+            "session_id": "vision",
+            "log_events": [],
+            "frame_segments": observations,
+            "sensitive_files": [original],
+        }
+    )
+
+    assert bundle["correlated_events"]
+    assert bundle["upload_candidates"] == []
+    assert not any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
+
+
 def test_visual_observation_can_create_datalog_fact_without_file_path_log() -> None:
     original = "C:/Users/alice/Documents/customer_salary.xlsx"
     records = [
@@ -1532,6 +1621,78 @@ def test_groundtruth_verdict_uses_configurable_dataset_criteria(tmp_path: Path) 
     assert len(verdict.non_leak_operations) == 1
 
 
+def test_groundtruth_verdict_counts_explicit_external_and_screen_share_phrases(tmp_path: Path) -> None:
+    groundtruth = tmp_path / "groundtruth.json"
+    groundtruth.write_text(
+        json.dumps(
+            {
+                "operations": [
+                    {"operation": "敏感操作-邮箱外发", "sensitive_file_path": "C:/secret.pdf"},
+                    {"operation": "潜在隐藏行为-复制内容外发", "sensitive_file_path": "C:/secret.docx"},
+                    {"operation": "潜在隐藏行为-Lark会议屏幕共享展示敏感文件", "sensitive_file_path": "C:/secret.xlsx"},
+                    {"operation": "潜在隐藏行为-文件重命名", "sensitive_file_path": "C:/secret_rename.docx"},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    verdict = evaluate_groundtruth(groundtruth)
+
+    assert verdict.conclusion == "data_leak_risk_detected"
+    assert [item.operation for item in verdict.leak_operations] == [
+        "敏感操作-邮箱外发",
+        "潜在隐藏行为-复制内容外发",
+        "潜在隐藏行为-Lark会议屏幕共享展示敏感文件",
+    ]
+    assert [item.operation for item in verdict.unknown_risk_operations] == ["潜在隐藏行为-文件重命名"]
+
+
+def test_groundtruth_verdict_records_suspicious_behavior_as_third_state(tmp_path: Path) -> None:
+    groundtruth = tmp_path / "groundtruth.json"
+    groundtruth.write_text(
+        json.dumps(
+            {
+                "operations": [
+                    {"operation": "正常操作-打开查看", "sensitive_file_path": "C:/secret.txt"},
+                    {"operation": "潜在隐藏行为-内容提取-Base64在线转换", "sensitive_file_path": "C:/secret.txt"},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    verdict = evaluate_groundtruth(groundtruth)
+
+    assert verdict.conclusion == "suspicious_behavior_detected"
+    assert len(verdict.leak_operations) == 0
+    assert len(verdict.non_leak_operations) == 1
+    assert len(verdict.unknown_risk_operations) == 1
+
+
+def test_groundtruth_verdict_does_not_treat_monitor_name_as_leak(tmp_path: Path) -> None:
+    groundtruth = tmp_path / "groundtruth.json"
+    groundtruth.write_text(
+        json.dumps(
+            {
+                "operations": [
+                    {"operation": "正常操作-应用切换-返回数据泄露监控系统", "sensitive_file_path": "N/A"},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    verdict = evaluate_groundtruth(groundtruth)
+
+    assert verdict.conclusion == "no_confirmed_data_leak"
+    assert len(verdict.leak_operations) == 0
+    assert len(verdict.non_leak_operations) == 1
+
+
 def test_sensitive_source_extraction_ignores_derived_groundtruth_paths(tmp_path: Path) -> None:
     groundtruth = tmp_path / "groundtruth.json"
     source = "C:/Users/admin/Desktop/Sensitive/员工薪资明细表Q4.xlsx"
@@ -1704,6 +1865,35 @@ def test_pipeline_writes_verdict_check_into_detail_dir(tmp_path: Path) -> None:
     assert verdict["detector_conclusion"] == "no_confirmed_data_leak"
     assert verdict["detector_correct"] is False
     assert verdict["final_correct"] is False
+
+
+def test_pipeline_verdict_check_does_not_score_suspicious_groundtruth_as_binary(tmp_path: Path) -> None:
+    log_file = tmp_path / "logs.json"
+    groundtruth = tmp_path / "groundtruth.json"
+    log_file.write_text(
+        json.dumps([{"timestamp": "2026-01-01T00:00:00", "event_type": "heartbeat"}]),
+        encoding="utf-8",
+    )
+    groundtruth.write_text(
+        json.dumps(
+            {"operations": [{"operation": "潜在隐藏行为-内容提取-Base64在线转换", "sensitive_file_path": "C:/secret.txt"}]},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_pipeline(
+        log_file=log_file,
+        output_dir=tmp_path / "out",
+        groundtruth_file=groundtruth,
+        neo4j_enabled=False,
+    )
+
+    verdict = json.loads(Path(report["detail_files"]["verdict_check"]).read_text(encoding="utf-8"))
+    assert verdict["expected_conclusion"] == "suspicious_behavior_detected"
+    assert verdict["groundtruth_unknown_risk_operations"] == 1
+    assert verdict["detector_correct"] is None
+    assert verdict["final_correct"] is None
 
 
 def test_json_loader_keeps_escaped_windows_paths(tmp_path: Path) -> None:

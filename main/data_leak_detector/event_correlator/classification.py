@@ -66,6 +66,8 @@ def target_file_from_metadata(record: dict[str, Any]) -> str:
 def behavior_category(text: str) -> str:
     if "external_sink_interaction" in text:
         return "data_exfiltration_candidate"
+    if "file_or_content_transfer" in text:
+        return "hidden_transformation_candidate"
     if contains_any(text, SINK_TOKENS):
         return "data_exfiltration_candidate"
     if contains_any(text, TRANSFER_TOKENS):
@@ -76,6 +78,8 @@ def behavior_category(text: str) -> str:
 def operation_from_text(text: str, fallback: str) -> str:
     if "external_sink_interaction" in text:
         return "external_sink_interaction"
+    if "file_or_content_transfer" in text:
+        return "file_or_content_transfer"
     if contains_any(text, SINK_TOKENS):
         return "external_sink_interaction"
     if contains_any(text, TRANSFER_TOKENS):

@@ -119,6 +119,9 @@ def run_pipeline(
             "leak_paths": len(leak_paths),
             "groundtruth_operations": groundtruth_verdict.total_operations if groundtruth_verdict.available else 0,
             "groundtruth_leak_operations": len(groundtruth_verdict.leak_operations) if groundtruth_verdict.available else 0,
+            "groundtruth_unknown_risk_operations": len(groundtruth_verdict.unknown_risk_operations)
+            if groundtruth_verdict.available
+            else 0,
         },
         frame_analyzer=frame_bundle,
         event_correlator=correlation_bundle,
@@ -221,17 +224,21 @@ def _build_verdict_check(payload: dict[str, Any]) -> dict[str, Any]:
     detector = str(leak_reasoner.get("detector_conclusion") or "")
     final = str(payload.get("conclusion") or "")
     available = bool(groundtruth.get("available"))
+    is_binary_expected = expected in {"data_leak_risk_detected", "no_confirmed_data_leak"}
     return {
         "groundtruth_available": available,
         "expected_conclusion": expected,
         "detector_conclusion": detector,
         "final_conclusion": final,
         "final_conclusion_source": verdict.get("source", ""),
-        "detector_correct": detector == expected if available and expected else None,
-        "final_correct": final == expected if available and expected else None,
+        "detector_correct": detector == expected if available and is_binary_expected else None,
+        "final_correct": final == expected if available and is_binary_expected else None,
         "detector_leak_paths": len(leak_reasoner.get("leak_paths", [])),
         "groundtruth_operations": int(payload.get("summary", {}).get("groundtruth_operations") or 0),
         "groundtruth_leak_operations": int(payload.get("summary", {}).get("groundtruth_leak_operations") or 0),
+        "groundtruth_unknown_risk_operations": int(
+            payload.get("summary", {}).get("groundtruth_unknown_risk_operations") or 0
+        ),
     }
 
 
