@@ -11,6 +11,8 @@ import re
 from .io import parse_timestamp_ms, read_text
 from .sensitivity import extract_sensitive_sources
 
+GROUNDTRUTH_FILENAMES = ("groundtruth.json", "groundtrutn.json")
+
 
 @dataclass(frozen=True)
 class DataCase:
@@ -55,7 +57,12 @@ def discover_data_case_directories(root: str | Path) -> list[Path]:
     )
 
 
-def discover_data_case(path: str | Path, *, case_root: str | Path | None = None) -> DataCase:
+def discover_data_case(
+    path: str | Path,
+    *,
+    case_root: str | Path | None = None,
+    inherit_ancestor_groundtruth: bool = False,
+) -> DataCase:
     """Resolve a NAS-style sample directory into pipeline input files."""
 
     case_dir = Path(path)
@@ -68,19 +75,24 @@ def discover_data_case(path: str | Path, *, case_root: str | Path | None = None)
     case_relative_path = data_case_id(case_dir, case_root)
     log_file = _choose_log_file(case_dir)
     video_file = _choose_video_file(case_dir)
-    groundtruth_file = case_dir / "groundtruth.json"
-    if not groundtruth_file.exists():
-        groundtruth_file = None
+    groundtruth_candidate = _groundtruth_file(case_dir)
+    groundtruth_file = groundtruth_candidate if groundtruth_candidate.exists() else None
     nearest_ancestor_groundtruth_file = None if groundtruth_file else _nearest_ancestor_groundtruth(case_dir, case_root)
+    inherited_groundtruth = False
+    if groundtruth_file is None and inherit_ancestor_groundtruth and nearest_ancestor_groundtruth_file:
+        groundtruth_file = nearest_ancestor_groundtruth_file
+        inherited_groundtruth = True
     if groundtruth_file:
-        groundtruth_status = "available"
+        groundtruth_status = "inherited_from_ancestor" if inherited_groundtruth else "available"
     elif nearest_ancestor_groundtruth_file:
         groundtruth_status = "missing_current_directory_with_ancestor_groundtruth"
     else:
         groundtruth_status = "missing"
 
     sensitive = set(extract_sensitive_sources(groundtruth_file))
-    recording_start_ms = _recording_start_ms(case_dir, groundtruth_file)
+    recording_start_ms = _recording_start_ms(case_dir, None) if inherited_groundtruth else 0
+    if not recording_start_ms:
+        recording_start_ms = _recording_start_ms(case_dir, groundtruth_file)
 
     return DataCase(
         case_id=case_relative_path,
@@ -194,7 +206,7 @@ def _nearest_ancestor_groundtruth(case_dir: Path, case_root: str | Path | None) 
     except OSError:
         return None
     while True:
-        candidate = current / "groundtruth.json"
+        candidate = _groundtruth_file(current)
         if candidate.exists():
             return candidate
         if current == stop_at or current.parent == current:
@@ -204,3 +216,11 @@ def _nearest_ancestor_groundtruth(case_dir: Path, case_root: str | Path | None) 
         except ValueError:
             return None
         current = current.parent
+
+
+def _groundtruth_file(case_dir: Path) -> Path:
+    for filename in GROUNDTRUTH_FILENAMES:
+        candidate = case_dir / filename
+        if candidate.exists():
+            return candidate
+    return case_dir / "groundtruth.json"

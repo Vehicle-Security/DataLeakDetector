@@ -7,6 +7,7 @@ EventCorrelator 是流水线的中间阶段：它把规范化后的原始活动�
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -178,7 +179,8 @@ class EventCorrelator:
                     " ".join(observation.related_resources) if observation else "",
                 ]
             )
-            behavior = behavior_category(text)
+            removable_transfer = _is_removable_media_transfer(log, observation, text)
+            behavior = "data_exfiltration_candidate" if removable_transfer else behavior_category(text)
             confidence = self.config.upload_confidence if behavior == "data_exfiltration_candidate" else 0.68
             if observation:
                 confidence = max(confidence, observation.confidence)
@@ -194,7 +196,7 @@ class EventCorrelator:
                     app_name=(log.app_name or log.process_name or (observation.app_name if observation else "")),
                     original_file=original,
                     current_file=current_file,
-                    operation_type=_correlated_operation_type(log, observation, text),
+                    operation_type="external_sink_interaction" if removable_transfer else _correlated_operation_type(log, observation, text),
                     behavior_category=behavior,
                     confidence=round(min(confidence, 1.0), 3),
                     evidence_refs=tuple(
@@ -274,6 +276,17 @@ class EventCorrelator:
                 reasons.append("ocr_sink_context")
             if _is_transfer_observation(observation):
                 reasons.append("ocr_transfer_context")
+        joined_text = " ".join(
+            [
+                _event_search_text(log),
+                observation.description if observation else "",
+                observation.operation_type if observation else "",
+                observation.resource if observation else "",
+                " ".join(observation.related_resources) if observation else "",
+            ]
+        )
+        if _is_removable_media_transfer(log, observation, joined_text):
+            reasons.append("removable_media_sink")
         return reasons
 
     @staticmethod
@@ -451,6 +464,56 @@ def _is_sink_log(log) -> bool:
     raw_operation = str(log.raw.get("operation") or extra.get("raw_operation") or "")
     category = str(extra.get("category") or "")
     return raw_operation in {"file_selected", "file_upload", "upload", "send_click"} or contains_any(category, ("文件上传", "直接外发"))
+
+
+def _is_removable_media_transfer(log, observation, text: str) -> bool:
+    combined = " ".join(
+        [
+            text,
+            log.file_path,
+            log.description,
+            log.window_title,
+            observation.resource if observation else "",
+            " ".join(observation.related_resources) if observation else "",
+            observation.description if observation else "",
+        ]
+    )
+    if not _is_removable_media_context(combined):
+        return False
+    return contains_any(combined, TRANSFER_TOKENS + SINK_TOKENS) or log.event_type in {
+        "created",
+        "modified",
+        "renamed",
+        "copied",
+        "copy",
+        "file_created",
+        "file_moved",
+        "file_copied",
+    }
+
+
+def _is_removable_media_context(text: str) -> bool:
+    normalized = normalize_path(text).lower()
+    removable_terms = (
+        "usb",
+        "removable",
+        "removable media",
+        "removable drive",
+        "flash drive",
+        "thumb drive",
+        "u disk",
+        "udisk",
+        "external drive",
+        "可移动",
+        "可移动存储",
+        "可移动磁盘",
+        "移动磁盘",
+        "移动硬盘",
+        "u盘",
+    )
+    if contains_any(normalized, removable_terms):
+        return True
+    return bool(re.search(r"\b[a-z]:/", normalized)) and contains_any(normalized, ("copy to", "copied to", "move to", "moved to"))
 
 
 def _correlated_operation_type(log, observation, text: str) -> str:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from ..io import same_file
 from ..models import CorrelatedEvent, DatalogFact, UploadCandidate
+from ..evidence_semantics import is_confirmed_risk_level
 from .lineage import Lineage
 
 
@@ -62,7 +63,23 @@ def build_datalog_facts(
         leaked_file = upload.original_file or upload.current_file
         if not same_file(upload.original_file, upload.current_file):
             facts.append(DatalogFact("TransferFile", (f"{upload.candidate_id}:upload_bind", proc, upload.original_file, upload.current_file, 0)))
-        facts.append(DatalogFact("LeakFile", (f"{upload.candidate_id}:leak", proc, leaked_file, upload.sink_type, 0)))
+        if is_confirmed_risk_level(upload.risk_level):
+            facts.append(DatalogFact("LeakFile", (f"{upload.candidate_id}:leak", proc, leaked_file, upload.sink_type, 0)))
+        else:
+            facts.append(
+                DatalogFact(
+                    "SuspiciousBehavior",
+                    (
+                        f"{upload.candidate_id}:upload_candidate",
+                        proc,
+                        upload.original_file,
+                        upload.current_file,
+                        upload.sink_type,
+                        upload.risk_level,
+                        0,
+                    ),
+                )
+            )
     return facts
 
 

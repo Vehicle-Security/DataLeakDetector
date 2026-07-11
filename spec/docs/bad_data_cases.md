@@ -207,3 +207,20 @@
 - 当前输出：`artifacts/all_data_release_matrix_neo4j/vision_precompute/5-screen-screenshot-4/5-screen-screenshot-4_logs_1363`
 - stage2_vlm：line 974，`detector=no_confirmed_data_leak`，`expected=data_leak_risk_detected`
 - 问题类型：groundtruth 标注截图工具截图敏感文件，但样例未覆盖截图外发。
+
+### stage4/2-1
+
+- 有多余操作
+
+### stage4/4-1
+
+- 视频里没看见外发
+
+### 漏或错拼groundtruth
+
+stage1/3-Messaging-TIM-5/session_20260420_222538
+stage1/6-workplace-youdao-4
+stage2/5-screen-screenshot-1
+stage4/9-1
+stage4/4-1
+stage5/U2-Annotation-1

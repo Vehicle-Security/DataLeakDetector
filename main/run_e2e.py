@@ -70,6 +70,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--neo4j-log-miner", action="store_true", help="Use Neo4j to mine analysis windows before frame extraction.")
     parser.add_argument("--no-neo4j-log-miner", action="store_true", help="Use in-memory log mining even when the environment enables Neo4j.")
     parser.add_argument("--no-reuse-neo4j-import", action="store_true", help="Reimport logs even when the case fingerprint already exists in Neo4j.")
+    parser.add_argument(
+        "--inherit-ancestor-groundtruth",
+        action="store_true",
+        help="For child session cases without groundtruth.json, use the nearest ancestor groundtruth for evaluation and sensitive sources.",
+    )
     args = parser.parse_args(argv)
     if args.vlm_dry_run:
         os.environ["DLD_VLM_DRY_RUN"] = "1"
@@ -96,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         "vision_mode": args.vision_mode or None,
         "max_vlm_frames": args.max_vlm_frames,
         "non_vlm_enabled": False if args.no_non_vlm else None,
+        "inherit_ancestor_groundtruth": args.inherit_ancestor_groundtruth,
     }
     if args.release and not args.case_root:
         parser.error("--release requires --case-root")
@@ -505,48 +511,102 @@ def _build_release_vision_precompute(
     case_dirs = discover_data_case_directories(root)
     cases = [(data_case_id(case, root), case) for case in case_dirs]
     cache_root.mkdir(parents=True, exist_ok=True)
+    started = time.perf_counter()
+    progress_file = cache_root.parent / "release_precompute_progress.json"
+    progress_lock = threading.Lock()
+    running: set[str] = set()
+    errors: list[dict] = []
+    recent_cases: list[dict] = []
+    completed: dict[str, str] = {}
+
+    def persist_progress(state: str) -> None:
+        payload = {
+            "mode": "release_precompute",
+            "state": state,
+            "case_root": str(root),
+            "cache_root": str(cache_root),
+            "case_count": len(cases),
+            "case_workers": min(workers, len(cases)),
+            "completed_cases": len(completed),
+            "failed_cases": len(errors),
+            "running_cases": sorted(running),
+            "queued_cases": max(0, len(cases) - len(completed) - len(errors) - len(running)),
+            "recent_cases": recent_cases[-20:],
+            "elapsed_seconds": round(time.perf_counter() - started, 3),
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        }
+        _write_json_atomic(progress_file, payload)
 
     def run_one(case_id: str, case: Path) -> tuple[str, str]:
+        with progress_lock:
+            running.add(case_id)
+            persist_progress("running")
+        print(f"  precompute started case={case_id}", flush=True)
         case_root_dir = cache_root / Path(case_id)
-        existing = sorted(case_root_dir.rglob("pipeline_baseline.json")) if case_root_dir.exists() else []
-        if existing:
-            return case_id, str(existing[-1])
-        args = dict(common_args)
-        args.update({"output_dir": str(case_root_dir), "vision_enabled": True, "vision_mode": "ocr", "max_vlm_frames": 0})
-        if neo4j_log_miner is not None:
-            args["neo4j_log_miner"] = neo4j_log_miner
-        report = run_data_case(case, case_root=root, **args)
-        vision = dict(report.get("frame_analyzer", {}).get("statistics", {}).get("vision", {}))
-        cache_file = str(vision.get("artifacts", {}).get("vision_precompute_file") or "")
-        if not cache_file or not Path(cache_file).exists():
-            raise RuntimeError(f"vision_precompute_missing: {case_id}")
-        baseline_file = Path(cache_file).with_name("pipeline_baseline.json")
-        baseline_file.write_text(
-            json.dumps(
+        try:
+            existing = sorted(case_root_dir.rglob("pipeline_baseline.json")) if case_root_dir.exists() else []
+            if existing:
+                return case_id, str(existing[-1])
+            args = dict(common_args)
+            args.update(
                 {
-                    "schema_version": 1,
-                    "vision_precompute_file": cache_file,
-                    "records": report.get("event_correlator", {}).get("raw_log_events", []),
-                    "log_observations": [
-                        item for item in report.get("frame_analyzer", {}).get("observations", [])
-                        if item.get("source") == "log_anchored"
-                    ],
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        return case_id, str(baseline_file)
+                    "output_dir": str(case_root_dir),
+                    "vision_enabled": True,
+                    "vision_mode": "ocr",
+                    "max_vlm_frames": 0,
+                    "report_case_name": case.name,
+                }
+            )
+            if neo4j_log_miner is not None:
+                args["neo4j_log_miner"] = neo4j_log_miner
+            report = run_data_case(case, case_root=root, **args)
+            vision = dict(report.get("frame_analyzer", {}).get("statistics", {}).get("vision", {}))
+            cache_file = str(vision.get("artifacts", {}).get("vision_precompute_file") or "")
+            if not cache_file or not Path(cache_file).exists():
+                raise RuntimeError(f"vision_precompute_missing: {case_id}")
+            baseline_file = Path(cache_file).with_name("pipeline_baseline.json")
+            baseline_file.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "vision_precompute_file": cache_file,
+                        "records": report.get("event_correlator", {}).get("raw_log_events", []),
+                        "log_observations": [
+                            item for item in report.get("frame_analyzer", {}).get("observations", [])
+                            if item.get("source") == "log_anchored"
+                        ],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            return case_id, str(baseline_file)
+        finally:
+            with progress_lock:
+                running.discard(case_id)
+                persist_progress("running")
 
     print(f"release precompute cases=0/{len(cases)} workers={min(workers, len(cases))}", flush=True)
-    completed: dict[str, str] = {}
+    persist_progress("running")
     with ThreadPoolExecutor(max_workers=min(workers, len(cases))) as executor:
         futures = {executor.submit(run_one, case_id, case): case_id for case_id, case in cases}
         for future in as_completed(futures):
-            name, cache_file = future.result()
-            completed[name] = cache_file
+            future_case_id = futures[future]
+            try:
+                name, cache_file = future.result()
+            except Exception as exc:
+                with progress_lock:
+                    errors.append({"case_id": future_case_id, "error": f"{type(exc).__name__}: {exc}"})
+                    recent_cases.append({"case_id": future_case_id, "status": "error"})
+                    persist_progress("failed")
+                raise
+            with progress_lock:
+                completed[name] = cache_file
+                recent_cases.append({"case_id": name, "status": "completed", "baseline_file": cache_file})
+                persist_progress("running")
             print(f"  precompute [{len(completed)}/{len(cases)}] case={name}", flush=True)
+    persist_progress("completed")
     return completed
 
 

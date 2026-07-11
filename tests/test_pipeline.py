@@ -1056,11 +1056,71 @@ def test_event_correlator_resolves_extensionless_upload_selection() -> None:
     for fact in bundle["datalog_facts"]:
         engine.add_fact(fact["relation"], *fact["args"])
 
+    assert bundle["upload_candidates"]
+    assert bundle["upload_candidates"][0]["risk_level"] == "selected_or_attached"
+    assert any(fact["relation"] == "SuspiciousBehavior" for fact in bundle["datalog_facts"])
+    assert not engine.query_leak()
+
+
+def test_event_correlator_confirms_file_upload_events() -> None:
+    original = "C:/Users/alice/Desktop/company_contract.docx"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:01:00",
+            "event_type": "file_upload",
+            "file_path": "company_contract.docx",
+            "extra": {"raw_operation": "file_upload", "category": "文件上传", "source": "file_dialog_monitor"},
+            "process_info": {"process_name": "outlook.exe"},
+        }
+    ]
+
+    bundle = EventCorrelator().run({"log_events": records, "frame_segments": [], "sensitive_files": [original]})
+    engine = DatalogEngine()
+    for fact in bundle["datalog_facts"]:
+        engine.add_fact(fact["relation"], *fact["args"])
+
     leaks = engine.query_leak()
 
     assert bundle["upload_candidates"]
+    assert bundle["upload_candidates"][0]["risk_level"] == "completed"
     assert leaks
     assert leaks[0].leaked_file == original
+
+
+def test_event_correlator_treats_removable_media_copy_as_leak() -> None:
+    original = "C:/Users/alice/Desktop/company_contract.docx"
+    target = "E:/USB/company_contract.docx"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "file_open",
+            "file_path": original,
+            "process_info": {"process_name": "winword.exe"},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "created",
+            "file_path": target,
+            "source_file": original,
+            "destination_path": target,
+            "extra": {"raw_operation": "copy", "category": "copy to USB removable drive"},
+            "process_info": {"process_name": "explorer.exe"},
+            "window_info": {"window_title": "Copying to USB Drive (E:)"},
+        },
+    ]
+
+    bundle = EventCorrelator().run({"log_events": records, "frame_segments": [], "sensitive_files": [original]})
+    engine = DatalogEngine()
+    for fact in bundle["datalog_facts"]:
+        engine.add_fact(fact["relation"], *fact["args"])
+
+    leaks = engine.query_leak()
+
+    assert bundle["upload_candidates"]
+    assert bundle["upload_candidates"][0]["sink_type"] == "removable_media"
+    assert bundle["upload_candidates"][0]["risk_level"] == "completed"
+    assert leaks
+    assert leaks[0].leak_channel == "removable_media"
 
 
 def test_event_correlator_does_not_infer_initial_sensitive_files_from_logs() -> None:
@@ -1184,6 +1244,32 @@ def test_visual_upload_candidate_uses_sensitive_file_when_context_resource_diffe
 
     assert bundle["upload_candidates"]
     assert bundle["upload_candidates"][0]["current_file"] == original
+
+
+def test_vlm_removable_media_event_becomes_external_sink() -> None:
+    response = json.dumps(
+        {
+            "events": [
+                {
+                    "evidence_frame_ids": ["frame_0"],
+                    "timestamp_ms": 10_000,
+                    "app_name": "Windows Explorer",
+                    "behavior_category": "direct_leak",
+                    "operation_type": "copy_to_removable_media",
+                    "original_filename": "company_contract.docx",
+                    "modified_filename": "E:/USB/company_contract.docx",
+                    "sink_type": "removable_media",
+                    "description": "Sensitive file is being copied to a USB removable drive.",
+                    "confidence": 0.94,
+                }
+            ]
+        }
+    )
+
+    observations = vision_events_to_observations(parse_vlm_response(response), source="vlm")
+
+    assert observations[0].operation_type == "external_sink_interaction"
+    assert "sink_type=removable_media" in observations[0].description
 
 
 def test_vlm_derived_lineage_links_later_upload_log_to_original() -> None:
@@ -1617,6 +1703,26 @@ def test_dataset_case_discovery_uses_real_data_layout(tmp_path: Path) -> None:
     assert case.sensitive_files == ("C:/Users/alice/Documents/customer_salary.xlsx",)
 
 
+def test_dataset_case_discovery_accepts_misspelled_groundtruth_name(tmp_path: Path) -> None:
+    case_dir = tmp_path / "case"
+    logs_dir = case_dir / "logs"
+    video_dir = case_dir / "video"
+    logs_dir.mkdir(parents=True)
+    video_dir.mkdir()
+    (logs_dir / "keyevents.json").write_text(json.dumps(_records()), encoding="utf-8")
+    (video_dir / "recording.mp4").write_bytes(b"not a real video")
+    (case_dir / "groundtrutn.json").write_text(
+        json.dumps({"operations": [{"sensitive_file_path": "C:/Users/alice/Documents/customer_salary.xlsx"}]}),
+        encoding="utf-8",
+    )
+
+    case = discover_data_case(case_dir)
+
+    assert case.groundtruth_file == case_dir / "groundtrutn.json"
+    assert case.groundtruth_status == "available"
+    assert case.sensitive_files == ("C:/Users/alice/Documents/customer_salary.xlsx",)
+
+
 def test_dataset_case_discovery_prefers_indexed_video(tmp_path: Path) -> None:
     case_dir = tmp_path / "case"
     logs_dir = case_dir / "logs"
@@ -1655,6 +1761,35 @@ def test_dataset_case_discovery_uses_relative_case_id_and_marks_missing_child_gr
     assert case.groundtruth_file is None
     assert case.groundtruth_status == "missing_current_directory_with_ancestor_groundtruth"
     assert case.nearest_ancestor_groundtruth_file == parent / "groundtruth.json"
+
+
+def test_dataset_case_discovery_can_inherit_ancestor_groundtruth(tmp_path: Path) -> None:
+    root = tmp_path / "stage1"
+    parent = root / "3-Messaging-TIM-5"
+    child = parent / "session_20260420_222538"
+    (child / "logs").mkdir(parents=True)
+    (child / "video").mkdir()
+    (child / "logs" / "keyevents.json").write_text(json.dumps(_records()), encoding="utf-8")
+    (child / "video" / "recording.mp4").write_bytes(b"not a real video")
+    (child / "INDEX.md").write_text("**Recording Time**: 2026-04-20 22:25:38\n", encoding="utf-8")
+    (parent / "groundtruth.json").write_text(
+        json.dumps(
+            {
+                "recording_start_time": "2026-04-20 22:00:00",
+                "operations": [{"operation": "leak", "sensitive_file_path": "C:/secret.docx"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    case = discover_data_case(child, case_root=root, inherit_ancestor_groundtruth=True)
+
+    assert case.case_id == "3-Messaging-TIM-5/session_20260420_222538"
+    assert case.groundtruth_file == parent / "groundtruth.json"
+    assert case.groundtruth_status == "inherited_from_ancestor"
+    assert case.nearest_ancestor_groundtruth_file == parent / "groundtruth.json"
+    assert case.sensitive_files == ("C:/secret.docx",)
+    assert case.recording_start_ms == 1776723938000
 
 
 def test_report_id_includes_case_name_for_artifact_folders() -> None:

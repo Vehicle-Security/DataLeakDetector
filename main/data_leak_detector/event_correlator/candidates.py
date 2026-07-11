@@ -36,8 +36,8 @@ def build_upload_candidates(
                 app_name=event.app_name,
                 original_file=event.original_file,
                 current_file=current_file,
-                sink_type=classify_sink(text),
-                risk_level=risk_level_for_sink(text),
+                sink_type=_upload_sink_type(event, current_file, text),
+                risk_level=_upload_risk_level(event, text),
                 confidence=max(event.confidence, default_confidence),
                 evidence_refs=event.evidence_refs,
             )
@@ -75,9 +75,49 @@ def _is_explicit_upload_event(event: CorrelatedEvent, text: str) -> bool:
     if event.operation_type != "external_sink_interaction" and not contains_any(text, SINK_TOKENS):
         return False
     reasons = set(event.join_reasons)
+    if "removable_media_sink" in reasons:
+        return True
     if {"explicit_sink_log", "ocr_sink_context", "visual_only"} & reasons:
         return True
     return any(ref.startswith("frame:vlm") for ref in event.evidence_refs) and event.operation_type == "external_sink_interaction"
+
+
+def _upload_risk_level(event: CorrelatedEvent, text: str) -> str:
+    if any(ref.startswith("frame:vlm") for ref in event.evidence_refs):
+        return "content_exposed"
+    if "removable_media_sink" in event.join_reasons:
+        return "completed"
+    if event.event_type in {"file_upload", "upload", "uploaded", "upload_complete", "send_click"}:
+        return "completed"
+    if event.event_type == "file_selected":
+        return "selected_or_attached"
+    return risk_level_for_sink(text)
+
+
+def _upload_sink_type(event: CorrelatedEvent, current_file: str, text: str) -> str:
+    combined = f"{text} {event.app_name} {event.current_file} {current_file} {' '.join(event.join_reasons)}"
+    if contains_any(
+        combined,
+        (
+            "usb",
+            "removable",
+            "removable media",
+            "removable drive",
+            "flash drive",
+            "thumb drive",
+            "u disk",
+            "udisk",
+            "external drive",
+            "可移动",
+            "可移动存储",
+            "可移动磁盘",
+            "移动磁盘",
+            "移动硬盘",
+            "u盘",
+        ),
+    ):
+        return "removable_media"
+    return classify_sink(combined)
 
 
 def _is_noise_or_placeholder_path(value: str) -> bool:

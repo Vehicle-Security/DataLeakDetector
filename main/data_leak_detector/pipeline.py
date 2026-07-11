@@ -38,6 +38,7 @@ def run_pipeline(
     neo4j_log_miner: bool | None = None,
     reuse_neo4j_import: bool | None = None,
     non_vlm_enabled: bool | None = None,
+    inherit_ancestor_groundtruth: bool = False,
     case_name: str | None = None,
     session_start_ms: int | None = None,
     case_metadata: dict[str, Any] | None = None,
@@ -411,10 +412,16 @@ def run_data_case(
     reuse_neo4j_import: bool | None = None,
     non_vlm_enabled: bool | None = None,
     case_root: str | Path | None = None,
+    report_case_name: str | None = None,
+    inherit_ancestor_groundtruth: bool = False,
 ) -> dict[str, Any]:
     """Run a real spec/data sample directory."""
 
-    case = discover_data_case(case_dir, case_root=case_root)
+    case = discover_data_case(
+        case_dir,
+        case_root=case_root,
+        inherit_ancestor_groundtruth=inherit_ancestor_groundtruth,
+    )
     merged_sensitive = list(dict.fromkeys([*case.sensitive_files, *(sensitive_files or [])]))
     report = run_pipeline(
         log_file=case.log_file,
@@ -433,7 +440,7 @@ def run_data_case(
         neo4j_log_miner=neo4j_log_miner,
         reuse_neo4j_import=reuse_neo4j_import,
         non_vlm_enabled=non_vlm_enabled,
-        case_name=case.case_id,
+        case_name=report_case_name or case.case_id,
         session_start_ms=case.recording_start_ms,
         case_metadata=case.to_input_metadata(),
     )
