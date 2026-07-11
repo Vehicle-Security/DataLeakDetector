@@ -1,4 +1,4 @@
-"""把 OCR/VLM 输出解析为 FrameObservation。"""
+"""Parse VLM output into FrameObservation records."""
 
 from __future__ import annotations
 

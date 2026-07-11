@@ -1,9 +1,4 @@
-"""策略配置加载与文本语义归一化。
-
-项目的主要判断证据来自日志、OCR 和 VLM/LLM 结构化输出。这里不把业务词表写死
-成代码逻辑，而是从 `spec/config/policy.json` 加载可替换策略；代码只保留最小兜底，
-负责统一大小写、全半角、空白和分类接口。
-"""
+"""Load policy configuration and normalize text semantics."""
 
 from __future__ import annotations
 
@@ -20,26 +15,135 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_POLICY_PATH = REPO_ROOT / "spec" / "config" / "policy.json"
 WHITESPACE_RE = re.compile(r"\s+")
-COMPACT_SEPARATOR_RE = re.compile(r"[\s_\-./\\:：,，。;；|]+")
+COMPACT_SEPARATOR_RE = re.compile(r"[\s_\-./\\:：，。；\[\]]+")
 
 FALLBACK_POLICY: dict[str, Any] = {
-    "sensitive_tokens": ("confidential", "secret", "salary", "customer", "机密", "工资", "客户"),
-    "transfer_tokens": ("copy", "paste", "export", "screenshot", "复制", "粘贴", "导出", "截图"),
-    "sink_tokens": ("upload", "send", "share", "email", "chatgpt", "上传", "发送", "分享", "邮件"),
+    "sensitive_tokens": (
+        "confidential",
+        "secret",
+        "salary",
+        "payroll",
+        "customer",
+        "contract",
+        "finance",
+        "password",
+        "budget",
+        "strategy",
+        "机密",
+        "绝密",
+        "工资",
+        "薪资",
+        "薪酬",
+        "客户",
+        "合同",
+        "财务",
+        "密码",
+        "账号",
+        "账户",
+        "预算",
+        "成本",
+        "战略",
+        "内部",
+    ),
+    "transfer_tokens": (
+        "copy",
+        "copied",
+        "paste",
+        "pasted",
+        "clipboard",
+        "export",
+        "screenshot",
+        "screen recording",
+        "recording",
+        "convert",
+        "compress",
+        "rename",
+        "复制",
+        "粘贴",
+        "剪贴板",
+        "导出",
+        "另存",
+        "截图",
+        "截屏",
+        "录屏",
+        "转换",
+        "压缩",
+        "重命名",
+    ),
+    "sink_tokens": (
+        "upload",
+        "send",
+        "share",
+        "mail",
+        "email",
+        "attach",
+        "attachment",
+        "cloud",
+        "drive",
+        "dropbox",
+        "onedrive",
+        "wechat",
+        "qq",
+        "feishu",
+        "lark",
+        "dingtalk",
+        "teams",
+        "zoom",
+        "chatgpt",
+        "claude",
+        "gemini",
+        "kimi",
+        "usb",
+        "removable",
+        "上传",
+        "发送",
+        "分享",
+        "外发",
+        "泄露",
+        "附件",
+        "邮件",
+        "邮箱",
+        "网盘",
+        "云盘",
+        "共享",
+        "屏幕共享",
+        "可移动",
+        "U盘",
+        "移动磁盘",
+        "移动硬盘",
+        "微信",
+        "飞书",
+        "钉钉",
+    ),
     "normal_activity_tokens": ("normal", "reading", "正常", "阅读", "浏览"),
-    "unknown_risk_tokens": ("外发", "泄露", "隐藏", "截图", "录屏", "共享", "粘贴"),
+    "unknown_risk_tokens": (
+        "外发",
+        "泄露",
+        "隐藏",
+        "截图",
+        "截屏",
+        "录屏",
+        "共享",
+        "粘贴",
+        "发送",
+        "导出",
+        "另存",
+    ),
     "sink_classification": [
-        {"type": "ai_chat", "tokens": ("chatgpt", "gpt", "deepseek", "kimi", "claude", "gemini", "cherry studio", "大模型", "智能助手", "默认助手")},
-        {"type": "mail_attachment", "tokens": ("mail", "email", "attachment", "attach", "邮件", "附件")},
-        {"type": "cloud_sync", "tokens": ("cloud", "drive", "网盘", "云盘")},
-        {"type": "chat_upload", "tokens": ("wechat", "qq", "chatgpt", "chat", "微信")},
-        {"type": "removable_media", "tokens": ("usb", "removable", "可移动")},
-        {"type": "screen_share", "tokens": ("screen", "share", "共享", "屏幕共享")},
+        {
+            "type": "ai_chat",
+            "tokens": ("chatgpt", "gpt", "deepseek", "kimi", "claude", "gemini", "cherry studio", "大模型", "智能助手", "默认助手"),
+        },
+        {"type": "mail_attachment", "tokens": ("mail", "email", "attachment", "attach", "邮件", "邮箱", "附件")},
+        {"type": "cloud_sync", "tokens": ("cloud", "drive", "dropbox", "onedrive", "网盘", "云盘")},
+        {"type": "chat_upload", "tokens": ("wechat", "qq", "feishu", "lark", "dingtalk", "chat", "微信", "飞书", "钉钉")},
+        {"type": "removable_media", "tokens": ("usb", "removable", "可移动", "U盘", "移动磁盘", "移动硬盘")},
+        {"type": "screen_share", "tokens": ("screen", "share", "zoom", "teams", "共享", "屏幕共享")},
     ],
     "risk_levels": [
-        {"level": "completed", "tokens": ("complete", "sent", "success", "已发送", "完成", "成功")},
-        {"level": "content_exposed", "tokens": ("visible", "paste", "content", "粘贴", "可见", "共享")},
-        {"level": "selected_or_attached", "tokens": ("upload", "send", "attach", "选择", "附件", "上传", "发送")},
+        {"level": "completed", "tokens": ("complete", "completed", "sent", "success", "已发送", "完成", "成功")},
+        {"level": "content_exposed", "tokens": ("visible", "paste", "pasted", "content", "粘贴", "可见", "共享")},
+        {"level": "selected_or_attached", "tokens": ("upload", "send", "attach", "selected", "选择", "附件", "上传", "发送")},
     ],
     "semantic_sensitive_aliases": {
         "薪资": ("薪酬", "工资", "月薪"),
@@ -50,26 +154,44 @@ FALLBACK_POLICY: dict[str, Any] = {
     "frontend_app_hints": {
         "excel": "document_editor",
         "word": "document_editor",
+        "wps": "document_editor",
+        "notepad": "document_editor",
         "chrome": "browser",
         "edge": "browser",
+        "firefox": "browser",
+        "safari": "browser",
         "chatgpt": "ai_chat",
+        "claude": "ai_chat",
+        "gemini": "ai_chat",
+        "kimi": "ai_chat",
+        "deepseek": "ai_chat",
+        "qwen": "ai_chat",
         "wechat": "chat",
         "qq": "chat",
+        "feishu": "chat",
+        "lark": "chat",
+        "dingtalk": "chat",
         "gmail": "mail",
         "outlook": "mail",
+        "163": "mail",
         "onedrive": "cloud_drive",
+        "dropbox": "cloud_drive",
+        "google drive": "cloud_drive",
+        "baidu": "cloud_drive",
         "zoom": "meeting",
+        "teams": "meeting",
     },
     "frontend_category_rules": [
-        {"category": "ai_chat", "tokens": ("prompt", "assistant", "chatbot", "大模型", "智能助手")},
-        {"category": "mail", "tokens": ("mail", "email", "inbox", "compose", "attachment", "邮箱", "收件箱", "附件")},
-        {"category": "cloud_drive", "tokens": ("cloud drive", "drive", "dropbox", "网盘", "云盘", "文件上传")},
-        {"category": "chat", "tokens": ("chat", "message", "messenger", "聊天", "群聊", "会话")},
-        {"category": "meeting", "tokens": ("meeting", "screen share", "屏幕共享", "会议")},
+        {"category": "ai_chat", "tokens": ("prompt", "assistant", "chatbot", "llm", "大模型", "智能助手", "AI 对话", "AI聊天")},
+        {"category": "mail", "tokens": ("mail", "email", "inbox", "compose", "attachment", "邮箱", "邮件", "收件箱", "写邮件", "附件")},
+        {"category": "cloud_drive", "tokens": ("cloud drive", "drive", "dropbox", "netdisk", "网盘", "云盘", "文件上传", "上传文件")},
+        {"category": "chat", "tokens": ("chat", "message", "messenger", "im", "聊天", "群聊", "会话", "发送消息")},
+        {"category": "meeting", "tokens": ("meeting", "screen share", "share screen", "会议", "屏幕共享", "共享屏幕")},
         {"category": "browser", "tokens": ("browser", "chrome_widgetwin", "网页", "浏览器")},
-        {"category": "document_editor", "tokens": ("document", "spreadsheet", "office", "文档", "表格")},
+        {"category": "document_editor", "tokens": ("document", "spreadsheet", "office", "文档", "表格", "演示文稿")},
+        {"category": "removable_media", "tokens": ("bluetooth", "usb", "removable", "蓝牙", "可移动设备", "移动存储")},
     ],
-    "risky_app_categories": ("browser", "ai_chat", "chat", "mail", "cloud_drive", "meeting"),
+    "risky_app_categories": ("browser", "ai_chat", "chat", "mail", "cloud_drive", "meeting", "removable_media"),
 }
 
 
@@ -89,7 +211,7 @@ class PolicyConfig:
 
 
 def load_policy_config(path: str | Path | None = None) -> PolicyConfig:
-    """加载策略配置；配置缺失时使用最小兜底，避免流水线直接不可用。"""
+    """Load policy config, falling back to compact built-in defaults."""
 
     config_path = Path(path or os.getenv("DLD_POLICY_CONFIG") or DEFAULT_POLICY_PATH)
     raw = dict(FALLBACK_POLICY)
@@ -120,7 +242,7 @@ RISK_LEVELS = {"selected_or_attached", "in_progress", "content_exposed", "comple
 
 
 def normalize_text(value: object) -> str:
-    """把文本统一为适合规则匹配的形式。"""
+    """Normalize text for rule matching."""
 
     text = unicodedata.normalize("NFKC", str(value or "")).casefold()
     return WHITESPACE_RE.sub(" ", text).strip()
@@ -170,7 +292,7 @@ def semantic_sensitive_match(keyword: str, text: str) -> bool:
 
 
 def is_normal_only_context(text: str) -> bool:
-    """判断一段文本是否只是普通浏览/阅读，而没有风险动作。"""
+    """Return whether text only describes ordinary reading/browsing."""
 
     return contains_any(text, NORMAL_ACTIVITY_TOKENS) and not contains_any(text, UNKNOWN_RISK_TOKENS + SINK_TOKENS + TRANSFER_TOKENS)
 

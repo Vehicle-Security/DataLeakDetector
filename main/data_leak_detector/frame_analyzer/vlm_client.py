@@ -1,4 +1,4 @@
-"""OpenAI-compatible VLM client used for Qwen and similar providers."""
+"""VLM request frames, prompt construction, and OpenAI-compatible client."""
 
 from __future__ import annotations
 
@@ -12,17 +12,15 @@ from pathlib import Path
 from typing import Any
 
 from ..io import basename, normalize_path
-from ..policy import SENSITIVE_TOKENS, SINK_TOKENS, TRANSFER_TOKENS, UNKNOWN_RISK_TOKENS, contains_any
 from .config import VisionConfig
 from .frames import KeyFrame
-from .ocr import OcrResult
 
 
 @dataclass(frozen=True)
 class VlmRequestFrame:
     frame: KeyFrame
-    ocr_text: str
-    ocr_confidence: float
+    visual_note: str
+    visual_confidence: float
     selection_reason: str = ""
     selection_score: int = 0
     source_frames: tuple[dict[str, Any], ...] = ()
@@ -57,7 +55,7 @@ class OpenAICompatibleVlmClient:
             "model": self.config.vlm_model,
             "chat_url": _chat_url(self.config),
             "dry_run": self.config.vlm_dry_run,
-            "frame_strategy": self.config.vlm_frame_strategy,
+            "frame_source": "direct_keyframes",
             "grid_size": self.config.vlm_grid_size,
             "temperature": 0,
             "prompt": prompt,
@@ -121,70 +119,6 @@ class OpenAICompatibleVlmClient:
         }
 
 
-def choose_vlm_frames(
-    ocr_results: list[OcrResult],
-    *,
-    min_confidence: float,
-    max_frames: int,
-    strategy: str = "ocr_triage",
-    include_empty_ocr_strong_frames: bool = False,
-    max_frames_per_window: int | None = None,
-) -> list[VlmRequestFrame]:
-    if max_frames == 0:
-        return []
-    unlimited = max_frames < 0
-    if max_frames_per_window is not None and max_frames_per_window <= 0:
-        max_frames_per_window = None
-
-    normalized_strategy = _normalize_frame_strategy(strategy)
-    candidates: list[tuple[int, int, VlmRequestFrame]] = []
-    for result in ocr_results:
-        text = result.text.strip()
-        ocr_available = result.provider not in {"none", "tesseract_missing"}
-        low_confidence = ocr_available and result.confidence < min_confidence
-        suspicious_text = contains_any(text, SINK_TOKENS + TRANSFER_TOKENS + SENSITIVE_TOKENS + UNKNOWN_RISK_TOKENS)
-        strong_or_anchor = _is_strong_or_anchor(result.frame)
-        empty_strong = include_empty_ocr_strong_frames and not text and strong_or_anchor
-        force_vlm = normalized_strategy == "ocr_all"
-        if force_vlm or low_confidence or suspicious_text or empty_strong:
-            score = _vlm_frame_score(
-                result,
-                suspicious_text=suspicious_text,
-                low_confidence=low_confidence,
-                empty_strong=empty_strong,
-            )
-            candidates.append(
-                (
-                    score,
-                    result.frame.timestamp_ms,
-                    VlmRequestFrame(
-                        result.frame,
-                        text,
-                        result.confidence,
-                        selection_reason=_selection_reason(
-                            force_vlm=force_vlm,
-                            suspicious_text=suspicious_text,
-                            low_confidence=low_confidence,
-                            empty_strong=empty_strong,
-                        ),
-                        selection_score=score,
-                    ),
-                )
-            )
-    selected: list[VlmRequestFrame] = []
-    per_window: dict[str, int] = {}
-    for _, _, frame in sorted(candidates, key=lambda item: (-item[0], item[1])):
-        if max_frames_per_window is not None:
-            window_id = frame.frame.window_id or "window_unknown"
-            if per_window.get(window_id, 0) >= max_frames_per_window:
-                continue
-            per_window[window_id] = per_window.get(window_id, 0) + 1
-        selected.append(frame)
-        if not unlimited and len(selected) >= max_frames:
-            break
-    return sorted(selected, key=lambda item: item.frame.timestamp_ms)
-
-
 def choose_keyframes_for_vlm(
     frames: list[KeyFrame],
     *,
@@ -203,8 +137,8 @@ def choose_keyframes_for_vlm(
             frame.timestamp_ms,
             VlmRequestFrame(
                 frame=frame,
-                ocr_text="",
-                ocr_confidence=0.0,
+                visual_note="",
+                visual_confidence=0.0,
                 selection_reason="direct_keyframe",
                 selection_score=_keyframe_score(frame),
             ),
@@ -338,8 +272,8 @@ def build_vlm_frame_grids(
         grid_frames.append(
             VlmRequestFrame(
                 frame=grid_keyframe,
-                ocr_text="",
-                ocr_confidence=0.0,
+                visual_note="",
+                visual_confidence=0.0,
                 selection_reason=f"vlm_grid_{grid_size}x{grid_size}",
                 selection_score=score,
                 source_frames=tuple(source_payload),
@@ -392,31 +326,6 @@ def record_vlm_request_metrics(frames: list[VlmRequestFrame], prompt: str) -> di
     }
 
 
-def _vlm_frame_score(result: OcrResult, *, suspicious_text: bool, low_confidence: bool, empty_strong: bool = False) -> int:
-    reason = result.frame.reason.lower()
-    text = result.text
-    score = 0
-    if reason.startswith("strong"):
-        score += 100
-    elif reason.startswith("weak"):
-        score += 40
-    if contains_any(text, SINK_TOKENS):
-        score += 80
-    if contains_any(text, TRANSFER_TOKENS):
-        score += 60
-    if contains_any(text, SENSITIVE_TOKENS):
-        score += 40
-    if suspicious_text:
-        score += 20
-    if low_confidence:
-        score += 10
-    if "anchor" in reason:
-        score += 35
-    if empty_strong:
-        score += 25
-    return score
-
-
 def _keyframe_score(frame: KeyFrame) -> int:
     reason = frame.reason.lower()
     score = 0
@@ -438,7 +347,7 @@ def _prompt(frames: list[VlmRequestFrame], sensitive_files: list[str], active_ap
     frame_lines = [
         f"- frame_id={item.frame.frame_id}, timestamp_ms={item.frame.timestamp_ms}, "
         f"window_id={item.frame.window_id}, reason={item.frame.reason}, "
-        f"selection_reason={item.selection_reason}, ocr_confidence={item.ocr_confidence}, ocr_text={item.ocr_text[:500]}"
+        f"selection_reason={item.selection_reason}, visual_confidence={item.visual_confidence}, visual_note={item.visual_note[:500]}"
         for item in frames
     ]
     grid_lines = [
@@ -452,7 +361,7 @@ def _prompt(frames: list[VlmRequestFrame], sensitive_files: list[str], active_ap
     ]
     return (
         "You are analyzing screen-recording keyframes for enterprise data-leak evidence. "
-        "Use the images, OCR text, frame metadata, and active app hints only. "
+        "Use the images, frame metadata, and active app hints only. "
         "Do not infer labels from any groundtruth annotation; groundtruth is evaluation-only.\n"
         "Return strict JSON only with this schema: "
         "{\"events\":[{\"evidence_frame_ids\":[\"frame_0_0\"],"
@@ -481,7 +390,7 @@ def _prompt(frames: list[VlmRequestFrame], sensitive_files: list[str], active_ap
         "emit behavior_category=direct_leak and the most specific sink_type.\n"
         "Sensitive source files and aliases:\n" + "\n".join(sensitive_lines) + "\n"
         f"Non-whitelisted active apps from logs: {active_apps}\n"
-        "Frame/OCR context:\n" + "\n".join(frame_lines) + "\n"
+        "Frame context:\n" + "\n".join(frame_lines) + "\n"
         "Grid cell mapping:\n" + ("\n".join(grid_lines) if grid_lines else "- none")
     )
 
@@ -493,8 +402,8 @@ def _request_frame_to_dict(item: VlmRequestFrame) -> dict[str, Any]:
         "image_path": item.frame.image_path,
         "reason": item.frame.reason,
         "window_id": item.frame.window_id,
-        "ocr_text": item.ocr_text,
-        "ocr_confidence": item.ocr_confidence,
+        "visual_note": item.visual_note,
+        "visual_confidence": item.visual_confidence,
         "selection_reason": item.selection_reason,
         "selection_score": item.selection_score,
     }
@@ -512,39 +421,6 @@ def _sensitive_context(sensitive_files: list[str]) -> list[dict[str, str]]:
         name = basename(path)
         context.append({"path": path, "basename": name, "stem": Path(name).stem})
     return context
-
-
-def _selection_reason(*, force_vlm: bool, suspicious_text: bool, low_confidence: bool, empty_strong: bool) -> str:
-    reasons = []
-    if force_vlm:
-        reasons.append("ocr_all_to_vlm")
-    if suspicious_text:
-        reasons.append("suspicious_ocr")
-    if low_confidence:
-        reasons.append("low_confidence_ocr")
-    if empty_strong:
-        reasons.append("empty_ocr_strong_anchor")
-    return "+".join(reasons) or "candidate"
-
-
-def _is_strong_or_anchor(frame: KeyFrame) -> bool:
-    reason = frame.reason.lower()
-    return reason.startswith("strong") or "anchor" in reason
-
-
-def _normalize_frame_strategy(value: str) -> str:
-    normalized = value.strip().lower().replace("-", "_")
-    aliases = {
-        "ocr_prefilter": "ocr_triage",
-        "ocr_filtered": "ocr_triage",
-        "triage": "ocr_triage",
-        "all_ocr": "ocr_all",
-        "ocr_all_to_vlm": "ocr_all",
-        "direct": "direct_keyframes",
-        "all_keyframes": "direct_keyframes",
-        "keyframes": "direct_keyframes",
-    }
-    return aliases.get(normalized, normalized or "ocr_triage")
 
 
 def _chunks(items: list[VlmRequestFrame], size: int) -> list[list[VlmRequestFrame]]:
@@ -576,7 +452,8 @@ def _grid_source_line(grid: VlmRequestFrame, source: dict[str, Any]) -> str:
         f"- grid_frame_id={grid.frame.frame_id}, cell={source.get('cell_id', '')}, "
         f"source_frame_id={source.get('frame_id', '')}, timestamp_ms={source.get('timestamp_ms', 0)}, "
         f"reason={source.get('reason', '')}, selection_reason={source.get('selection_reason', '')}, "
-        f"ocr_confidence={source.get('ocr_confidence', 0.0)}, ocr_text={str(source.get('ocr_text', ''))[:500]}"
+        f"visual_confidence={source.get('visual_confidence', 0.0)}, "
+        f"visual_note={str(source.get('visual_note', ''))[:500]}"
     )
 
 

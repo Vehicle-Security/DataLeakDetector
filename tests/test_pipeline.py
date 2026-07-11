@@ -1,4 +1,4 @@
-"""Contract tests for the pipeline, dataset discovery, VLM parsing, and Neo4j adapter."""
+﻿"""Contract tests for the pipeline, dataset discovery, VLM parsing, and Neo4j adapter."""
 
 from __future__ import annotations
 
@@ -13,20 +13,17 @@ from data_leak_detector import run_pipeline
 from data_leak_detector.datasets import discover_data_case
 from data_leak_detector.event_correlator import EventCorrelator
 from data_leak_detector.frame_analyzer import analyze_video_behavior
-from data_leak_detector.frame_analyzer.analyzer import (
-    _combine_vlm_request_metrics,
+from data_leak_detector.frame_analyzer.artifacts import export_vision_artifacts
+from data_leak_detector.frame_analyzer.vlm_dispatch import (
     _combine_vlm_usage,
-    _dedupe_ocr_results,
-    _build_vlm_clients,
-    _effective_vlm_parallelism,
-    _export_vision_artifacts,
-    _ocr_observations,
-    _select_ocr_frames_for_ocr,
-    _run_vlm_batches,
     _shared_vlm_dispatcher,
     _shared_vlm_endpoint_locks,
-    _vlm_frame_batches,
-    _vlm_request_artifact_payload,
+    build_vlm_clients,
+    combine_vlm_request_metrics,
+    effective_vlm_parallelism,
+    run_vlm_batches,
+    vlm_frame_batches,
+    vlm_request_artifact_payload,
 )
 from data_leak_detector.frame_analyzer.apps import identify_frontend_app
 from data_leak_detector.frame_analyzer.config import VisionConfig
@@ -35,6 +32,7 @@ from data_leak_detector.frame_analyzer.frames import (
     _FrameCandidate,
     KeyFrame,
     KeyFrameDuplicate,
+    KeyFrameSelection,
     _clamp_window_to_duration,
     _coverage_timestamps,
     _dedupe_keyframes_globally,
@@ -43,13 +41,10 @@ from data_leak_detector.frame_analyzer.frames import (
     _timestamp_groups,
     merge_analysis_windows,
 )
-from data_leak_detector.frame_analyzer.ocr import OcrResult, RapidOcrProvider, _rapidocr_provider_name
 from data_leak_detector.frame_analyzer.parser import ParsedVisionEvent, parse_vlm_response, parse_vlm_response_detailed, vision_events_to_observations
-from data_leak_detector.frame_analyzer.roi import detect_foreground_window_region, detect_text_regions
-from data_leak_detector.frame_analyzer.vlm import VlmRequestFrame, VlmResponse, build_vlm_frame_grids, choose_keyframes_for_vlm, choose_vlm_frames, prepare_vlm_frame_images
+from data_leak_detector.frame_analyzer.vlm_client import VlmRequestFrame, VlmResponse, build_vlm_frame_grids, choose_keyframes_for_vlm, prepare_vlm_frame_images
 from data_leak_detector.log_mining import build_analysis_windows, mine_analysis_windows
 from data_leak_detector.neo4j.importer import fingerprint_records, records_to_graph_events
-from data_leak_detector.neo4j.store import Neo4jGraphStore
 from data_leak_detector.groundtruth import evaluate_groundtruth
 from data_leak_detector.io import normalize_logs, same_file
 from data_leak_detector.io import load_json_records
@@ -300,7 +295,7 @@ def test_screenshot_tool_cache_file_does_not_become_capture_anchor() -> None:
                 "timestamp": "2026-01-01T12:00:10",
                 "event_type": "modified",
                 "file_path": "C:/Users/alice/AppData/Local/SnippingTool/Cache/data_2",
-                "window_info": {"window_title": "截图工具覆盖"},
+                "window_info": {"window_title": "鎴浘宸ュ叿瑕嗙洊"},
                 "extra": {"raw_operation": "modified", "relative_timestamp": 10.0},
                 "process_info": {"process_name": "SnippingTool.exe"},
             },
@@ -362,10 +357,10 @@ def test_cloud_drive_file_selection_dialog_becomes_strong_anchor() -> None:
                 "timestamp": "2026-01-01T12:00:17.525",
                 "event_type": "app_switch",
                 "file_path": "",
-                "app_name": "百度网盘",
+                "app_name": "鐧惧害缃戠洏",
                 "process_info": {"process_name": "BaiduNetdiskUnite.exe"},
                 "window_info": {"window_title": "请选择文件/文件夹"},
-                "extra": {"source": "window_monitor", "category": "网盘", "relative_timestamp": 17.525},
+                "extra": {"source": "window_monitor", "category": "缃戠洏", "relative_timestamp": 17.525},
             }
         ]
     )
@@ -586,23 +581,8 @@ def test_merged_window_budget_keeps_all_log_anchors() -> None:
     assert merged[0].max_keyframes == 5
 
 
-def test_ocr_reads_all_selected_keyframes() -> None:
-    frames = [
-        KeyFrame(f"w0_{index}", index * 100, "frame.jpg", 0.9, "strong:visual_change", window_id="window_0")
-        for index in range(3)
-    ] + [
-        KeyFrame(f"w1_{index}", 10_000 + index * 100, "frame.jpg", 0.9, "strong:visual_change", window_id="window_1")
-        for index in range(3)
-    ]
-
-    selected = _select_ocr_frames_for_ocr(frames)
-
-    assert [frame.frame_id for frame in selected] == ["w0_0", "w0_1", "w0_2", "w1_0", "w1_1", "w1_2"]
 
 
-def test_ocr_roi_is_experimental_and_disabled_by_default() -> None:
-    assert VisionConfig().ocr_roi_enabled is False
-    assert VisionConfig().include_weak_windows is False
 
 
 def test_weak_analysis_windows_are_opt_in() -> None:
@@ -621,28 +601,8 @@ def test_weak_analysis_windows_are_opt_in() -> None:
     assert build_analysis_windows(logs, [], VisionConfig(include_weak_windows=True))[0].priority == "weak"
 
 
-def test_ocr_dedupes_same_timestamp_from_overlapping_windows() -> None:
-    frames = [
-        KeyFrame("medium", 1000, "frame_a.jpg", 0.9, "medium:visual_change", window_id="window_0"),
-        KeyFrame("weak_duplicate", 1000, "frame_b.jpg", 0.9, "weak:visual_change", window_id="window_1"),
-        KeyFrame("later", 2000, "frame_c.jpg", 0.9, "strong:visual_change", window_id="window_2"),
-    ]
-
-    selected = _select_ocr_frames_for_ocr(frames)
-
-    assert [frame.frame_id for frame in selected] == ["medium", "later"]
 
 
-def test_ocr_keeps_medium_and_strong_keyframes() -> None:
-    frames = [
-        KeyFrame("medium", 100, "frame.jpg", 0.9, "medium:visual_change", window_id="window_0"),
-        KeyFrame("strong", 200, "frame.jpg", 0.9, "strong:visual_change", window_id="window_1"),
-        KeyFrame("far", 100_000, "frame.jpg", 0.9, "medium:visual_change", window_id="window_2"),
-    ]
-
-    selected = _select_ocr_frames_for_ocr(frames)
-
-    assert [frame.frame_id for frame in selected] == ["medium", "strong", "far"]
 
 
 def test_medium_analysis_windows_keep_raw_keyframe_budget() -> None:
@@ -673,21 +633,21 @@ def test_medium_windows_use_context_budget_when_strong_evidence_exists() -> None
                 "event_type": "app_switch",
                 "process_info": {"process_name": "QQ.exe"},
                 "window_info": {"window_title": "QQ"},
-                "extra": {"source": "window_monitor", "category": "即时通讯", "relative_timestamp": 30.0},
+                "extra": {"source": "window_monitor", "category": "鍗虫椂閫氳", "relative_timestamp": 30.0},
             },
             {
                 "timestamp": "2026-01-01T00:00:32",
                 "event_type": "app_switch",
                 "process_info": {"process_name": "QQ.exe"},
                 "window_info": {"window_title": "QQ"},
-                "extra": {"source": "window_monitor", "category": "即时通讯", "relative_timestamp": 32.0},
+                "extra": {"source": "window_monitor", "category": "鍗虫椂閫氳", "relative_timestamp": 32.0},
             },
             {
                 "timestamp": "2026-01-01T00:00:35",
                 "event_type": "app_switch",
                 "process_info": {"process_name": "QQ.exe"},
                 "window_info": {"window_title": "QQ"},
-                "extra": {"source": "window_monitor", "category": "即时通讯", "relative_timestamp": 35.0},
+                "extra": {"source": "window_monitor", "category": "鍗虫椂閫氳", "relative_timestamp": 35.0},
             },
             {
                 "timestamp": "2026-01-01T00:01:00",
@@ -732,15 +692,6 @@ def test_window_coverage_clamps_to_video_duration() -> None:
     assert any(30_000 <= timestamp <= 34_000 for timestamp in coverage)
 
 
-def test_ocr_keeps_all_anchor_keyframes_even_over_medium_budget() -> None:
-    frames = [
-        KeyFrame(f"anchor_{index}", index * 1_000, "frame.jpg", 0.9, "medium:anchor", window_id="window_0")
-        for index in range(4)
-    ]
-
-    selected = _select_ocr_frames_for_ocr(frames, VisionConfig(max_keyframes_per_medium_window=2))
-
-    assert [frame.frame_id for frame in selected] == ["anchor_0", "anchor_1", "anchor_2", "anchor_3"]
 
 
 def test_frame_hash_distance_can_detect_near_duplicates() -> None:
@@ -862,134 +813,72 @@ def test_keyframe_probe_timestamps_are_grouped_for_sequential_decode() -> None:
     assert groups == [[0, 250, 1_000], [8_000, 8_300], [20_000]]
 
 
-def test_ocr_results_are_deduped_per_window() -> None:
-    frame_a = KeyFrame("a", 1000, "a.jpg", 0.9, "strong:visual_change", window_id="window_0")
-    frame_b = KeyFrame("b", 2000, "b.jpg", 0.9, "strong:visual_change", window_id="window_0")
-    frame_c = KeyFrame("c", 3000, "c.jpg", 0.9, "strong:visual_change", window_id="window_1")
-    results = [
-        OcrResult(frame_a, "Send confidential contract", 0.9, "tesseract"),
-        OcrResult(frame_b, "Send confidential contract", 0.9, "tesseract"),
-        OcrResult(frame_c, "Send confidential contract", 0.9, "tesseract"),
-    ]
-
-    deduped = _dedupe_ocr_results(results, VisionConfig(ocr_text_similarity_threshold=0.92))
-
-    assert [item.frame.frame_id for item in deduped] == ["a", "c"]
 
 
-def test_ocr_observation_extracts_non_vlm_file_and_sink_facts() -> None:
-    sensitive = "C:/Users/alice/Documents/customer_salary.xlsx"
-    frame = KeyFrame("frame_0", 19517, "frame.jpg", 1.0, "strong:anchor", "window_0")
-    result = OcrResult(frame, "ChatGPT 默认助手 正在上传 customer_salary.xlsx", 0.96, "rapidocr_cuda")
-
-    observations = _ocr_observations([result], VisionConfig(), sensitive_files=[sensitive], start_index=0)
-
-    assert len(observations) == 1
-    assert observations[0].operation_type == "external_sink_interaction"
-    assert observations[0].resource == sensitive
-    assert sensitive in observations[0].related_resources
-    assert "mentioned_files=" in observations[0].description
 
 
-def test_ocr_dedupe_keeps_anchor_frames() -> None:
-    frame_a = KeyFrame("a", 1000, "a.jpg", 0.9, "medium:anchor", window_id="window_0")
-    frame_b = KeyFrame("b", 2000, "b.jpg", 0.9, "medium:anchor", window_id="window_0")
-    results = [
-        OcrResult(frame_a, "same desktop text", 0.9, "paddleocr_gpu"),
-        OcrResult(frame_b, "same desktop text", 0.9, "paddleocr_gpu"),
-    ]
-
-    deduped = _dedupe_ocr_results(results, VisionConfig(ocr_text_similarity_threshold=0.92))
-
-    assert [item.frame.frame_id for item in deduped] == ["a", "b"]
 
 
-def test_rapidocr_provider_downscales_large_images(tmp_path: Path) -> None:
-    cv2 = __import__("cv2")
-    image_path = tmp_path / "large.jpg"
-    image = __import__("numpy").zeros((900, 1600, 3), dtype="uint8")
-    cv2.imwrite(str(image_path), image)
-
-    loaded = RapidOcrProvider(max_image_side=800)._load_image(str(image_path))
-
-    assert max(loaded.shape[:2]) == 800
 
 
-def test_rapidocr_provider_name_reports_cuda_when_primary_session_uses_cuda() -> None:
-    class Session:
-        def get_providers(self) -> list[str]:
-            return ["CUDAExecutionProvider", "CPUExecutionProvider"]
-
-    class Part:
-        def __init__(self) -> None:
-            self.session = Session()
-
-    class Engine:
-        def __init__(self) -> None:
-            self.text_det = Part()
-
-    assert _rapidocr_provider_name(Engine()) == "rapidocr_cuda"
 
 
-def test_opencv_roi_detects_synthetic_text_region() -> None:
-    cv2 = __import__("cv2")
-    np = __import__("numpy")
-    image = np.full((220, 520, 3), 255, dtype="uint8")
-    cv2.putText(image, "Attach secret.pdf", (40, 95), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 0, 0), 3)
-
-    regions = detect_text_regions(image, VisionConfig(ocr_roi_enabled=True))
-
-    assert regions
-    assert regions[0].width > 120
-    assert regions[0].height > 20
 
 
-def test_opencv_roi_prefers_large_foreground_window() -> None:
-    cv2 = __import__("cv2")
-    np = __import__("numpy")
-    image = np.zeros((500, 800, 3), dtype="uint8")
-    image[:, :] = (40, 120, 60)
-    cv2.rectangle(image, (120, 70), (680, 410), (245, 245, 245), -1)
-    cv2.rectangle(image, (120, 70), (680, 410), (80, 80, 80), 3)
-    cv2.putText(image, "Foreground Window", (170, 160), cv2.FONT_HERSHEY_SIMPLEX, 1.3, (0, 0, 0), 3)
-
-    region = detect_foreground_window_region(image, VisionConfig(ocr_roi_window_first=True))
-
-    assert region is not None
-    assert 80 <= region.x <= 140
-    assert 40 <= region.y <= 90
-    assert region.width >= 520
-    assert region.height >= 320
 
 
-def test_vision_artifact_export_writes_raw_and_ocr_selected_frames(tmp_path: Path) -> None:
+
+
+def test_direct_keyframe_precompute_removes_legacy_vision_outputs(tmp_path: Path) -> None:
     image = tmp_path / "frame.jpg"
     image.write_bytes(b"fake image")
-    raw_frame = KeyFrame("raw", 1000, str(image), 0.9, "strong:visual_change", window_id="window_0")
-    duplicate_frame = KeyFrame("duplicate", 1000, str(image), 0.9, "weak:visual_change", window_id="window_1")
-    selected_frame = KeyFrame("selected", 2000, str(image), 0.8, "strong:visual_change", window_id="window_0")
-    ocr = OcrResult(selected_frame, "蓝牙文件传送 文字文稿1.docx", 0.95, "rapidocr")
+    frame = KeyFrame("raw", 1000, str(image), 0.9, "strong:visual_change", window_id="window_0")
 
-    manifest = _export_vision_artifacts(
+    manifest = export_vision_artifacts(
         artifact_dir=tmp_path / "vision",
-        keyframes=[raw_frame],
-        ocr_selected_frames=[selected_frame],
-        ocr_results=[ocr],
-        raw_all_keyframes=[raw_frame, duplicate_frame],
-        duplicate_keyframes=[KeyFrameDuplicate(duplicate_frame, "raw", "same_timestamp", 0.0, 0)],
+        keyframes=[frame],
+        raw_all_keyframes=[frame],
+        duplicate_keyframes=[],
     )
+
+    root = Path(manifest["root_dir"])
 
     assert Path(manifest["keyframes_raw_all_dir"]).exists()
     assert Path(manifest["keyframes_raw_dir"]).exists()
-    assert Path(manifest["keyframes_ocr_roi_dir"]).exists()
-    assert Path(manifest["keyframes_ocr_selected_dir"]).exists()
-    assert manifest["counts"]["keyframes_raw_all_files"] == 2
     assert manifest["counts"]["keyframes_raw_files"] == 1
-    assert Path(manifest["artifact_manifest_file"]).exists()
-    assert Path(manifest["ocr_roi_regions_file"]).exists()
-    assert manifest["counts"]["keyframes_ocr_selected_files"] == 1
-    assert "same_timestamp" in Path(manifest["keyframe_duplicates_file"]).read_text(encoding="utf-8")
-    assert "文字文稿1.docx" in Path(manifest["ocr_results_file"]).read_text(encoding="utf-8")
+
+
+def test_direct_keyframe_precompute_skips_vlm(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    image = tmp_path / "frame.jpg"
+    image.write_bytes(b"fake image")
+    frame = KeyFrame("raw", 1000, str(image), 0.9, "strong:anchor", window_id="window_0")
+    selection = KeyFrameSelection(keyframes=[frame], raw_keyframes=[frame], duplicates=[], warnings=[])
+
+    monkeypatch.setattr(
+        "data_leak_detector.frame_analyzer.analyzer.select_keyframes_detailed",
+        lambda *_args, **_kwargs: selection,
+    )
+    monkeypatch.setattr(
+        "data_leak_detector.frame_analyzer.vlm_dispatch.run_vlm_batches",
+        lambda *_args, **_kwargs: pytest.fail("direct precompute must not call VLM"),
+    )
+
+    result = analyze_video_behavior(
+        video_path="missing.mp4",
+        logs=[],
+        sensitive_files=["salary.xlsx"],
+        vision_enabled=True,
+        max_vlm_frames=0,
+        analysis_windows=[AnalysisWindow(0, 2000, "unit", priority="strong")],
+        artifact_dir=tmp_path / "vision",
+    )
+
+    vision = result["statistics"]["vision"]
+    artifacts = vision["artifacts"]
+    assert result["observations"] == []
+    assert vision["vlm_enabled_for_run"] is False
+    assert vision["vlm_frames"] == 0
+    assert Path(artifacts["vision_precompute_file"]).exists()
 
 
 def test_event_correlator_links_derived_upload_to_original() -> None:
@@ -1366,11 +1255,11 @@ def test_vlm_parser_preserves_evidence_frames_and_relative_timestamp() -> None:
                     {
                         "evidence_frame_ids": ["frame_0_0", "frame_0_1"],
                         "timestamp_ms": 33000,
-                        "app_name": "豆包AI",
+                        "app_name": "璞嗗寘AI",
                         "behavior_category": "direct_leak",
                         "operation_type": "ai_chat_upload",
-                        "original_filename": "员工薪资明细表Q4.xlsx",
-                        "modified_filename": "屏幕截图 2026-06-03 003300.png",
+                        "original_filename": "员工薪资明细表R4.xlsx",
+                        "modified_filename": "灞忓箷鎴浘 2026-06-03 003300.png",
                         "sink_type": "ai_chat",
                         "description": "截图文件上传到 AI 网站",
                         "confidence": 0.91,
@@ -1381,14 +1270,14 @@ def test_vlm_parser_preserves_evidence_frames_and_relative_timestamp() -> None:
                         "app_name": "Excel",
                         "behavior_category": "normal",
                         "operation_type": "read",
-                        "original_filename": "员工薪资明细表Q4.xlsx",
+                        "original_filename": "员工薪资明细表R4.xlsx",
                         "description": "正常查看表格",
                     },
                 ]
             },
             ensure_ascii=False,
         ),
-        keywords=["员工薪资明细表Q4.xlsx"],
+        keywords=["员工薪资明细表R4.xlsx"],
     )
 
     assert len(result.events) == 1
@@ -1490,7 +1379,6 @@ def test_pipeline_reports_suspicious_detector_state_for_hidden_behavior(tmp_path
         sensitive_files=[original],
         observations_file=observations,
         groundtruth_file=groundtruth,
-        neo4j_enabled=False,
     )
 
     verdict = json.loads(Path(report["detail_files"]["verdict_check"]).read_text(encoding="utf-8"))
@@ -1501,6 +1389,8 @@ def test_pipeline_reports_suspicious_detector_state_for_hidden_behavior(tmp_path
     assert verdict["expected_conclusion"] == "suspicious_behavior_detected"
     assert verdict["score_status"] == "scored"
     assert verdict["detector_correct"] is True
+
+
 
 
 def test_visual_observation_can_create_datalog_fact_without_file_path_log() -> None:
@@ -1595,46 +1485,10 @@ def test_vlm_observations_still_work_when_non_vlm_is_disabled() -> None:
     assert any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
 
 
-def test_event_correlator_joins_log_and_ocr_without_vlm() -> None:
-    sensitive = "C:/Users/alice/Documents/customer_salary.xlsx"
-    records = [
-        {
-            "timestamp": "2026-06-28T10:00:00.000",
-            "event_type": "file_selected",
-            "file_path": sensitive,
-            "process_info": {"process_name": "msedge.exe"},
-            "window_info": {"window_title": "ChatGPT upload"},
-        }
-    ]
-    observations = [
-        {
-            "observation_id": "ocr_0",
-            "start_ms": 0,
-            "end_ms": 0,
-            "app_name": "ChatGPT",
-            "operation_type": "external_sink_interaction",
-            "resource": sensitive,
-            "related_resources": [sensitive],
-            "description": "OCR facts: mentioned_files=C:/Users/alice/Documents/customer_salary.xlsx; sink_context=true. OCR text: ChatGPT 上传 customer_salary.xlsx",
-            "confidence": 0.96,
-            "source": "rapidocr_cuda",
-        }
-    ]
-
-    bundle = EventCorrelator().run({"log_events": records, "frame_segments": observations, "sensitive_files": [sensitive]})
-
-    assert bundle["upload_candidates"]
-    assert any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
-    assert any(
-        {"log:log_0", "frame:ocr_0"}.issubset(set(event["evidence_refs"]))
-        for event in bundle["correlated_events"]
-    )
-    assert bundle["correlated_events"][0]["app_name"] == "msedge.exe"
-    assert "ocr_mentions_sensitive_file" in bundle["correlated_events"][0]["join_reasons"]
 
 
 def test_ai_chat_sink_is_classified_without_vlm() -> None:
-    assert classify_sink("Cherry Studio 默认助手 gpt-3.5-turbo 上传") == "ai_chat"
+    assert classify_sink("Cherry Studio 榛樿鍔╂墜 gpt-3.5-turbo 涓婁紶") == "ai_chat"
 
 
 def test_lineage_uses_extra_source_and_output_paths() -> None:
@@ -1822,8 +1676,8 @@ def test_policy_terms_are_loaded_from_external_config(tmp_path: Path) -> None:
     policy_file.write_text(
         json.dumps(
             {
-                "sink_tokens": ["外发审批"],
-                "sink_classification": [{"type": "approval_portal", "tokens": ["外发审批"]}],
+                "sink_tokens": ["澶栧彂瀹℃壒"],
+                "sink_classification": [{"type": "approval_portal", "tokens": ["澶栧彂瀹℃壒"]}],
             },
             ensure_ascii=False,
         ),
@@ -1832,79 +1686,23 @@ def test_policy_terms_are_loaded_from_external_config(tmp_path: Path) -> None:
 
     policy = load_policy_config(policy_file)
 
-    assert contains_any("正在提交外发审批", policy.sink_tokens)
-    assert policy.sink_classification == (("approval_portal", ("外发审批",)),)
+    assert contains_any("姝ｅ湪鎻愪氦澶栧彂瀹℃壒", policy.sink_tokens)
+    assert policy.sink_classification == (("approval_portal", ("澶栧彂瀹℃壒",)),)
 
 
-def test_vlm_frame_selection_uses_policy_terms() -> None:
-    frame = KeyFrame("frame_1", 1000, "frame.jpg", 0.9, "visual_change")
-    ocr = OcrResult(frame=frame, text="正在上传工资表到网盘", confidence=0.99, provider="unit")
-
-    selected = choose_vlm_frames([ocr], min_confidence=0.70, max_frames=4)
-
-    assert selected and selected[0].frame.frame_id == "frame_1"
 
 
-def test_vlm_frame_selection_requires_real_ocr_before_low_confidence_fallback() -> None:
-    frame = KeyFrame("frame_1", 1000, "frame.jpg", 0.9, "visual_change")
-    no_ocr = OcrResult(frame=frame, text="", confidence=0.0, provider="none")
-    weak_ocr = OcrResult(frame=frame, text="模糊文字", confidence=0.2, provider="tesseract")
-
-    assert choose_vlm_frames([no_ocr], min_confidence=0.70, max_frames=4) == []
-    assert choose_vlm_frames([weak_ocr], min_confidence=0.70, max_frames=4)
 
 
-def test_vlm_frame_selection_ocr_all_sends_normal_ocr_frames() -> None:
-    frame = KeyFrame("normal", 1000, "frame.jpg", 0.9, "medium:visual_change", window_id="window_0")
-    ocr = OcrResult(frame=frame, text="Excel 正常查看普通文本", confidence=0.99, provider="rapidocr_cuda")
-
-    assert choose_vlm_frames([ocr], min_confidence=0.70, max_frames=4) == []
-
-    selected = choose_vlm_frames([ocr], min_confidence=0.70, max_frames=4, strategy="ocr_all")
-
-    assert selected and selected[0].selection_reason == "ocr_all_to_vlm"
 
 
-def test_vlm_frame_selection_negative_budget_sends_all_candidates() -> None:
-    frames = [
-        OcrResult(
-            KeyFrame(f"frame_{index}", index * 1000, "frame.jpg", 0.9, "medium:visual_change", window_id="window_0"),
-            f"OCR text {index}",
-            0.99,
-            "rapidocr_cuda",
-        )
-        for index in range(5)
-    ]
-
-    selected = choose_vlm_frames(frames, min_confidence=0.70, max_frames=-1, strategy="ocr_all")
-
-    assert [item.frame.frame_id for item in selected] == [f"frame_{index}" for index in range(5)]
 
 
-def test_vlm_frame_selection_zero_budget_disables_vlm_frames() -> None:
-    frame = KeyFrame("frame_1", 1000, "frame.jpg", 0.9, "medium:visual_change", window_id="window_0")
-    ocr = OcrResult(frame=frame, text="upload salary table", confidence=0.99, provider="rapidocr_cuda")
-
-    assert choose_vlm_frames([ocr], min_confidence=0.70, max_frames=0, strategy="ocr_all") == []
 
 
-def test_vlm_frame_selection_can_include_empty_strong_anchor() -> None:
-    frame = KeyFrame("frame_1", 1000, "frame.jpg", 0.9, "strong:anchor", window_id="window_0")
-    no_ocr = OcrResult(frame=frame, text="", confidence=0.0, provider="none")
-
-    selected = choose_vlm_frames(
-        [no_ocr],
-        min_confidence=0.70,
-        max_frames=4,
-        include_empty_ocr_strong_frames=True,
-        max_frames_per_window=1,
-    )
-
-    assert selected and selected[0].frame.frame_id == "frame_1"
-    assert selected[0].selection_reason == "empty_ocr_strong_anchor"
 
 
-def test_direct_keyframe_vlm_selection_does_not_need_ocr() -> None:
+def test_direct_keyframe_vlm_selection_uses_visual_frames() -> None:
     frames = [
         KeyFrame("medium", 1_000, "medium.jpg", 0.5, "medium:visual_change", window_id="window_0"),
         KeyFrame("strong", 2_000, "strong.jpg", 0.2, "strong:anchor", window_id="window_0"),
@@ -1915,7 +1713,7 @@ def test_direct_keyframe_vlm_selection_does_not_need_ocr() -> None:
 
     assert [item.frame.frame_id for item in selected] == ["strong", "weak"]
     assert all(item.selection_reason == "direct_keyframe" for item in selected)
-    assert all(item.ocr_text == "" for item in selected)
+    assert all(item.visual_note == "" for item in selected)
 
 
 def test_direct_keyframe_vlm_selection_spreads_dense_window_anchors() -> None:
@@ -1954,15 +1752,14 @@ def test_direct_keyframe_negative_budget_sends_all_keyframes() -> None:
     assert [item.frame.timestamp_ms for item in selected] == [30_771, 32_192, 32_727, 34_280, 34_715, 36_795]
 
 
-def test_vlm_grid_builder_keeps_source_frame_mapping(tmp_path: Path) -> None:
+def test_vlm_grid_builder_keeps_direct_keyframe_mapping(tmp_path: Path) -> None:
     Image = pytest.importorskip("PIL.Image")
-    frames = []
+    keyframes = []
     for index, color in enumerate(((255, 0, 0), (0, 255, 0), (0, 0, 255))):
         image_path = tmp_path / f"frame_{index}.jpg"
         Image.new("RGB", (120, 80), color).save(image_path)
-        keyframe = KeyFrame(f"frame_{index}", index * 1000, str(image_path), 0.9, "strong:anchor", window_id="window_0")
-        frames.append(OcrResult(keyframe, f"OCR text {index}", 0.95, "unit"))
-    selected = choose_vlm_frames(frames, min_confidence=0.70, max_frames=4, strategy="ocr_all")
+        keyframes.append(KeyFrame(f"frame_{index}", index * 1000, str(image_path), 0.9, "strong:anchor", window_id="window_0"))
+    selected = choose_keyframes_for_vlm(keyframes, max_frames=-1)
 
     grids = build_vlm_frame_grids(selected, grid_size=2, output_dir=tmp_path / "grid")
 
@@ -1973,20 +1770,8 @@ def test_vlm_grid_builder_keeps_source_frame_mapping(tmp_path: Path) -> None:
     assert [item["cell_id"] for item in grids[0].source_frames] == ["A1", "A2", "B1"]
 
 
-def test_vlm_grid_builder_uses_screen_aspect_ratio_without_empty_row(tmp_path: Path) -> None:
-    Image = pytest.importorskip("PIL.Image")
-    frames = []
-    for index in range(2):
-        image_path = tmp_path / f"wide_{index}.jpg"
-        Image.new("RGB", (1600, 900), (index * 50, 120, 180)).save(image_path)
-        keyframe = KeyFrame(f"wide_{index}", index * 1000, str(image_path), 0.9, "strong:anchor", window_id="window_0")
-        frames.append(OcrResult(keyframe, f"OCR text {index}", 0.95, "unit"))
-    selected = choose_vlm_frames(frames, min_confidence=0.70, max_frames=4, strategy="ocr_all")
 
-    grids = build_vlm_frame_grids(selected, grid_size=2, output_dir=tmp_path / "grid")
-    image = Image.open(grids[0].frame.image_path)
 
-    assert image.size == (1440, 437)
 
 
 def test_vlm_input_images_are_resized_without_touching_raw_frame(tmp_path: Path) -> None:
@@ -2006,10 +1791,10 @@ def test_vlm_input_images_are_resized_without_touching_raw_frame(tmp_path: Path)
 def test_vlm_workers_split_frames_into_contiguous_batches() -> None:
     frames = list(range(5))
 
-    batches = _vlm_frame_batches(frames, workers=3)
+    batches = vlm_frame_batches(frames, workers=3)
 
     assert batches == [[0, 1], [2, 3], [4]]
-    assert _vlm_frame_batches(frames, workers=1) == [frames]
+    assert vlm_frame_batches(frames, workers=1) == [frames]
 
 
 def test_vlm_dispatch_uses_single_active_key_without_changing_parallelism() -> None:
@@ -2020,15 +1805,15 @@ def test_vlm_dispatch_uses_single_active_key_without_changing_parallelism() -> N
         vlm_fast_dispatch=True,
     )
 
-    clients = _build_vlm_clients(config)
+    clients = build_vlm_clients(config)
 
     assert [client.config.vlm_api_key for client in clients] == ["primary"]
-    assert _effective_vlm_parallelism(config, key_count=len(clients)) == 3
-    assert _effective_vlm_parallelism(VisionConfig(vlm_workers=3)) == 3
+    assert effective_vlm_parallelism(config) == 3
+    assert effective_vlm_parallelism(VisionConfig(vlm_workers=3)) == 3
 
 
 def test_vlm_key_pool_can_supply_the_only_configured_key() -> None:
-    clients = _build_vlm_clients(VisionConfig(vlm_api_keys=("secondary",), vlm_fast_dispatch=True))
+    clients = build_vlm_clients(VisionConfig(vlm_api_keys=("secondary",), vlm_fast_dispatch=True))
 
     assert [client.config.vlm_api_key for client in clients] == ["secondary"]
 
@@ -2041,10 +1826,10 @@ def test_vlm_client_pool_uses_one_configured_plan_key() -> None:
         vlm_fast_dispatch=True,
     )
 
-    clients = _build_vlm_clients(config)
+    clients = build_vlm_clients(config)
 
     assert [client.config.vlm_api_key for client in clients] == ["sk-sp-coding-plan"]
-    assert _effective_vlm_parallelism(config, key_count=len(clients)) == 10
+    assert effective_vlm_parallelism(config) == 10
 
 
 def test_vlm_endpoint_limiter_is_shared_across_concurrent_cases() -> None:
@@ -2054,8 +1839,8 @@ def test_vlm_endpoint_limiter_is_shared_across_concurrent_cases() -> None:
         vlm_fast_dispatch=True,
         vlm_workers=10,
     )
-    first_case = _build_vlm_clients(config)
-    second_case = _build_vlm_clients(config)
+    first_case = build_vlm_clients(config)
+    second_case = build_vlm_clients(config)
 
     first_locks = _shared_vlm_endpoint_locks(first_case, workers_per_key=config.vlm_workers)
     second_locks = _shared_vlm_endpoint_locks(second_case, workers_per_key=config.vlm_workers)
@@ -2081,7 +1866,7 @@ class _RetryClient:
 
 
 def test_vlm_batch_retries_another_key_when_the_assigned_key_fails() -> None:
-    results = _run_vlm_batches(
+    results = run_vlm_batches(
         [_RetryClient("invalid", fail=True), _RetryClient("valid")],  # type: ignore[arg-type]
         [[object()], [object()]],
         sensitive_files=[],
@@ -2100,7 +1885,7 @@ def test_vlm_batches_reuse_one_process_queue_across_cases() -> None:
 
     first_dispatcher = _shared_vlm_dispatcher(first_case, workers_per_key=1)  # type: ignore[arg-type]
     second_dispatcher = _shared_vlm_dispatcher(second_case, workers_per_key=1)  # type: ignore[arg-type]
-    result = _run_vlm_batches(
+    result = run_vlm_batches(
         second_case,  # type: ignore[arg-type]
         [[object()], [object()]],
         sensitive_files=[],
@@ -2121,14 +1906,14 @@ def test_vlm_worker_artifacts_combine_real_metrics_and_usage() -> None:
         {"request_metrics": {"prompt_chars": 20, "image_count": 1, "image_pixels": 50, "image_megapixels": 0.05}},
     ]
 
-    metrics = _combine_vlm_request_metrics(summaries)
+    metrics = combine_vlm_request_metrics(summaries)
     usage = _combine_vlm_usage(
         [
             {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120},
             {"prompt_tokens": 80, "completion_tokens": 10, "total_tokens": 90},
         ]
     )
-    request_payload = _vlm_request_artifact_payload(
+    request_payload = vlm_request_artifact_payload(
         summaries,
         workers=4,
         workers_per_key=2,
@@ -2154,23 +1939,6 @@ def test_vlm_worker_artifacts_combine_real_metrics_and_usage() -> None:
     }
 
 
-def test_vlm_frame_selection_prioritizes_strong_late_sink_frame() -> None:
-    early = OcrResult(
-        frame=KeyFrame("early", 1_000, "early.jpg", 0.9, "medium:visual_change"),
-        text="工资 表格 桌面",
-        confidence=0.95,
-        provider="rapidocr_cuda",
-    )
-    late = OcrResult(
-        frame=KeyFrame("late", 60_000, "late.jpg", 0.9, "strong:visual_change"),
-        text="豆包 上传 员工薪资",
-        confidence=0.95,
-        provider="rapidocr_cuda",
-    )
-
-    selected = choose_vlm_frames([early, late], min_confidence=0.70, max_frames=1)
-
-    assert selected[0].frame.frame_id == "late"
 
 
 def test_frontend_app_recognition_generalizes_to_unseen_apps() -> None:
@@ -2208,7 +1976,7 @@ def test_groundtruth_verdict_counts_explicit_external_and_screen_share_phrases(t
         json.dumps(
             {
                 "operations": [
-                    {"operation": "敏感操作-邮箱外发", "sensitive_file_path": "C:/secret.pdf"},
+                    {"operation": "直接外发-邮件外发", "sensitive_file_path": "C:/secret.pdf"},
                     {"operation": "潜在隐藏行为-复制内容外发", "sensitive_file_path": "C:/secret.docx"},
                     {"operation": "潜在隐藏行为-Lark会议屏幕共享展示敏感文件", "sensitive_file_path": "C:/secret.xlsx"},
                     {"operation": "潜在隐藏行为-文件重命名", "sensitive_file_path": "C:/secret_rename.docx"},
@@ -2223,7 +1991,7 @@ def test_groundtruth_verdict_counts_explicit_external_and_screen_share_phrases(t
 
     assert verdict.conclusion == "data_leak_risk_detected"
     assert [item.operation for item in verdict.leak_operations] == [
-        "敏感操作-邮箱外发",
+        "直接外发-邮件外发",
         "潜在隐藏行为-复制内容外发",
         "潜在隐藏行为-Lark会议屏幕共享展示敏感文件",
     ]
@@ -2276,8 +2044,8 @@ def test_groundtruth_verdict_does_not_treat_monitor_name_as_leak(tmp_path: Path)
 
 def test_sensitive_source_extraction_ignores_derived_groundtruth_paths(tmp_path: Path) -> None:
     groundtruth = tmp_path / "groundtruth.json"
-    source = "C:/Users/admin/Desktop/Sensitive/员工薪资明细表Q4.xlsx"
-    screenshot = "C:/Users/王佳瑶/Pictures/Screenshots/屏幕截图 2026-06-03 003300.png"
+    source = "C:/Users/admin/Desktop/Sensitive/员工薪资明细表R4.xlsx"
+    screenshot = "C:/Users/鐜嬩匠鐟?Pictures/Screenshots/灞忓箷鎴浘 2026-06-03 003300.png"
     groundtruth.write_text(
         json.dumps(
             {
@@ -2285,7 +2053,7 @@ def test_sensitive_source_extraction_ignores_derived_groundtruth_paths(tmp_path:
                     {
                         "operation_time": "2026-06-02 23:48:39",
                         "sensitive_file_path": source,
-                        "operation": "正常操作-打开查看",
+                        "operation": "姝ｅ父鎿嶄綔-打开鏌ョ湅",
                     },
                     {
                         "operation_time": "2026-06-03 00:33:00",
@@ -2371,13 +2139,13 @@ def test_pipeline_conclusion_keeps_detector_result_when_groundtruth_available(tm
         encoding="utf-8",
     )
 
-    report = run_pipeline(log_file=log_file, groundtruth_file=groundtruth, neo4j_enabled=False)
+    report = run_pipeline(log_file=log_file, groundtruth_file=groundtruth)
 
     assert report["conclusion"] == "no_confirmed_data_leak"
     assert report["verdict"]["source"] == "reasoner"
     assert report["verdict"]["groundtruth_conclusion"] == "data_leak_risk_detected"
     assert report["leak_reasoner"]["detector_conclusion"] == "no_confirmed_data_leak"
-    assert report["detection_core"]["method"] == "non_uniform_keyframes_ocr_vlm_datalog"
+    assert report["detection_core"]["method"] == "non_uniform_keyframes_vlm_datalog"
     assert report["detection_core"]["evaluation"]["groundtruth_is_evaluation_only"] is True
 
 
@@ -2413,7 +2181,6 @@ def test_pipeline_copies_groundtruth_before_frame_analysis(tmp_path: Path, monke
         output_dir=tmp_path / "out",
         groundtruth_file=groundtruth,
         vision_enabled=True,
-        neo4j_enabled=False,
     )
 
     assert Path(report["detail_files"]["groundtruth"]).read_text(encoding="utf-8") == groundtruth_text
@@ -2435,7 +2202,6 @@ def test_pipeline_writes_verdict_check_into_detail_dir(tmp_path: Path) -> None:
         log_file=log_file,
         output_dir=tmp_path / "out",
         groundtruth_file=groundtruth,
-        neo4j_enabled=False,
     )
 
     verdict_file = Path(report["detail_files"]["verdict_check"])
@@ -2467,7 +2233,6 @@ def test_pipeline_verdict_check_scores_suspicious_groundtruth_as_detector_state(
         log_file=log_file,
         output_dir=tmp_path / "out",
         groundtruth_file=groundtruth,
-        neo4j_enabled=False,
     )
 
     verdict = json.loads(Path(report["detail_files"]["verdict_check"]).read_text(encoding="utf-8"))
@@ -2498,7 +2263,6 @@ def test_pipeline_writes_report_for_inline_leak(tmp_path: Path) -> None:
         log_file=log_file,
         output_dir=tmp_path / "out",
         sensitive_files=["C:/Users/alice/Documents/customer_salary.xlsx"],
-        neo4j_enabled=False,
     )
 
     assert report["summary"]["leak_paths"] == 1
@@ -2512,39 +2276,7 @@ def test_pipeline_writes_report_for_inline_leak(tmp_path: Path) -> None:
     assert event_details_payload["raw_log_events_count"] == len(_records())
     assert "raw_log_events" not in event_details_payload
     assert report["conclusion"] == "data_leak_risk_detected"
-    assert report["graph"]["status"] == "skipped"
+    assert report["graph"]["status"] == "not_supported"
     assert report["log_miner"]["source"] == "in_memory"
     assert report["frame_analyzer"]["statistics"]["vision"]["log_mining"]["source"] == "in_memory"
 
-
-def test_neo4j_writer_generates_graph_queries(tmp_path: Path) -> None:
-    log_file = tmp_path / "sample.json"
-    log_file.write_text(json.dumps(_records(), ensure_ascii=False), encoding="utf-8")
-    report = run_pipeline(
-        log_file=log_file,
-        sensitive_files=["C:/Users/alice/Documents/customer_salary.xlsx"],
-        neo4j_enabled=False,
-    )
-    tx = _FakeTransaction()
-
-    Neo4jGraphStore._write_report_tx(tx, report, clear_session=False)
-
-    cypher = "\n".join(query for query, _ in tx.calls)
-    assert "DLDReport" in cypher
-    assert "DLDLogEvent" in cypher
-    assert "DLDFrameObservation" in cypher
-    assert "DLDCorrelatedEvent" in cypher
-    assert "DLDUploadCandidate" in cypher
-    assert "DLDDatalogFact" in cypher
-    assert "DLDLeakPath" in cypher
-    assert "DERIVED_FROM" in cypher
-
-
-class _FakeTransaction:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, dict]] = []
-
-    def run(self, query: str, parameters: dict | None = None, **kwargs) -> None:
-        merged = dict(parameters or {})
-        merged.update(kwargs)
-        self.calls.append((query, merged))

@@ -1,4 +1,4 @@
-"""Runtime configuration for OCR/VLM-assisted frame analysis."""
+﻿"""Runtime configuration for direct-keyframe VLM frame analysis."""
 
 from __future__ import annotations
 
@@ -20,7 +20,6 @@ class VlmEndpoint:
 @dataclass(frozen=True)
 class VisionConfig:
     enabled: bool = False
-    mode: str = "hybrid"
     frame_window_before_ms: int = 30_000
     frame_window_after_ms: int = 120_000
     case_segment_ms: int = 300_000
@@ -38,7 +37,6 @@ class VisionConfig:
     frame_probe_multiplier: int = 6
     frame_sequential_gap_ms: int = 5_000
     frame_anchor_duplicate_gap_ms: int = 500
-    ocr_text_similarity_threshold: float = 0.92
     max_keyframes_per_window: int = 18
     max_keyframes_per_strong_window: int = 8
     max_keyframes_per_medium_window: int = 2
@@ -46,18 +44,6 @@ class VisionConfig:
     include_weak_windows: bool = False
     include_unanchored_medium_windows: bool = False
     max_vlm_frames: int = -1
-    ocr_provider: str = "none"
-    ocr_min_confidence: float = 0.70
-    ocr_max_image_side: int = 1_280
-    ocr_workers: int = 1
-    ocr_batch_size: int = 8
-    ocr_use_cuda: bool = False
-    ocr_roi_enabled: bool = False
-    ocr_roi_window_first: bool = True
-    ocr_roi_min_text_density: float = 0.002
-    ocr_roi_max_regions: int = 3
-    ocr_roi_padding: int = 24
-    rapidocr_use_cuda: bool = False
     vlm_provider: str = "openai_compatible"
     vlm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     vlm_chat_url: str = ""
@@ -73,21 +59,16 @@ class VisionConfig:
     vlm_token_api_key: str = ""
     vlm_timeout_seconds: int = 60
     vlm_dry_run: bool = False
-    vlm_frame_strategy: str = "ocr_triage"
     vlm_grid_size: int = 1
     vlm_workers: int = 10
     vlm_fast_dispatch: bool = False
-    vlm_include_empty_ocr_strong_frames: bool = True
-    vlm_max_frames_per_window: int = 0
     vlm_max_image_side: int = 1_280
 
     @classmethod
     def from_env(cls) -> "VisionConfig":
         _load_dotenv()
-        ocr_use_cuda = _env_bool("DLD_OCR_USE_CUDA", _env_bool("DLD_RAPIDOCR_USE_CUDA", False))
         return cls(
             enabled=_env_bool("DLD_VISION_ENABLED", False),
-            mode=os.getenv("DLD_VISION_MODE", "hybrid"),
             frame_window_before_ms=_env_int("DLD_FRAME_WINDOW_BEFORE_MS", 30_000),
             frame_window_after_ms=_env_int("DLD_FRAME_WINDOW_AFTER_MS", 120_000),
             case_segment_ms=max(1, _env_int("DLD_CASE_SEGMENT_MS", 300_000)),
@@ -105,7 +86,6 @@ class VisionConfig:
             frame_probe_multiplier=max(1, _env_int("DLD_FRAME_PROBE_MULTIPLIER", 6)),
             frame_sequential_gap_ms=max(0, _env_int("DLD_FRAME_SEQUENTIAL_GAP_MS", 5_000)),
             frame_anchor_duplicate_gap_ms=max(0, _env_int("DLD_FRAME_ANCHOR_DUPLICATE_GAP_MS", 500)),
-            ocr_text_similarity_threshold=_env_float("DLD_OCR_TEXT_SIMILARITY_THRESHOLD", 0.92),
             max_keyframes_per_window=_env_int("DLD_MAX_KEYFRAMES_PER_WINDOW", 18),
             max_keyframes_per_strong_window=_env_int("DLD_MAX_KEYFRAMES_PER_STRONG_WINDOW", 8),
             max_keyframes_per_medium_window=_env_int("DLD_MAX_KEYFRAMES_PER_MEDIUM_WINDOW", 2),
@@ -113,18 +93,6 @@ class VisionConfig:
             include_weak_windows=_env_bool("DLD_INCLUDE_WEAK_WINDOWS", False),
             include_unanchored_medium_windows=_env_bool("DLD_INCLUDE_UNANCHORED_MEDIUM_WINDOWS", False),
             max_vlm_frames=_env_int("DLD_MAX_VLM_FRAMES", -1),
-            ocr_provider=os.getenv("DLD_OCR_PROVIDER", "none"),
-            ocr_min_confidence=_env_float("DLD_OCR_MIN_CONFIDENCE", 0.70),
-            ocr_max_image_side=_env_int("DLD_OCR_MAX_IMAGE_SIDE", 1_280),
-            ocr_workers=max(1, _env_int("DLD_OCR_WORKERS", 1)),
-            ocr_batch_size=max(1, _env_int("DLD_OCR_BATCH_SIZE", 8)),
-            ocr_use_cuda=ocr_use_cuda,
-            ocr_roi_enabled=_env_bool("DLD_OCR_ROI_ENABLED", False),
-            ocr_roi_window_first=_env_bool("DLD_OCR_ROI_WINDOW_FIRST", True),
-            ocr_roi_min_text_density=_env_float("DLD_OCR_ROI_MIN_TEXT_DENSITY", 0.002),
-            ocr_roi_max_regions=max(1, _env_int("DLD_OCR_ROI_MAX_REGIONS", 3)),
-            ocr_roi_padding=max(0, _env_int("DLD_OCR_ROI_PADDING", 24)),
-            rapidocr_use_cuda=ocr_use_cuda,
             vlm_provider=os.getenv("DLD_VLM_PROVIDER", "openai_compatible"),
             vlm_base_url=os.getenv("DLD_VLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
             vlm_chat_url=os.getenv("DLD_VLM_CHAT_URL", ""),
@@ -140,12 +108,9 @@ class VisionConfig:
             vlm_token_api_key=os.getenv("DLD_VLM_TOKEN_API_KEY", ""),
             vlm_timeout_seconds=_env_int("DLD_VLM_TIMEOUT_SECONDS", 60),
             vlm_dry_run=_env_bool("DLD_VLM_DRY_RUN", False),
-            vlm_frame_strategy=os.getenv("DLD_VLM_FRAME_STRATEGY", "ocr_triage"),
             vlm_grid_size=max(1, _env_int("DLD_VLM_GRID_SIZE", 1)),
             vlm_workers=max(1, _env_int("DLD_VLM_WORKERS", 10)),
             vlm_fast_dispatch=_env_bool("DLD_VLM_FAST_DISPATCH", False),
-            vlm_include_empty_ocr_strong_frames=_env_bool("DLD_VLM_INCLUDE_EMPTY_OCR_STRONG_FRAMES", True),
-            vlm_max_frames_per_window=max(0, _env_int("DLD_VLM_MAX_FRAMES_PER_WINDOW", 0)),
             vlm_max_image_side=max(0, _env_int("DLD_VLM_MAX_IMAGE_SIDE", 1_280)),
         )
 
@@ -153,12 +118,10 @@ class VisionConfig:
         self,
         *,
         enabled: bool | None = None,
-        mode: str | None = None,
         max_vlm_frames: int | None = None,
     ) -> "VisionConfig":
         return VisionConfig(
             enabled=self.enabled if enabled is None else enabled,
-            mode=self.mode if mode is None else mode,
             frame_window_before_ms=self.frame_window_before_ms,
             frame_window_after_ms=self.frame_window_after_ms,
             case_segment_ms=self.case_segment_ms,
@@ -176,7 +139,6 @@ class VisionConfig:
             frame_probe_multiplier=self.frame_probe_multiplier,
             frame_sequential_gap_ms=self.frame_sequential_gap_ms,
             frame_anchor_duplicate_gap_ms=self.frame_anchor_duplicate_gap_ms,
-            ocr_text_similarity_threshold=self.ocr_text_similarity_threshold,
             max_keyframes_per_window=self.max_keyframes_per_window,
             max_keyframes_per_strong_window=self.max_keyframes_per_strong_window,
             max_keyframes_per_medium_window=self.max_keyframes_per_medium_window,
@@ -184,18 +146,6 @@ class VisionConfig:
             include_weak_windows=self.include_weak_windows,
             include_unanchored_medium_windows=self.include_unanchored_medium_windows,
             max_vlm_frames=self.max_vlm_frames if max_vlm_frames is None else max_vlm_frames,
-            ocr_provider=self.ocr_provider,
-            ocr_min_confidence=self.ocr_min_confidence,
-            ocr_max_image_side=self.ocr_max_image_side,
-            ocr_workers=self.ocr_workers,
-            ocr_batch_size=self.ocr_batch_size,
-            ocr_use_cuda=self.ocr_use_cuda,
-            ocr_roi_enabled=self.ocr_roi_enabled,
-            ocr_roi_window_first=self.ocr_roi_window_first,
-            ocr_roi_min_text_density=self.ocr_roi_min_text_density,
-            ocr_roi_max_regions=self.ocr_roi_max_regions,
-            ocr_roi_padding=self.ocr_roi_padding,
-            rapidocr_use_cuda=self.ocr_use_cuda,
             vlm_provider=self.vlm_provider,
             vlm_base_url=self.vlm_base_url,
             vlm_chat_url=self.vlm_chat_url,
@@ -211,12 +161,9 @@ class VisionConfig:
             vlm_token_api_key=self.vlm_token_api_key,
             vlm_timeout_seconds=self.vlm_timeout_seconds,
             vlm_dry_run=self.vlm_dry_run,
-            vlm_frame_strategy=self.vlm_frame_strategy,
             vlm_grid_size=self.vlm_grid_size,
             vlm_workers=self.vlm_workers,
             vlm_fast_dispatch=self.vlm_fast_dispatch,
-            vlm_include_empty_ocr_strong_frames=self.vlm_include_empty_ocr_strong_frames,
-            vlm_max_frames_per_window=self.vlm_max_frames_per_window,
             vlm_max_image_side=self.vlm_max_image_side,
         )
 
@@ -278,3 +225,4 @@ def _load_dotenv() -> None:
         return
     root = Path(__file__).resolve().parents[3]
     load_dotenv(root / ".env", override=False)
+

@@ -1,8 +1,4 @@
-"""上传和外部汇聚点候选项提取。
-
-已关联的事件仍然只是通用证据。本模块会把它们收窄为可能的外发泄露动作，并附上汇聚点类型、
-风险等级和置信度，供推理器和最终报告使用。
-"""
+﻿"""Extract upload and external-sink candidates from correlated events."""
 
 from __future__ import annotations
 
@@ -19,7 +15,7 @@ def build_upload_candidates(
     *,
     default_confidence: float,
 ) -> list[UploadCandidate]:
-    """从已关联的敏感事件中创建外部汇聚点候选项。"""
+    """Build external-sink candidates from correlated sensitive events."""
 
     uploads: list[UploadCandidate] = []
     for event in correlated:
@@ -77,7 +73,7 @@ def _is_explicit_upload_event(event: CorrelatedEvent, text: str) -> bool:
     reasons = set(event.join_reasons)
     if "removable_media_sink" in reasons:
         return True
-    if {"explicit_sink_log", "ocr_sink_context", "visual_only"} & reasons:
+    if {"explicit_sink_log", "visual_sink_context", "visual_only"} & reasons:
         return True
     return any(ref.startswith("frame:vlm") for ref in event.evidence_refs) and event.operation_type == "external_sink_interaction"
 
@@ -147,3 +143,5 @@ def _is_noise_or_placeholder_path(value: str) -> bool:
     if suffix in {".tmp", ".temp", ".log", ".xlog", ".db", ".db-journal", ".db-wal", ".db-shm"}:
         return True
     return False
+
+

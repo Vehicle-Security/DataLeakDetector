@@ -1,4 +1,4 @@
-"""Command-line entry point for the canonical DataLeakDetector pipeline."""
+﻿"""Command-line entry point for the canonical DataLeakDetector pipeline."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from data_leak_detector import run_data_case, run_pipeline
 from data_leak_detector.datasets import data_case_id, discover_data_case_directories
-from data_leak_detector.frame_analyzer.analyzer import vlm_dispatcher_snapshots
+from data_leak_detector.frame_analyzer.vlm_dispatch import vlm_dispatcher_snapshots
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,21 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--case-root", default="", help="Recursively run every case directory below this root with shared VLM plan quotas.")
     parser.add_argument("--case-workers", type=int, default=1, help="Concurrent cases for --case-root; VLM plan limits remain global.")
     parser.add_argument("--release", action="store_true", help="For --case-root, write one consolidated release report instead of per-case debug artifacts.")
-    parser.add_argument("--release-precompute-only", action="store_true", help="Build or reuse Release precompute caches, then exit before VLM variants.")
-    parser.add_argument(
-        "--release-vlm-strategies",
-        nargs="+",
-        choices=["direct_keyframes", "ocr_all", "ocr_triage"],
-        default=[],
-        help="Release matrix VLM frame strategies; PowerShell arrays can be expanded directly.",
-    )
-    parser.add_argument(
-        "--release-vlm-grids",
-        nargs="+",
-        type=int,
-        default=[],
-        help="Release matrix VLM grid sizes; PowerShell arrays can be expanded directly.",
-    )
+    parser.add_argument("--release-precompute-only", action="store_true", help="Build or reuse Release precompute caches, then exit before VLM.")
     parser.add_argument(
         "--release-precompute-neo4j-log-miner",
         action="store_true",
@@ -50,23 +36,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", "-o", default="", help="Optional directory for the JSON report.")
     parser.add_argument("--sensitive-file", action="append", default=[], help="Sensitive file path. Can be repeated.")
     parser.add_argument("--observations", default="", help="Optional precomputed frame observation JSON.")
-    parser.add_argument("--vision", action="store_true", help="Enable OCR/VLM-assisted frame analysis.")
-    parser.add_argument("--vision-mode", choices=["hybrid", "ocr", "vlm"], default="", help="Frame analysis mode.")
+    parser.add_argument("--vision", action="store_true", help="Enable direct-keyframe VLM frame analysis.")
     parser.add_argument("--max-vlm-frames", type=int, default=None, help="Maximum keyframes sent to VLM; 0 disables VLM frames, negative means no cap.")
     parser.add_argument("--vlm-dry-run", action="store_true", help="Write VLM request artifacts without calling the model API.")
     parser.add_argument("--vlm-grid-size", type=int, default=0, help="Pack selected VLM frames into NxN grid images before calling the model.")
     parser.add_argument("--vlm-workers", type=int, default=0, help="VLM workers; in fast dispatch mode this is the per-Key concurrency.")
-    parser.add_argument("--vlm-fast-dispatch", action="store_true", help="Use every configured VLM API Key concurrently without changing frame/OCR/grid strategy.")
+    parser.add_argument("--vlm-fast-dispatch", action="store_true", help="Use every configured VLM API Key concurrently.")
     parser.add_argument("--vlm-max-image-side", type=int, default=-1, help="Resize VLM input images to this max side; 0 keeps originals.")
-    parser.add_argument(
-        "--vlm-frame-strategy",
-        choices=["ocr_triage", "ocr_all", "direct_keyframes"],
-        default="",
-        help="How to choose frames for VLM: OCR triage, all OCR-kept frames, or direct keyframes without OCR.",
-    )
-    parser.add_argument("--no-non-vlm", action="store_true", help="Disable deterministic OCR/log evidence in correlation; useful for VLM-only evaluation.")
-    parser.add_argument("--neo4j", action="store_true", help="Write the report graph to Neo4j for this run.")
-    parser.add_argument("--neo4j-strict", action="store_true", help="Fail if Neo4j writing fails.")
+    parser.add_argument("--no-non-vlm", action="store_true", help="Disable deterministic log evidence in correlation; useful for VLM-only evaluation.")
     parser.add_argument("--neo4j-log-miner", action="store_true", help="Use Neo4j to mine analysis windows before frame extraction.")
     parser.add_argument("--no-neo4j-log-miner", action="store_true", help="Use in-memory log mining even when the environment enables Neo4j.")
     parser.add_argument("--no-reuse-neo4j-import", action="store_true", help="Reimport logs even when the case fingerprint already exists in Neo4j.")
@@ -78,8 +55,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.vlm_dry_run:
         os.environ["DLD_VLM_DRY_RUN"] = "1"
-    if args.vlm_frame_strategy:
-        os.environ["DLD_VLM_FRAME_STRATEGY"] = args.vlm_frame_strategy
     if args.vlm_grid_size:
         os.environ["DLD_VLM_GRID_SIZE"] = str(max(1, args.vlm_grid_size))
     if args.vlm_workers:
@@ -93,26 +68,22 @@ def main(argv: list[str] | None = None) -> int:
         "output_dir": args.output_dir or None,
         "sensitive_files": args.sensitive_file,
         "observations_file": args.observations or None,
-        "neo4j_enabled": True if args.neo4j else None,
-        "neo4j_strict": True if args.neo4j_strict else None,
         "neo4j_log_miner": False if args.no_neo4j_log_miner else (True if args.neo4j_log_miner else None),
         "reuse_neo4j_import": False if args.no_reuse_neo4j_import else None,
         "vision_enabled": True if args.vision else None,
-        "vision_mode": args.vision_mode or None,
         "max_vlm_frames": args.max_vlm_frames,
         "non_vlm_enabled": False if args.no_non_vlm else None,
+        "vision_debug_artifacts": True,
         "inherit_ancestor_groundtruth": args.inherit_ancestor_groundtruth,
     }
+    if args.release:
+        common_args = _release_direct_defaults(common_args, args)
     if args.release and not args.case_root:
         parser.error("--release requires --case-root")
     if args.release_precompute_only and not args.release:
         parser.error("--release-precompute-only requires --release")
     if args.neo4j_log_miner and args.no_neo4j_log_miner:
         parser.error("--neo4j-log-miner and --no-neo4j-log-miner cannot be used together")
-    if (args.release_vlm_strategies or args.release_vlm_grids) and not args.release:
-        parser.error("--release-vlm-strategies and --release-vlm-grids require --release")
-    if any(grid < 1 for grid in args.release_vlm_grids):
-        parser.error("--release-vlm-grids values must be positive")
     if args.case and args.case_root:
         parser.error("--case and --case-root cannot be used together")
     if args.case_root:
@@ -127,14 +98,13 @@ def main(argv: list[str] | None = None) -> int:
                 neo4j_log_miner=True if args.release_precompute_neo4j_log_miner else None,
             )
             report = {"batch": {"mode": "release_precompute", "case_count": len(caches), "cache_root": str(output_root / "vision_precompute")}}
-        elif args.release and (args.release_vlm_strategies or args.release_vlm_grids):
-            report = _run_release_matrix(
+        elif args.release:
+            report = _run_release(
                 args.case_root,
                 common_args=common_args,
                 output_dir=args.output_dir or None,
                 workers=max(1, args.case_workers),
-                strategies=args.release_vlm_strategies or [os.getenv("DLD_VLM_FRAME_STRATEGY", "ocr_triage")],
-                grids=args.release_vlm_grids or [max(1, int(os.getenv("DLD_VLM_GRID_SIZE", "1")))],
+                grid_size=max(1, args.vlm_grid_size or int(os.getenv("DLD_VLM_GRID_SIZE", "2"))),
                 precompute_neo4j_log_miner=True if args.release_precompute_neo4j_log_miner else None,
             )
         else:
@@ -156,26 +126,23 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _release_direct_defaults(common_args: dict, args: argparse.Namespace) -> dict:
+    release_args = dict(common_args)
+    release_args["vision_enabled"] = True
+    release_args["max_vlm_frames"] = -1 if args.max_vlm_frames is None else args.max_vlm_frames
+    release_args["non_vlm_enabled"] = False
+    release_args["vision_debug_artifacts"] = False
+    release_args["inherit_ancestor_groundtruth"] = True
+    if not args.neo4j_log_miner:
+        release_args["neo4j_log_miner"] = False
+    return release_args
+
+
 def _build_cli_summary(report: dict) -> dict:
     """Keep command output readable; full evidence lives in report/detail files."""
 
     if "batch" in report:
-        batch = dict(report["batch"])
-        if batch.get("mode") == "release_matrix":
-            variants = list(batch.pop("variants", []))
-            batch["variants"] = [
-                {
-                    "vlm_frame_strategy": item.get("vlm_frame_strategy", ""),
-                    "vlm_grid_size": item.get("vlm_grid_size", 0),
-                    "summary": item.get("report", {}).get("summary", {}),
-                    "execution": {
-                        key: item.get("report", {}).get("batch", {}).get(key)
-                        for key in ("case_count", "completed_cases", "failed_cases", "timing_seconds")
-                    },
-                }
-                for item in variants
-            ]
-        return {"batch": batch}
+        return {"batch": dict(report["batch"])}
     return {
         "report_id": report.get("report_id", ""),
         "conclusion": report.get("conclusion", ""),
@@ -391,26 +358,22 @@ def _run_case_root(
     return {"batch": release_report["batch"], "release_report": release_report}
 
 
-def _run_release_matrix(
+def _run_release(
     case_root: str,
     *,
     common_args: dict,
     output_dir: str | None,
     workers: int,
-    strategies: list[str],
-    grids: list[int],
+    grid_size: int,
     precompute_neo4j_log_miner: bool | None = None,
 ) -> dict:
     root = Path(case_root)
     output_root = Path(output_dir) if output_dir else Path("artifacts") / f"{root.name}_release_{time.strftime('%Y%m%d_%H%M%S')}"
-    previous_strategy = os.environ.get("DLD_VLM_FRAME_STRATEGY")
     previous_grid = os.environ.get("DLD_VLM_GRID_SIZE")
-    variants: list[dict] = []
     started = time.perf_counter()
-    variant_items = [(strategy, grid) for strategy in dict.fromkeys(strategies) for grid in dict.fromkeys(grids)]
     output_root.mkdir(parents=True, exist_ok=True)
     progress_file = output_root / "release_progress.json"
-    comparison_file = output_root / "release_matrix_comparison.json"
+    comparison_file = output_root / "release_comparison.json"
     vision_precompute = _build_release_vision_precompute(
         case_root,
         common_args=common_args,
@@ -418,86 +381,54 @@ def _run_release_matrix(
         workers=workers,
         neo4j_log_miner=precompute_neo4j_log_miner,
     )
-    variant_dir = output_root / "release_variants"
-    _write_optional_json(
-        comparison_file,
-        _build_release_matrix_comparison(
-            root=root,
-            workers=workers,
-            variants=variants,
-            variant_count=len(variant_items),
-        ),
-    )
+    os.environ["DLD_VLM_GRID_SIZE"] = str(grid_size)
     try:
-        for variant_index, (strategy, grid) in enumerate(variant_items, start=1):
-            os.environ["DLD_VLM_FRAME_STRATEGY"] = strategy
-            os.environ["DLD_VLM_GRID_SIZE"] = str(grid)
-            print(
-                f"release variant={variant_index}/{len(variant_items)} "
-                f"strategy={strategy} grid={grid}",
-                flush=True,
-            )
-            result = _run_case_root(
-                case_root,
-                common_args=common_args,
-                output_dir=str(output_root),
-                workers=workers,
-                release=True,
-                write_release_report=False,
-                progress_file=progress_file,
-                progress_context={
-                    "mode": "release_matrix",
-                    "variant": {
-                        "index": variant_index,
-                        "count": len(variant_items),
-                        "vlm_frame_strategy": strategy,
-                        "vlm_grid_size": grid,
-                    },
-                    "completed_variants": len(variants),
-                },
-                case_arg_overrides={name: {"precomputed_baseline_file": path} for name, path in vision_precompute.items()},
-            )
-            variant_report_file = variant_dir / f"{strategy}_grid{grid}.json"
-            variant_report = result["release_report"]
-            variant_report["batch"]["report_file"] = str(variant_report_file)
-            _write_json_atomic(variant_report_file, variant_report)
-            variants.append(
-                {
-                    "vlm_frame_strategy": strategy,
-                    "vlm_grid_size": grid,
-                    "report_file": str(variant_report_file),
-                    "report": variant_report,
-                }
-            )
-            _write_optional_json(
-                comparison_file,
-                _build_release_matrix_comparison(
-                    root=root,
-                    workers=workers,
-                    variants=variants,
-                    variant_count=len(variant_items),
-                ),
-            )
+        print(f"release direct_keyframes grid={grid_size}", flush=True)
+        case_overrides = {
+            name: {
+                "precomputed_baseline_file": path,
+                "non_vlm_enabled": False,
+                "vision_debug_artifacts": False,
+            }
+            for name, path in vision_precompute.items()
+        }
+        result = _run_case_root(
+            case_root,
+            common_args=common_args,
+            output_dir=str(output_root),
+            workers=workers,
+            release=True,
+            write_release_report=True,
+            progress_file=progress_file,
+            progress_context={"mode": "release", "vlm_grid_size": grid_size},
+            case_arg_overrides=case_overrides,
+        )
     finally:
-        _restore_env("DLD_VLM_FRAME_STRATEGY", previous_strategy)
         _restore_env("DLD_VLM_GRID_SIZE", previous_grid)
 
-    output_root.mkdir(parents=True, exist_ok=True)
-    report_file = output_root / "release_matrix_report.json"
-    matrix = {
-        "mode": "release_matrix",
-        "report_file": str(report_file),
-        "comparison_file": str(comparison_file),
-        "variant_dir": str(variant_dir),
-        "case_root": str(root),
-        "case_workers": workers,
-        "variant_count": len(variants),
-        "timing_seconds": round(time.perf_counter() - started, 3),
-        "variants": variants,
+    release_report = result["release_report"]
+    release_report["batch"]["mode"] = "release"
+    release_report["batch"]["vlm_frame_source"] = "direct_keyframes"
+    release_report["batch"]["vlm_grid_size"] = grid_size
+    release_report["batch"]["timing_seconds"] = round(time.perf_counter() - started, 3)
+    report_file = output_root / "release_report.json"
+    release_report["batch"]["report_file"] = str(report_file)
+    report_file.write_text(json.dumps(release_report, ensure_ascii=False, indent=2), encoding="utf-8")
+    comparison = _build_release_comparison(root=root, workers=workers, release_report=release_report, grid_size=grid_size)
+    _write_optional_json(comparison_file, comparison)
+    return {
+        "batch": {
+            "mode": "release",
+            "report_file": str(report_file),
+            "comparison_file": str(comparison_file),
+            "case_root": str(root),
+            "case_workers": workers,
+            "vlm_frame_source": "direct_keyframes",
+            "vlm_grid_size": grid_size,
+            "timing_seconds": round(time.perf_counter() - started, 3),
+        },
+        "release_report": release_report,
     }
-    report_file.write_text(json.dumps(matrix, ensure_ascii=False, indent=2), encoding="utf-8")
-    return {"batch": matrix}
-
 
 def _build_release_vision_precompute(
     case_root: str,
@@ -545,15 +476,15 @@ def _build_release_vision_precompute(
         case_root_dir = cache_root / Path(case_id)
         try:
             existing = sorted(case_root_dir.rglob("pipeline_baseline.json")) if case_root_dir.exists() else []
-            if existing:
+            if existing and _precompute_baseline_matches_mode(existing[-1], "direct_keyframes_only"):
                 return case_id, str(existing[-1])
             args = dict(common_args)
             args.update(
                 {
                     "output_dir": str(case_root_dir),
                     "vision_enabled": True,
-                    "vision_mode": "ocr",
                     "max_vlm_frames": 0,
+                    "non_vlm_enabled": False,
                     "report_case_name": case.name,
                 }
             )
@@ -569,6 +500,7 @@ def _build_release_vision_precompute(
                 json.dumps(
                     {
                         "schema_version": 1,
+                        "precompute_mode": "direct_keyframes_only",
                         "vision_precompute_file": cache_file,
                         "records": report.get("event_correlator", {}).get("raw_log_events", []),
                         "log_observations": [
@@ -617,6 +549,14 @@ def _restore_env(name: str, previous: str | None) -> None:
         os.environ[name] = previous
 
 
+def _precompute_baseline_matches_mode(path: Path, mode: str) -> bool:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and payload.get("schema_version") == 1 and payload.get("precompute_mode") == mode
+
+
 def _write_json_atomic(path: Path, payload: dict, *, attempts: int = 3) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_file = path.with_suffix(".tmp")
@@ -639,84 +579,70 @@ def _write_optional_json(path: Path, payload: dict) -> None:
         print(f"optional report write warning: {path.name}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
 
 
-def _build_release_matrix_comparison(
+def _build_release_comparison(
     *,
     root: Path,
     workers: int,
-    variants: list[dict],
-    variant_count: int,
+    release_report: dict,
+    grid_size: int,
 ) -> dict:
-    variant_rows: list[dict] = []
+    batch = dict(release_report.get("batch", {}))
+    summary = dict(release_report.get("summary", {}))
+    cases = list(release_report.get("cases", []))
+    evaluations = [dict(case.get("evaluation", {})) for case in cases]
+    correct = sum(evaluation.get("detector_correct") is True for evaluation in evaluations)
+    incorrect = sum(evaluation.get("detector_correct") is False for evaluation in evaluations)
+    missing_groundtruth = sum(evaluation.get("unscored_reason") == "missing_groundtruth" for evaluation in evaluations)
+    unsupported_groundtruth = sum(
+        str(evaluation.get("unscored_reason") or "").startswith("unsupported_groundtruth:")
+        for evaluation in evaluations
+    )
+    scored = correct + incorrect
     case_rows: list[dict] = []
-    for item in variants:
-        report = item["report"]
-        batch = dict(report.get("batch", {}))
-        summary = dict(report.get("summary", {}))
-        cases = list(report.get("cases", []))
-        evaluations = [dict(case.get("evaluation", {})) for case in cases]
-        correct = sum(evaluation.get("detector_correct") is True for evaluation in evaluations)
-        incorrect = sum(evaluation.get("detector_correct") is False for evaluation in evaluations)
-        missing_groundtruth = sum(evaluation.get("unscored_reason") == "missing_groundtruth" for evaluation in evaluations)
-        unsupported_groundtruth = sum(
-            str(evaluation.get("unscored_reason") or "").startswith("unsupported_groundtruth:")
-            for evaluation in evaluations
-        )
-        scored = correct + incorrect
-        variant_rows.append(
+    for case in cases:
+        evaluation = dict(case.get("evaluation", {}))
+        case_rows.append(
             {
-                "vlm_frame_strategy": item["vlm_frame_strategy"],
-                "vlm_grid_size": item["vlm_grid_size"],
-                "report_file": item.get("report_file", ""),
-                "case_count": batch.get("case_count", 0),
-                "completed_cases": batch.get("completed_cases", 0),
-                "failed_cases": batch.get("failed_cases", 0),
-                "wall_seconds": batch.get("timing_seconds", 0),
-                "case_seconds": summary.get("case_seconds", 0),
-                "vlm_seconds": summary.get("vlm_seconds", 0),
-                "vlm_frames": summary.get("vlm_frames", 0),
-                "correct_cases": correct,
-                "incorrect_cases": incorrect,
-                "unscored_cases": len(cases) - scored,
-                "unscored_missing_groundtruth_cases": missing_groundtruth,
-                "unscored_unsupported_groundtruth_cases": unsupported_groundtruth,
-                "accuracy": round(correct / scored, 6) if scored else None,
+                "case": case.get("case", ""),
+                "case_id": case.get("case_id", case.get("case", "")),
+                "case_name": case.get("case_name", ""),
+                "case_relative_path": case.get("case_relative_path", ""),
+                "vlm_frame_source": "direct_keyframes",
+                "vlm_grid_size": grid_size,
+                "seconds": case.get("seconds", 0),
+                "detector_conclusion": evaluation.get("detector_conclusion", case.get("conclusion", "")),
+                "expected_conclusion": evaluation.get("expected_conclusion", ""),
+                "score_status": evaluation.get("score_status", ""),
+                "unscored_reason": evaluation.get("unscored_reason", ""),
+                "groundtruth_available": evaluation.get("groundtruth_available"),
+                "groundtruth_status": evaluation.get("groundtruth_status", ""),
+                "nearest_ancestor_groundtruth_file": evaluation.get("nearest_ancestor_groundtruth_file", ""),
+                "detector_correct": evaluation.get("detector_correct"),
+                "errors": case.get("errors", []),
             }
         )
-        for case in cases:
-            evaluation = dict(case.get("evaluation", {}))
-            case_rows.append(
-                {
-                    "case": case.get("case", ""),
-                    "case_id": case.get("case_id", case.get("case", "")),
-                    "case_name": case.get("case_name", ""),
-                    "case_relative_path": case.get("case_relative_path", ""),
-                    "vlm_frame_strategy": item["vlm_frame_strategy"],
-                    "vlm_grid_size": item["vlm_grid_size"],
-                    "seconds": case.get("seconds", 0),
-                    "detector_conclusion": evaluation.get("detector_conclusion", case.get("conclusion", "")),
-                    "expected_conclusion": evaluation.get("expected_conclusion", ""),
-                    "score_status": evaluation.get("score_status", ""),
-                    "unscored_reason": evaluation.get("unscored_reason", ""),
-                    "groundtruth_available": evaluation.get("groundtruth_available"),
-                    "groundtruth_status": evaluation.get("groundtruth_status", ""),
-                    "nearest_ancestor_groundtruth_file": evaluation.get("nearest_ancestor_groundtruth_file", ""),
-                    "detector_correct": evaluation.get("detector_correct"),
-                    "errors": case.get("errors", []),
-                }
-            )
     return {
-        "mode": "release_matrix_comparison",
+        "mode": "release_comparison",
         "case_root": str(root),
         "case_workers": workers,
-        "variant_count": variant_count,
-        "completed_variant_count": len(variants),
+        "vlm_frame_source": "direct_keyframes",
+        "vlm_grid_size": grid_size,
+        "report_file": batch.get("report_file", ""),
+        "case_count": batch.get("case_count", len(cases)),
+        "completed_cases": batch.get("completed_cases", len(cases)),
+        "failed_cases": batch.get("failed_cases", 0),
+        "case_seconds": summary.get("case_seconds", 0),
+        "vlm_seconds": summary.get("vlm_seconds", 0),
+        "vlm_frames": summary.get("vlm_frames", 0),
+        "correct_cases": correct,
+        "incorrect_cases": incorrect,
+        "unscored_cases": len(cases) - scored,
+        "unscored_missing_groundtruth_cases": missing_groundtruth,
+        "unscored_unsupported_groundtruth_cases": unsupported_groundtruth,
+        "accuracy": round(correct / scored, 6) if scored else None,
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "variant_rows": variant_rows,
         "case_rows": case_rows,
     }
-
-
-
 
 def _release_case_report(case_name: str, report: dict, seconds: float) -> dict:
     vision = dict(report.get("frame_analyzer", {}).get("statistics", {}).get("vision", {}))
@@ -803,3 +729,5 @@ def _is_scorable_conclusion(value: str) -> bool:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+

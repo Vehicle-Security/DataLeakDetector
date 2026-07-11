@@ -1,9 +1,4 @@
-"""按数据集标注口径生成泄密判定。
-
-当前真实样本以 `groundtruth.json` 作为“是否泄密”的评估口径。这个模块只负责
-解释标注，不参与日志/OCR/VLM 证据推理；以后换数据集时，优先改
-`spec/config/groundtruth_policy.json`，而不是改流水线代码。
-"""
+"""Evaluate dataset groundtruth labels without affecting detector decisions."""
 
 from __future__ import annotations
 
@@ -26,7 +21,7 @@ FALLBACK_GROUNDTRUTH_POLICY: dict[str, Any] = {
     "operation_text_fields": ("operation", "operation_type", "description", "label", "risk_type"),
     "leak_tokens": (
         "直接外发",
-        "邮箱外发",
+        "邮件外发",
         "复制内容外发",
         "内容外发",
         "完成外传",
@@ -39,7 +34,7 @@ FALLBACK_GROUNDTRUTH_POLICY: dict[str, Any] = {
         "exfiltration",
         "leak",
     ),
-    "non_leak_tokens": ("正常操作", "normal"),
+    "non_leak_tokens": ("正常操作", "正常", "normal"),
     "unknown_risk_tokens": ("潜在隐藏行为", "可疑", "隐藏行为"),
 }
 
@@ -81,7 +76,7 @@ class GroundTruthVerdict:
 
 
 def load_groundtruth_policy(path: str | Path | None = None) -> GroundTruthPolicy:
-    """加载 groundtruth 判定策略；配置缺失时使用当前数据集的最小口径。"""
+    """Load groundtruth label policy and fall back to the dataset defaults."""
 
     config_path = Path(path or os.getenv("DLD_GROUNDTRUTH_POLICY_CONFIG") or DEFAULT_GROUNDTRUTH_POLICY_PATH)
     raw = dict(FALLBACK_GROUNDTRUTH_POLICY)
@@ -97,7 +92,7 @@ def load_groundtruth_policy(path: str | Path | None = None) -> GroundTruthPolicy
 
 
 def evaluate_groundtruth(path: str | Path | None, policy: GroundTruthPolicy | None = None) -> GroundTruthVerdict:
-    """根据 groundtruth 标注生成当前样本的泄密结论。"""
+    """Evaluate the expected label from a case groundtruth file."""
 
     if path is None or not Path(path).exists():
         return GroundTruthVerdict(

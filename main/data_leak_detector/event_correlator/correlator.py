@@ -1,9 +1,4 @@
-"""用于绑定日志、观察、谱系和汇聚点证据的工作流对象。
-
-EventCorrelator 是流水线的中间阶段：它把规范化后的原始活动转换成已关联事件、上传候选项、
-谱系记录和 Datalog 事实。其依赖被拆分到兄弟模块中，这样本文件就能保持为可读的工作流，
-而不是一个大一统的单体。
-"""
+﻿"""Correlate logs, visual observations, file lineage, and upload candidates."""
 
 from __future__ import annotations
 
@@ -25,7 +20,7 @@ from .output import lineage_payload, operation_record
 
 
 class EventCorrelator:
-    """绑定日志、视觉观察、文件谱系和上传候选项。"""
+    """Correlate logs, visual observations, lineage, and upload candidates."""
 
     def __init__(self, config: EventCorrelatorConfig | None = None):
         self.config = config or EventCorrelatorConfig()
@@ -270,12 +265,12 @@ class EventCorrelator:
                 reasons.append(f"nearby_frame:{distance}ms")
             resolved = self._resolve_observation_original(observation, sensitive_files, lineage)
             if resolved and original and same_file(resolved, original):
-                reasons.append("ocr_mentions_sensitive_file")
+                reasons.append("visual_mentions_sensitive_file")
             text = _observation_search_text(observation)
             if observation.operation_type == "external_sink_interaction" or contains_any(text, SINK_TOKENS):
-                reasons.append("ocr_sink_context")
+                reasons.append("visual_sink_context")
             if _is_transfer_observation(observation):
-                reasons.append("ocr_transfer_context")
+                reasons.append("visual_transfer_context")
         joined_text = " ".join(
             [
                 _event_search_text(log),
@@ -294,7 +289,7 @@ class EventCorrelator:
         return observation.start_ms if not observation.end_ms else (observation.start_ms + observation.end_ms) // 2
 
     def _observation_time_mode(self, observations) -> str:
-        # OCR/keyframe evidence uses video-relative milliseconds. Some imported
+        # Visual keyframe evidence uses video-relative milliseconds. Some imported
         # or test VLM observations may already contain absolute epoch millis.
         return "absolute" if any(item.start_ms > 10_000_000_000 for item in observations) else "video"
 
@@ -525,12 +520,12 @@ def _correlated_operation_type(log, observation, text: str) -> str:
 def _visual_join_reasons(observation, original: str) -> list[str]:
     reasons = ["visual_only"]
     if original:
-        reasons.append("ocr_mentions_sensitive_file")
+        reasons.append("visual_mentions_sensitive_file")
     text = _observation_search_text(observation)
     if observation.operation_type == "external_sink_interaction" or contains_any(text, SINK_TOKENS):
-        reasons.append("ocr_sink_context")
+        reasons.append("visual_sink_context")
     if _is_transfer_observation(observation):
-        reasons.append("ocr_transfer_context")
+        reasons.append("visual_transfer_context")
     return reasons
 
 
@@ -562,7 +557,7 @@ def _matches_sensitive_file_reference(file_path: str, sensitive_file: str) -> bo
 def _is_visual_derived_candidate(file_path: str, original: str) -> bool:
     normalized = normalize_path(file_path).strip().strip("\"'")
     lowered = normalized.lower()
-    if not lowered or lowered in {"unknown", "n/a", "na", "none", "null", "-", "未知"}:
+    if not lowered or lowered in {"unknown", "未知", "n/a", "na", "none", "null", "-"}:
         return False
     if same_file(normalized, original) or _matches_sensitive_file_reference(normalized, original):
         return False
@@ -623,3 +618,5 @@ def _dedupe_paths(paths: list[str]) -> list[str]:
         seen.add(key)
         result.append(normalized)
     return result
+
+

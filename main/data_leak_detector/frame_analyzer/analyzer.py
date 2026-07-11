@@ -1,35 +1,39 @@
-"""FrameAnalyzer with deterministic, OCR, and VLM-assisted evidence paths."""
+"""Frame analyzer entry point for log evidence and direct-keyframe VLM."""
 
 from __future__ import annotations
 
 import json
-import re
-import shutil
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import replace
-from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from ..io import basename, flatten_text, looks_sensitive, normalize_path
+from ..io import flatten_text, looks_sensitive, normalize_path
+from ..log_mining import build_analysis_windows
 from ..models import FrameObservation, LogEvent
 from ..policy import SINK_TOKENS, TRANSFER_TOKENS, contains_any
-from ..log_mining import build_analysis_windows
 from .apps import identify_frontend_app
+from .artifacts import (
+    export_vision_artifacts,
+    load_vision_precompute,
+    prepare_vlm_request_frames,
+    write_json_artifact,
+    write_vision_precompute,
+)
 from .config import VisionConfig
-from .frames import AnalysisWindow, KeyFrame, KeyFrameDuplicate, KeyFrameSelection, select_keyframes_detailed
-from .ocr import OcrResult, run_ocr
-from .parser import parse_vlm_response_detailed, vision_events_to_observations
-from .roi import OcrFrameCandidate, prepare_ocr_candidates
-from .vlm import OpenAICompatibleVlmClient, build_vlm_frame_grids, choose_keyframes_for_vlm, choose_vlm_frames, prepare_vlm_frame_images
-
-
-_VLM_ENDPOINT_LOCK_GUARD = threading.Lock()
-_VLM_ENDPOINT_LOCKS: dict[tuple[str, str, int], threading.BoundedSemaphore] = {}
-_VLM_DISPATCHER_GUARD = threading.Lock()
-_VLM_DISPATCHERS: dict[tuple[tuple[tuple[str, str], ...], int], Any] = {}
+from .frames import AnalysisWindow, KeyFrameSelection, select_keyframes_detailed
+from .parser import vision_events_to_observations
+from .vlm_client import choose_keyframes_for_vlm
+from .vlm_dispatch import (
+    build_vlm_clients,
+    combine_vlm_request_metrics,
+    effective_vlm_parallelism,
+    run_vlm_batches,
+    vlm_batch_request_summary,
+    vlm_frame_batches,
+    vlm_parse_artifact_payload,
+    vlm_request_artifact_payload,
+    vlm_response_artifact_payload,
+)
 
 
 def analyze_video_behavior(
@@ -39,54 +43,30 @@ def analyze_video_behavior(
     sensitive_files: list[str] | None = None,
     observations_file: str | Path | None = None,
     vision_enabled: bool | None = None,
-    vision_mode: str | None = None,
     max_vlm_frames: int | None = None,
     vision_precompute_file: str | Path | None = None,
     artifact_dir: str | Path | None = None,
     analysis_windows: list[AnalysisWindow] | None = None,
     log_mining: dict[str, Any] | None = None,
+    debug_artifacts: bool = True,
     **_: Any,
 ) -> dict[str, Any]:
-    """Produce frame-level behavior observations for downstream correlation.
-
-    The analyzer always keeps the deterministic log-anchored path. When vision
-    is enabled, it adds a non-uniform keyframe pipeline:
-
-    1. mine suspicious windows from logs;
-    2. select visually changed keyframes instead of uniform sampling;
-    3. run OCR over all selected keyframes;
-    4. send only low-confidence or suspicious OCR frames to VLM;
-    5. normalize OCR/VLM output into FrameObservation records.
-    """
+    """Produce frame-level behavior observations for downstream correlation."""
 
     config = VisionConfig.from_env().with_overrides(
         enabled=vision_enabled,
-        mode=vision_mode,
         max_vlm_frames=max_vlm_frames,
     )
     logs = logs or []
     sensitive_files = [normalize_path(item) for item in sensitive_files or []]
-    observations: list[FrameObservation] = []
+    observations = load_observations(observations_file) if observations_file else []
     warnings: list[str] = []
     errors: list[str] = []
 
-    if observations_file:
-        observations.extend(load_observations(observations_file))
+    if not config.enabled:
+        observations.extend(_log_anchored_observations(logs, sensitive_files, start_index=len(observations)))
 
-    observations.extend(_log_anchored_observations(logs, sensitive_files, start_index=len(observations)))
-
-    vision_stats = {
-        "enabled": config.enabled,
-        "mode": config.mode,
-        "analysis_windows": 0,
-        "keyframes": 0,
-        "ocr_frames": 0,
-        "vlm_frames": 0,
-        "vlm_events": 0,
-        "window_source": str((log_mining or {}).get("source") or "in_memory"),
-        "log_mining": dict(log_mining or {}),
-    }
-
+    vision_stats = _empty_vision_stats(config.enabled, log_mining)
     if config.enabled:
         vision_observations, vision_stats, vision_warnings, vision_errors = _run_vision_pipeline(
             video_path=video_path,
@@ -98,6 +78,7 @@ def analyze_video_behavior(
             analysis_windows=analysis_windows,
             log_mining=log_mining,
             vision_precompute_file=vision_precompute_file,
+            debug_artifacts=debug_artifacts,
         )
         observations.extend(vision_observations)
         warnings.extend(vision_warnings)
@@ -107,7 +88,7 @@ def analyze_video_behavior(
         "video_file": str(video_path or ""),
         "observations": [item.to_dict() for item in observations],
         "statistics": {
-            "mode": "hybrid_log_ocr_vlm" if config.enabled else "deterministic_log_anchored",
+            "mode": "direct_keyframe_vlm" if config.enabled else "deterministic_log_anchored",
             "observations": len(observations),
             "vision": vision_stats,
         },
@@ -159,6 +140,18 @@ def load_observations(path: str | Path) -> list[FrameObservation]:
     return observations
 
 
+def _empty_vision_stats(enabled: bool, log_mining: dict[str, Any] | None) -> dict[str, Any]:
+    return {
+        "enabled": enabled,
+        "analysis_windows": 0,
+        "keyframes": 0,
+        "vlm_frames": 0,
+        "vlm_events": 0,
+        "window_source": str((log_mining or {}).get("source") or "in_memory"),
+        "log_mining": dict(log_mining or {}),
+    }
+
+
 def _log_anchored_observations(
     logs: list[LogEvent],
     sensitive_files: list[str],
@@ -200,1241 +193,238 @@ def _run_vision_pipeline(
     analysis_windows: list[AnalysisWindow] | None,
     log_mining: dict[str, Any] | None,
     vision_precompute_file: str | Path | None,
+    debug_artifacts: bool,
 ) -> tuple[list[FrameObservation], dict[str, Any], list[str], list[str]]:
-    observations: list[FrameObservation] = []
+    started = time.perf_counter()
     warnings: list[str] = []
     errors: list[str] = []
 
-    vision_started = time.perf_counter()
-    cached = _load_vision_precompute(vision_precompute_file) if vision_precompute_file else None
-    direct_keyframes_to_vlm = _vlm_uses_direct_keyframes(config)
-    if cached is not None:
-        windows = cached["windows"]
-        keyframe_selection = cached["selection"]
-        keyframes = keyframe_selection.keyframes
-        warnings.extend(keyframe_selection.warnings)
-        windows_seconds = 0.0
-        keyframes_seconds = 0.0
-        if direct_keyframes_to_vlm:
-            ocr_frames = []
-            ocr_candidates = []
-            ocr_candidate_frames = []
-            raw_ocr_results = []
-            ocr_results = []
-            ocr_prepare_seconds = 0.0
-            ocr_seconds = 0.0
-            ocr_postprocess_seconds = 0.0
-            vlm_frames = choose_keyframes_for_vlm(keyframes, max_frames=config.max_vlm_frames)
-        else:
-            ocr_results = cached["ocr_results"]
-            raw_ocr_results = ocr_results
-            ocr_frames = [item.frame for item in ocr_results]
-            ocr_candidates = []
-            ocr_candidate_frames = ocr_frames
-            ocr_prepare_seconds = 0.0
-            ocr_seconds = 0.0
-            ocr_postprocess_seconds = 0.0
-            observations.extend(_ocr_observations(ocr_results, config, sensitive_files=sensitive_files, start_index=start_index))
-            vlm_frames = choose_vlm_frames(
-                ocr_results,
-                min_confidence=config.ocr_min_confidence,
-                max_frames=config.max_vlm_frames,
-                strategy=config.vlm_frame_strategy,
-                include_empty_ocr_strong_frames=config.vlm_include_empty_ocr_strong_frames,
-                max_frames_per_window=_vlm_frames_per_window_limit(config),
-            )
-    else:
-        windows_started = time.perf_counter()
-        windows = analysis_windows if analysis_windows is not None else build_analysis_windows(logs, sensitive_files, config)
-        windows_seconds = time.perf_counter() - windows_started
-        keyframes_started = time.perf_counter()
-        keyframe_selection = select_keyframes_detailed(video_path, windows, config)
-        keyframes_seconds = time.perf_counter() - keyframes_started
-        keyframes = keyframe_selection.keyframes
-        warnings.extend(keyframe_selection.warnings)
-        if direct_keyframes_to_vlm:
-            ocr_frames = []
-            ocr_candidates = []
-            ocr_candidate_frames = []
-            raw_ocr_results = []
-            ocr_results = []
-            ocr_prepare_seconds = 0.0
-            ocr_seconds = 0.0
-            ocr_postprocess_seconds = 0.0
-        # direct_keyframes means VLM sees the selected keyframes themselves.
-        # Keep only the explicit global VLM budget; do not apply OCR/window triage caps.
-            vlm_frames = choose_keyframes_for_vlm(keyframes, max_frames=config.max_vlm_frames)
-        else:
-            ocr_prepare_started = time.perf_counter()
-            ocr_frames = _select_ocr_frames_for_ocr(keyframes, config)
-            if config.ocr_roi_enabled:
-                ocr_candidates = prepare_ocr_candidates(ocr_frames, config)
-                ocr_candidate_frames = [candidate.frame for candidate in ocr_candidates if candidate.selected_for_ocr]
-            else:
-                ocr_candidates = []
-                ocr_candidate_frames = ocr_frames
-            ocr_prepare_seconds = time.perf_counter() - ocr_prepare_started
-            ocr_started = time.perf_counter()
-            raw_roi_ocr_results = run_ocr(ocr_candidate_frames, config) if ocr_candidate_frames else []
-            ocr_seconds = time.perf_counter() - ocr_started
-            ocr_postprocess_started = time.perf_counter()
-            raw_ocr_results = _merge_roi_ocr_results(raw_roi_ocr_results, ocr_candidates) if config.ocr_roi_enabled else raw_roi_ocr_results
-            ocr_results = _dedupe_ocr_results(raw_ocr_results, config)
-            observations.extend(_ocr_observations(ocr_results, config, sensitive_files=sensitive_files, start_index=start_index))
-            ocr_postprocess_seconds = time.perf_counter() - ocr_postprocess_started
-            vlm_frames = choose_vlm_frames(
-                ocr_results,
-                min_confidence=config.ocr_min_confidence,
-                max_frames=config.max_vlm_frames,
-                strategy=config.vlm_frame_strategy,
-                include_empty_ocr_strong_frames=config.vlm_include_empty_ocr_strong_frames,
-                max_frames_per_window=_vlm_frames_per_window_limit(config),
-            )
-    artifact_manifest = _export_vision_artifacts(
-        artifact_dir=artifact_dir,
-        keyframes=keyframes,
-        raw_all_keyframes=keyframe_selection.raw_keyframes,
-        duplicate_keyframes=keyframe_selection.duplicates,
-        ocr_candidates=ocr_candidates,
-        ocr_selected_frames=[item.frame for item in vlm_frames],
-        ocr_results=ocr_results,
+    windows, selection, windows_seconds, keyframes_seconds, cache_reused = _load_or_select_keyframes(
+        video_path=video_path,
+        logs=logs,
+        sensitive_files=sensitive_files,
+        config=config,
+        analysis_windows=analysis_windows,
+        vision_precompute_file=vision_precompute_file,
     )
-    if cached is None:
-        _write_vision_precompute(
-            artifact_manifest,
-            windows=windows,
-            selection=keyframe_selection,
-            ocr_results=ocr_results,
-        )
-    vlm_request_frames = _prepare_vlm_request_frames(
-        vlm_frames,
+    warnings.extend(selection.warnings)
+
+    send_vlm_frames = config.max_vlm_frames != 0
+    selected_frames = choose_keyframes_for_vlm(selection.keyframes, max_frames=config.max_vlm_frames) if send_vlm_frames else []
+    manifest = export_vision_artifacts(
+        artifact_dir=artifact_dir,
+        keyframes=selection.keyframes,
+        raw_all_keyframes=selection.raw_keyframes,
+        duplicate_keyframes=selection.duplicates,
+    )
+    if not cache_reused:
+        write_vision_precompute(manifest, windows=windows, selection=selection)
+
+    request_frames = prepare_vlm_request_frames(
+        selected_frames,
+        max_image_side=config.vlm_max_image_side,
+        grid_size=config.vlm_grid_size,
+        artifact_dir=artifact_dir,
+        manifest=manifest,
+    )
+    vlm_result = _run_vlm_if_needed(
+        request_frames,
+        windows=windows,
+        sensitive_files=sensitive_files,
         config=config,
         artifact_dir=artifact_dir,
-        manifest=artifact_manifest,
+        manifest=manifest,
+        debug_artifacts=debug_artifacts,
     )
-    vlm_events = 0
-    vlm_seconds = 0.0
-    vlm_parse_errors = 0
-    vlm_request_metrics: dict[str, Any] = {}
-    vlm_usage: dict[str, Any] = {}
-    vlm_dispatch: dict[str, Any] = {}
-    if vlm_request_frames and config.mode.lower() in {"hybrid", "vlm"}:
-        try:
-            vlm_started = time.perf_counter()
-            active_apps = sorted({app for window in windows for app in window.active_apps})
-            vlm_clients = _build_vlm_clients(config)
-            vlm_parallelism = _effective_vlm_parallelism(config, key_count=len(vlm_clients))
-            vlm_batches = _vlm_frame_batches(vlm_request_frames, vlm_parallelism)
-            request_summaries = [
-                _vlm_batch_request_summary(
-                    vlm_clients[0],
-                    batch,
-                    batch_index=index,
-                    batch_count=len(vlm_batches),
-                    workers=vlm_parallelism,
-                    sensitive_files=sensitive_files,
-                    active_apps=active_apps,
-                )
-                for index, batch in enumerate(vlm_batches)
-            ]
-            vlm_request_metrics = _combine_vlm_request_metrics(request_summaries)
-            _write_vlm_request_artifact(
-                artifact_dir,
-                _vlm_request_artifact_payload(
-                    request_summaries,
-                    workers=vlm_parallelism,
-                    workers_per_key=config.vlm_workers,
-                    fast_dispatch=config.vlm_fast_dispatch,
-                    api_key_count=len(vlm_clients),
-                ),
-                artifact_manifest,
-            )
-            vlm_results = _run_vlm_batches(
-                vlm_clients,
-                vlm_batches,
-                sensitive_files=sensitive_files,
-                active_apps=active_apps,
-                workers_per_key=config.vlm_workers,
-            )
-            errors.extend(str(item) for item in vlm_results.get("errors", []))
-            warnings.extend(str(item) for item in vlm_results.get("retry_warnings", []))
-            vlm_usage = dict(vlm_results.get("usage") or {})
-            vlm_dispatch = dict(vlm_results.get("dispatch") or {})
-            _write_vlm_response_payload_artifact(
-                artifact_dir,
-                _vlm_response_artifact_payload(vlm_results),
-                artifact_manifest,
-            )
-            _write_vlm_parse_artifact(
-                artifact_dir,
-                _vlm_parse_artifact_payload(vlm_results),
-                artifact_manifest,
-            )
-            events = list(vlm_results.get("events") or [])
-            vlm_events = len(events)
-            vlm_parse_errors = len(vlm_results.get("parse_errors") or [])
-            observations.extend(
-                vision_events_to_observations(events, source="vlm", start_index=start_index + len(observations))
-            )
-            vlm_seconds = time.perf_counter() - vlm_started
-        except Exception as exc:
-            vlm_seconds = time.perf_counter() - vlm_started if "vlm_started" in locals() else 0.0
-            errors.append(f"vlm_failed: {type(exc).__name__}: {exc}")
 
-    stats = {
-        "enabled": config.enabled,
-        "mode": config.mode,
-        "analysis_windows": len(windows),
-        "window_source": str((log_mining or {}).get("source") or ("provided" if analysis_windows is not None else "in_memory")),
-        "log_mining": dict(log_mining or {}),
-        "keyframes": len(keyframes),
-        "keyframes_raw_all": len(keyframe_selection.raw_keyframes),
-        "keyframe_duplicates": len(keyframe_selection.duplicates),
-        "ocr_input_keyframes": len(ocr_frames),
-        "ocr_roi_candidates": len(ocr_candidates),
-        "ocr_roi_selected": len(ocr_candidate_frames) if config.ocr_roi_enabled else 0,
-        "ocr_frames": len(ocr_results),
-        "ocr_raw_frames": len(raw_ocr_results),
-        "vlm_frames": len(vlm_request_frames),
-        "vlm_source_frames": len(vlm_frames),
-        "vlm_events": vlm_events,
-        "vlm_dry_run": config.vlm_dry_run,
-        "vlm_frame_strategy": config.vlm_frame_strategy,
-        "vlm_grid_size": config.vlm_grid_size,
-        "vlm_workers": config.vlm_workers,
-        "vlm_fast_dispatch": config.vlm_fast_dispatch,
-        "vlm_api_key_count": len(_build_vlm_clients(config)),
-        "vlm_parallelism": _effective_vlm_parallelism(config),
-        "vlm_max_image_side": config.vlm_max_image_side,
-        "vlm_batches": len(_vlm_frame_batches(vlm_request_frames, _effective_vlm_parallelism(config))) if vlm_request_frames else 0,
-        "ocr_skipped_for_direct_vlm": direct_keyframes_to_vlm,
-        "vlm_parse_errors": vlm_parse_errors,
-        "vlm_request_metrics": vlm_request_metrics,
-        "vlm_usage": vlm_usage,
-        "vlm_dispatch": vlm_dispatch,
-        "vision_precompute_reused": cached is not None,
-        "vision_precompute_file": str(vision_precompute_file or artifact_manifest.get("vision_precompute_file", "")),
-        "timing_seconds": {
-            "windows": round(windows_seconds, 3),
-            "keyframes": round(keyframes_seconds, 3),
-            "ocr_prepare": round(ocr_prepare_seconds, 3),
-            "ocr": round(ocr_seconds, 3),
-            "ocr_postprocess": round(ocr_postprocess_seconds, 3),
-            "vlm": round(vlm_seconds, 3),
-            "total": round(time.perf_counter() - vision_started, 3),
-        },
-        "artifacts": artifact_manifest,
-    }
+    warnings.extend(vlm_result["warnings"])
+    errors.extend(vlm_result["errors"])
+    observations = vision_events_to_observations(vlm_result["events"], source="vlm", start_index=start_index)
+    stats = _vision_stats(
+        config=config,
+        windows=windows,
+        selection=selection,
+        selected_frame_count=len(selected_frames),
+        request_frame_count=len(request_frames),
+        send_vlm_frames=send_vlm_frames,
+        cache_reused=cache_reused,
+        vision_precompute_file=vision_precompute_file,
+        manifest=manifest,
+        log_mining=log_mining,
+        analysis_windows=analysis_windows,
+        debug_artifacts=debug_artifacts,
+        windows_seconds=windows_seconds,
+        keyframes_seconds=keyframes_seconds,
+        vlm_result=vlm_result,
+        total_seconds=time.perf_counter() - started,
+    )
     return observations, stats, warnings, errors
 
 
-def _vlm_frame_batches(frames: list[Any], workers: int) -> list[list[Any]]:
-    if not frames:
-        return []
-    batch_count = min(max(1, workers), len(frames))
-    batch_size = (len(frames) + batch_count - 1) // batch_count
-    return [frames[index : index + batch_size] for index in range(0, len(frames), batch_size)]
-
-
-def _build_vlm_clients(config: VisionConfig) -> list[OpenAICompatibleVlmClient]:
-    endpoints = config.effective_vlm_endpoints()
-    if not endpoints:
-        return [OpenAICompatibleVlmClient(config)]
-    endpoints = endpoints[:1]
-    return [
-        OpenAICompatibleVlmClient(
-            replace(config, vlm_base_url=endpoint.base_url, vlm_chat_url=endpoint.chat_url, vlm_api_key=endpoint.api_key, vlm_api_keys=())
-        )
-        for endpoint in endpoints
-    ]
-
-
-def _effective_vlm_parallelism(config: VisionConfig, *, key_count: int | None = None) -> int:
-    _ = key_count
-    return config.vlm_workers
-
-
-def _vlm_batch_request_summary(
-    client: OpenAICompatibleVlmClient,
-    frames: list[Any],
+def _load_or_select_keyframes(
     *,
-    batch_index: int,
-    batch_count: int,
-    workers: int,
+    video_path: str | Path,
+    logs: list[LogEvent],
     sensitive_files: list[str],
-    active_apps: list[str],
-) -> dict[str, Any]:
-    summary = client.request_summary(frames, sensitive_files=sensitive_files, active_apps=active_apps)
-    if batch_count > 1:
-        summary["batch_index"] = batch_index
-        summary["batch_count"] = batch_count
-        summary["workers"] = workers
-    return summary
-
-
-def _vlm_request_artifact_payload(
-    request_summaries: list[dict[str, Any]],
-    *,
-    workers: int,
-    workers_per_key: int | None = None,
-    fast_dispatch: bool = False,
-    api_key_count: int = 1,
-) -> dict[str, Any]:
-    dispatch = {
-        "fast_dispatch": fast_dispatch,
-        "api_key_count": api_key_count,
-        "workers_per_key": workers if workers_per_key is None else workers_per_key,
-        "parallelism": workers,
-    }
-    if len(request_summaries) == 1:
-        payload = dict(request_summaries[0])
-        payload["dispatch"] = dispatch
-        return payload
-    first = request_summaries[0] if request_summaries else {}
-    return {
-        "provider": first.get("provider", ""),
-        "model": first.get("model", ""),
-        "chat_url": first.get("chat_url", ""),
-        "dry_run": first.get("dry_run", False),
-        "frame_strategy": first.get("frame_strategy", ""),
-        "grid_size": first.get("grid_size", 1),
-        "workers": workers,
-        "dispatch": dispatch,
-        "batch_count": len(request_summaries),
-        "request_metrics": _combine_vlm_request_metrics(request_summaries),
-        "batches": request_summaries,
-    }
-
-
-def _combine_vlm_request_metrics(request_summaries: list[dict[str, Any]]) -> dict[str, Any]:
-    metrics = [item.get("request_metrics") for item in request_summaries if isinstance(item.get("request_metrics"), dict)]
-    if not metrics:
-        return {}
-    if len(metrics) == 1:
-        return dict(metrics[0])
-    combined: dict[str, Any] = {"batches": [dict(item) for item in metrics]}
-    for item in metrics:
-        for key, value in item.items():
-            if key == "image_sizes" and isinstance(value, list):
-                combined.setdefault(key, []).extend(value)
-            elif isinstance(value, int | float):
-                combined[key] = combined.get(key, 0) + value
-    if "image_megapixels" in combined:
-        combined["image_megapixels"] = round(float(combined["image_megapixels"]), 3)
-    return combined
-
-
-def _run_vlm_batches(
-    clients: list[OpenAICompatibleVlmClient],
-    batches: list[list[Any]],
-    *,
-    sensitive_files: list[str],
-    active_apps: list[str],
-    workers_per_key: int,
-) -> dict[str, Any]:
-    if not clients:
-        return {"batches": [], "errors": ["vlm_client_pool_empty"], "events": [], "parse_errors": [], "usage": {}}
-
-    results: list[dict[str, Any]] = []
-    errors: list[str] = []
-    dispatcher = _shared_vlm_dispatcher(clients, workers_per_key=workers_per_key)
-    future_to_index = {
-        dispatcher.submit(
-            clients=clients,
-            batch_index=index,
-            frames=batch,
-            sensitive_files=sensitive_files,
-            active_apps=active_apps,
-        ): index
-        for index, batch in enumerate(batches)
-    }
-    for future in as_completed(future_to_index):
-        index = future_to_index[future]
-        try:
-            results.append(future.result())
-        except Exception as exc:
-            errors.append(f"vlm_batch_failed[{index}]: {type(exc).__name__}: {exc}")
-
-    results.sort(key=lambda item: int(item.get("batch_index", 0)))
-    events: list[Any] = []
-    parse_errors: list[str] = []
-    usages: list[dict[str, Any]] = []
-    retry_warnings: list[str] = []
-    for result in results:
-        parse_result = result["parse_result"]
-        events.extend(parse_result.events)
-        parse_errors.extend(parse_result.parse_errors)
-        retry_warnings.extend(str(item) for item in result.get("retry_warnings", []))
-        usage = result["response"].usage
-        if isinstance(usage, dict):
-            usages.append(usage)
-    return {
-        "batches": results,
-        "errors": errors,
-        "events": events,
-        "parse_errors": parse_errors,
-        "retry_warnings": retry_warnings,
-        "usage": _combine_vlm_usage(usages),
-        "dispatch": _vlm_dispatch_metrics(dispatcher, results),
-    }
-
-
-def _shared_vlm_endpoint_locks(
-    clients: list[OpenAICompatibleVlmClient],
-    *,
-    workers_per_key: int,
-) -> dict[int, threading.BoundedSemaphore]:
-    """Share plan quotas across concurrently analyzed cases in this process."""
-
-    limit = max(1, workers_per_key)
-    locks: dict[int, threading.BoundedSemaphore] = {}
-    with _VLM_ENDPOINT_LOCK_GUARD:
-        for client in clients:
-            config = client.config
-            identity = (str(getattr(config, "vlm_base_url", "")).rstrip("/"), str(getattr(config, "vlm_api_key", "")), limit)
-            lock = _VLM_ENDPOINT_LOCKS.get(identity)
-            if lock is None:
-                lock = threading.BoundedSemaphore(limit)
-                _VLM_ENDPOINT_LOCKS[identity] = lock
-            locks[id(client)] = lock
-    return locks
-
-
-class _SharedVlmDispatcher:
-    """One process-wide FIFO queue for a stable endpoint/key pool."""
-
-    def __init__(self, *, parallelism: int, workers_per_key: int):
-        self.parallelism = max(1, parallelism)
-        self.workers_per_key = max(1, workers_per_key)
-        self.executor = ThreadPoolExecutor(max_workers=self.parallelism, thread_name_prefix="dld_vlm")
-        self._lock = threading.Lock()
-        self._next_client = 0
-        self._queued = 0
-        self._in_flight = 0
-        self._submitted = 0
-        self._completed = 0
-        self._failed = 0
-        self._endpoint_waiting: dict[str, int] = {}
-        self._endpoint_active: dict[str, int] = {}
-        self._endpoint_completed: dict[str, int] = {}
-
-    def submit(
-        self,
-        *,
-        clients: list[OpenAICompatibleVlmClient],
-        batch_index: int,
-        frames: list[Any],
-        sensitive_files: list[str],
-        active_apps: list[str],
-    ):
-        submitted_at = time.perf_counter()
-        with self._lock:
-            start_client = self._next_client % len(clients)
-            self._next_client += 1
-            self._queued += 1
-            self._submitted += 1
-        return self.executor.submit(
-            self._run_one,
-            clients,
-            batch_index,
-            frames,
-            sensitive_files,
-            active_apps,
-            start_client,
-            submitted_at,
-        )
-
-    def _run_one(
-        self,
-        clients: list[OpenAICompatibleVlmClient],
-        batch_index: int,
-        frames: list[Any],
-        sensitive_files: list[str],
-        active_apps: list[str],
-        start_client: int,
-        submitted_at: float,
-    ) -> dict[str, Any]:
-        with self._lock:
-            self._queued -= 1
-            self._in_flight += 1
-        queue_wait_seconds = time.perf_counter() - submitted_at
-        client_locks = _shared_vlm_endpoint_locks(clients, workers_per_key=self.workers_per_key)
-        ordered_clients = clients[start_client:] + clients[:start_client]
-        retry_warnings: list[str] = []
-        response = None
-        try:
-            for attempt, client in enumerate(ordered_clients):
-                lock = client_locks[id(client)]
-                endpoint = str(getattr(client.config, "vlm_base_url", "")).rstrip("/")
-                slot_acquired = False
-                with self._lock:
-                    self._endpoint_waiting[endpoint] = self._endpoint_waiting.get(endpoint, 0) + 1
-                try:
-                    with lock:
-                        with self._lock:
-                            self._endpoint_waiting[endpoint] -= 1
-                            self._endpoint_active[endpoint] = self._endpoint_active.get(endpoint, 0) + 1
-                        slot_acquired = True
-                        try:
-                            response = client.analyze(frames, sensitive_files=sensitive_files, active_apps=active_apps)
-                        finally:
-                            with self._lock:
-                                self._endpoint_active[endpoint] -= 1
-                    with self._lock:
-                        self._endpoint_completed[endpoint] = self._endpoint_completed.get(endpoint, 0) + 1
-                    break
-                except Exception as exc:
-                    if attempt + 1 == len(ordered_clients):
-                        raise
-                    retry_warnings.append(f"vlm_key_retry[{batch_index}]: {type(exc).__name__}: {exc}")
-                finally:
-                    if not slot_acquired:
-                        with self._lock:
-                            self._endpoint_waiting[endpoint] -= 1
-            if response is None:
-                raise RuntimeError("vlm_response_unavailable")
-            parse_result = parse_vlm_response_detailed(response.text, keywords=sensitive_files)
-            with self._lock:
-                self._completed += 1
-            return {
-                "batch_index": batch_index,
-                "frame_count": len(frames),
-                "response": response,
-                "parse_result": parse_result,
-                "retry_warnings": retry_warnings,
-                "queue_wait_seconds": round(queue_wait_seconds, 6),
-            }
-        except Exception:
-            with self._lock:
-                self._failed += 1
-            raise
-        finally:
-            with self._lock:
-                self._in_flight -= 1
-
-    def snapshot(self) -> dict[str, Any]:
-        with self._lock:
-            return {
-                "parallelism": self.parallelism,
-                "queued_batches": self._queued,
-                "in_flight_batches": self._in_flight,
-                "submitted_batches": self._submitted,
-                "completed_batches": self._completed,
-                "failed_batches": self._failed,
-                "endpoints": {
-                    endpoint: {
-                        "waiting_for_slot": self._endpoint_waiting.get(endpoint, 0),
-                        "active_requests": self._endpoint_active.get(endpoint, 0),
-                        "completed_requests": self._endpoint_completed.get(endpoint, 0),
-                    }
-                    for endpoint in sorted(set(self._endpoint_waiting) | set(self._endpoint_active) | set(self._endpoint_completed))
-                },
-            }
-
-
-def _shared_vlm_dispatcher(
-    clients: list[OpenAICompatibleVlmClient],
-    *,
-    workers_per_key: int,
-) -> _SharedVlmDispatcher:
-    identity = tuple(
-        (
-            str(getattr(client.config, "vlm_base_url", "")).rstrip("/"),
-            str(getattr(client.config, "vlm_api_key", "")),
-        )
-        for client in clients
-    )
-    key = (identity, max(1, workers_per_key))
-    with _VLM_DISPATCHER_GUARD:
-        dispatcher = _VLM_DISPATCHERS.get(key)
-        if dispatcher is None:
-            dispatcher = _SharedVlmDispatcher(
-                parallelism=len(clients) * max(1, workers_per_key),
-                workers_per_key=workers_per_key,
-            )
-            _VLM_DISPATCHERS[key] = dispatcher
-        return dispatcher
-
-
-def vlm_dispatcher_snapshots() -> list[dict[str, Any]]:
-    """Return live, key-free queue metrics for Release progress reporting."""
-
-    with _VLM_DISPATCHER_GUARD:
-        return [dispatcher.snapshot() for dispatcher in _VLM_DISPATCHERS.values()]
-
-
-def _vlm_dispatch_metrics(dispatcher: _SharedVlmDispatcher, results: list[dict[str, Any]]) -> dict[str, Any]:
-    waits = [float(item.get("queue_wait_seconds", 0.0)) for item in results]
-    return {
-        "mode": "shared_process_queue",
-        "batch_count": len(results),
-        "queue_wait_seconds_total": round(sum(waits), 6),
-        "queue_wait_seconds_max": round(max(waits, default=0.0), 6),
-        "queue_wait_seconds_mean": round(sum(waits) / len(waits), 6) if waits else 0.0,
-        "snapshot": dispatcher.snapshot(),
-    }
-
-
-def _combine_vlm_usage(usages: list[dict[str, Any]]) -> dict[str, Any]:
-    if not usages:
-        return {}
-    if len(usages) == 1:
-        return dict(usages[0])
-    combined: dict[str, Any] = {"batches": [dict(item) for item in usages]}
-    for usage in usages:
-        for key, value in usage.items():
-            if isinstance(value, int | float):
-                combined[key] = combined.get(key, 0) + value
-    return combined
-
-
-def _vlm_response_artifact_payload(vlm_results: dict[str, Any]) -> dict[str, Any]:
-    batch_results = list(vlm_results.get("batches") or [])
-    errors = list(vlm_results.get("errors") or [])
-    if len(batch_results) == 1 and not errors:
-        return _vlm_response_to_dict(batch_results[0]["response"])
-    first_response = batch_results[0]["response"] if batch_results else None
-    return {
-        "provider": getattr(first_response, "provider", ""),
-        "model": getattr(first_response, "model", ""),
-        "dry_run": bool(getattr(first_response, "dry_run", False)) if first_response is not None else False,
-        "usage": vlm_results.get("usage") or {},
-        "errors": errors,
-        "batch_count": len(batch_results) + len(errors),
-        "responses": [
-            {
-                "batch_index": result.get("batch_index"),
-                "frame_count": result.get("frame_count"),
-                **_vlm_response_to_dict(result["response"]),
-            }
-            for result in batch_results
-        ],
-    }
-
-
-def _vlm_response_to_dict(response: Any) -> dict[str, Any]:
-    return {
-        "provider": response.provider,
-        "model": response.model,
-        "dry_run": response.dry_run,
-        "usage": response.usage,
-        "text": response.text,
-        "raw_payload": response.raw_payload,
-    }
-
-
-def _vlm_parse_artifact_payload(vlm_results: dict[str, Any]) -> dict[str, Any]:
-    batch_results = list(vlm_results.get("batches") or [])
-    errors = list(vlm_results.get("errors") or [])
-    if len(batch_results) == 1 and not errors:
-        return batch_results[0]["parse_result"].to_dict()
-
-    events: list[dict[str, Any]] = []
-    raw_events: list[dict[str, Any]] = []
-    dropped_events: list[dict[str, Any]] = []
-    parse_errors: list[str] = []
-    batches: list[dict[str, Any]] = []
-    for result in batch_results:
-        parse_payload = result["parse_result"].to_dict()
-        events.extend(parse_payload.get("events", []))
-        raw_events.extend(parse_payload.get("raw_events", []))
-        dropped_events.extend(parse_payload.get("dropped_events", []))
-        parse_errors.extend(parse_payload.get("parse_errors", []))
-        batches.append(
-            {
-                "batch_index": result.get("batch_index"),
-                "frame_count": result.get("frame_count"),
-                "parse_result": parse_payload,
-            }
-        )
-    return {
-        "events": events,
-        "raw_events": raw_events,
-        "dropped_events": dropped_events,
-        "parse_errors": parse_errors,
-        "errors": errors,
-        "batches": batches,
-    }
-
-
-def _write_vlm_request_artifact(
-    artifact_dir: str | Path | None,
-    request_summary: dict[str, Any],
-    manifest: dict[str, Any],
-) -> None:
-    if artifact_dir is None:
-        return
-    path = Path(artifact_dir) / "vlm_request.json"
-    path.write_text(json.dumps(request_summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    manifest["vlm_request_file"] = str(path)
-
-
-def _write_vlm_response_artifact(
-    artifact_dir: str | Path | None,
-    response: Any,
-    manifest: dict[str, Any],
-) -> None:
-    if artifact_dir is None:
-        return
-    path = Path(artifact_dir) / "vlm_response.json"
-    payload = {
-        "provider": response.provider,
-        "model": response.model,
-        "dry_run": response.dry_run,
-        "usage": response.usage,
-        "text": response.text,
-        "raw_payload": response.raw_payload,
-    }
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    manifest["vlm_response_file"] = str(path)
-
-
-def _write_vlm_response_payload_artifact(
-    artifact_dir: str | Path | None,
-    payload: dict[str, Any],
-    manifest: dict[str, Any],
-) -> None:
-    if artifact_dir is None:
-        return
-    path = Path(artifact_dir) / "vlm_response.json"
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    manifest["vlm_response_file"] = str(path)
-
-
-def _write_vlm_parse_artifact(
-    artifact_dir: str | Path | None,
-    parse_payload: dict[str, Any],
-    manifest: dict[str, Any],
-) -> None:
-    if artifact_dir is None:
-        return
-    path = Path(artifact_dir) / "vlm_parse_result.json"
-    path.write_text(json.dumps(parse_payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    manifest["vlm_parse_result_file"] = str(path)
-
-
-def _prepare_vlm_request_frames(
-    frames: list[Any],
-    *,
     config: VisionConfig,
-    artifact_dir: str | Path | None,
-    manifest: dict[str, Any],
-) -> list[Any]:
-    input_dir = Path(artifact_dir) / "keyframes_vlm_input" if artifact_dir is not None and config.vlm_max_image_side > 0 else None
-    if input_dir is not None:
-        if input_dir.exists():
-            shutil.rmtree(input_dir)
-        input_dir.mkdir(parents=True, exist_ok=True)
-    prepared_frames = prepare_vlm_frame_images(frames, max_image_side=config.vlm_max_image_side, output_dir=input_dir)
-    if input_dir is not None:
-        input_files = [item.frame.image_path for item in prepared_frames if Path(item.frame.image_path).parent == input_dir]
-        if input_files:
-            manifest["keyframes_vlm_input_dir"] = str(input_dir)
-            manifest["keyframes_vlm_input_files"] = input_files
-            counts = manifest.setdefault("counts", {})
-            if isinstance(counts, dict):
-                counts["keyframes_vlm_input_files"] = len(input_files)
-            _update_artifact_manifest_file(manifest, {"keyframes_vlm_input_files": input_files})
-    if config.vlm_grid_size <= 1:
-        return prepared_frames
-    grid_dir = Path(artifact_dir) / "keyframes_vlm_grid" if artifact_dir is not None else None
-    if grid_dir is not None:
-        if grid_dir.exists():
-            shutil.rmtree(grid_dir)
-        grid_dir.mkdir(parents=True, exist_ok=True)
-    grid_frames = build_vlm_frame_grids(prepared_frames, grid_size=config.vlm_grid_size, output_dir=grid_dir)
-    if grid_dir is not None:
-        grid_files = [item.frame.image_path for item in grid_frames]
-        manifest["keyframes_vlm_grid_dir"] = str(grid_dir)
-        manifest["keyframes_vlm_grid_files"] = grid_files
-        counts = manifest.setdefault("counts", {})
-        if isinstance(counts, dict):
-            counts["keyframes_vlm_grid_files"] = len(grid_files)
-        _update_artifact_manifest_file(manifest, {"keyframes_vlm_grid_files": grid_files})
-    return grid_frames
+    analysis_windows: list[AnalysisWindow] | None,
+    vision_precompute_file: str | Path | None,
+) -> tuple[list[AnalysisWindow], KeyFrameSelection, float, float, bool]:
+    if vision_precompute_file:
+        cached = load_vision_precompute(vision_precompute_file)
+        return cached["windows"], cached["selection"], 0.0, 0.0, True
+
+    windows_started = time.perf_counter()
+    windows = analysis_windows if analysis_windows is not None else build_analysis_windows(logs, sensitive_files, config)
+    windows_seconds = time.perf_counter() - windows_started
+
+    keyframes_started = time.perf_counter()
+    selection = select_keyframes_detailed(video_path, windows, config)
+    keyframes_seconds = time.perf_counter() - keyframes_started
+    return windows, selection, windows_seconds, keyframes_seconds, False
 
 
-def _update_artifact_manifest_file(manifest: dict[str, Any], updates: dict[str, Any]) -> None:
-    manifest_file = str(manifest.get("artifact_manifest_file") or "")
-    if not manifest_file:
-        return
-    path = Path(manifest_file)
-    if path.exists():
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            payload = {}
-    else:
-        payload = {}
-    if not isinstance(payload, dict):
-        payload = {}
-    payload.update(updates)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def _vlm_uses_direct_keyframes(config: VisionConfig) -> bool:
-    strategy = config.vlm_frame_strategy.strip().lower().replace("-", "_")
-    direct_aliases = {"direct", "direct_keyframes", "all_keyframes", "keyframes"}
-    return (
-        strategy in direct_aliases
-        and config.mode.lower() in {"hybrid", "vlm"}
-        and config.max_vlm_frames != 0
-    )
-
-
-def _vlm_frames_per_window_limit(config: VisionConfig) -> int | None:
-    if config.vlm_max_frames_per_window <= 0:
-        return None
-    return config.vlm_max_frames_per_window
-
-
-def _export_vision_artifacts(
-    *,
-    artifact_dir: str | Path | None,
-    keyframes: list[Any],
-    ocr_selected_frames: list[Any],
-    ocr_results: list[OcrResult],
-    raw_all_keyframes: list[Any] | None = None,
-    duplicate_keyframes: list[KeyFrameDuplicate] | None = None,
-    ocr_candidates: list[OcrFrameCandidate] | None = None,
-) -> dict[str, Any]:
-    if artifact_dir is None:
-        return {}
-
-    root = Path(artifact_dir)
-    raw_all_dir = root / "keyframes_raw_all"
-    raw_dir = root / "keyframes_raw"
-    roi_dir = root / "keyframes_ocr_roi"
-    selected_dir = root / "keyframes_ocr_selected"
-    for directory in (raw_all_dir, raw_dir, roi_dir, selected_dir):
-        if directory.exists():
-            shutil.rmtree(directory)
-        directory.mkdir(parents=True, exist_ok=True)
-
-    raw_all_files = _copy_frame_images(raw_all_keyframes if raw_all_keyframes is not None else keyframes, raw_all_dir)
-    raw_files = _copy_frame_images(keyframes, raw_dir)
-    roi_files = _copy_frame_images([item.frame for item in ocr_candidates or [] if item.selected_for_ocr], roi_dir)
-    selected_files = _copy_frame_images(ocr_selected_frames, selected_dir)
-    ocr_file = root / "ocr_results.json"
-    ocr_file.write_text(json.dumps([_ocr_result_to_dict(item) for item in ocr_results], ensure_ascii=False, indent=2), encoding="utf-8")
-    roi_file = root / "ocr_roi_regions.json"
-    roi_file.write_text(json.dumps([_ocr_candidate_to_dict(item) for item in ocr_candidates or []], ensure_ascii=False, indent=2), encoding="utf-8")
-    duplicate_file = root / "keyframe_duplicates.json"
-    duplicate_file.write_text(
-        json.dumps([_keyframe_duplicate_to_dict(item) for item in duplicate_keyframes or []], ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    manifest_file = root / "artifact_manifest.json"
-    manifest_file.write_text(
-        json.dumps(
-            {
-                "keyframes_raw_all_files": raw_all_files,
-                "keyframes_raw_files": raw_files,
-                "keyframes_ocr_roi_files": roi_files,
-                "keyframes_ocr_selected_files": selected_files,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-    return {
-        "root_dir": str(root),
-        "keyframes_raw_all_dir": str(raw_all_dir),
-        "keyframes_raw_dir": str(raw_dir),
-        "keyframes_raw_files": raw_files,
-        "keyframes_ocr_roi_dir": str(roi_dir),
-        "keyframes_ocr_selected_dir": str(selected_dir),
-        "ocr_results_file": str(ocr_file),
-        "ocr_roi_regions_file": str(roi_file),
-        "keyframe_duplicates_file": str(duplicate_file),
-        "artifact_manifest_file": str(manifest_file),
-        "counts": {
-            "keyframes_raw_all_files": len(raw_all_files),
-            "keyframes_raw_files": len(raw_files),
-            "keyframes_ocr_roi_files": len(roi_files),
-            "keyframes_ocr_selected_files": len(selected_files),
-        },
-    }
-
-
-def _write_vision_precompute(
-    manifest: dict[str, Any],
+def _run_vlm_if_needed(
+    request_frames: list[Any],
     *,
     windows: list[AnalysisWindow],
-    selection: KeyFrameSelection,
-    ocr_results: list[OcrResult],
-) -> None:
-    root_text = str(manifest.get("root_dir") or "")
-    if not root_text:
-        return
-    root = Path(root_text)
-    copied = list(manifest.get("keyframes_raw_files") or [])
-    image_by_id = {
-        frame.frame_id: copied[index]
-        for index, frame in enumerate(selection.keyframes)
-        if index < len(copied)
-    }
-    payload = {
-        "schema_version": 1,
-        "windows": [_analysis_window_to_dict(item) for item in windows],
-        "keyframes": [_keyframe_to_dict(item, image_path=image_by_id.get(item.frame_id, item.image_path)) for item in selection.keyframes],
-        "raw_keyframe_count": len(selection.raw_keyframes),
-        "duplicate_count": len(selection.duplicates),
-        "warnings": list(selection.warnings),
-        "ocr_results": [
-            {
-                **_ocr_result_to_dict(item),
-                "image_path": image_by_id.get(item.frame.frame_id, item.frame.image_path),
-            }
-            for item in ocr_results
-        ],
-    }
-    path = root / "vision_precompute.json"
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    manifest["vision_precompute_file"] = str(path)
-    _update_artifact_manifest_file(manifest, {"vision_precompute_file": str(path)})
-
-
-def _load_vision_precompute(path: str | Path) -> dict[str, Any]:
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
-        raise ValueError(f"unsupported_vision_precompute: {path}")
-    windows = [_analysis_window_from_dict(item) for item in payload.get("windows", []) if isinstance(item, dict)]
-    keyframes = [_keyframe_from_dict(item) for item in payload.get("keyframes", []) if isinstance(item, dict)]
-    frames_by_id = {item.frame_id: item for item in keyframes}
-    ocr_results = []
-    for item in payload.get("ocr_results", []):
-        if not isinstance(item, dict):
-            continue
-        frame = frames_by_id.get(str(item.get("frame_id") or "")) or _keyframe_from_dict(item)
-        ocr_results.append(OcrResult(frame=frame, text=str(item.get("text") or ""), confidence=float(item.get("confidence") or 0.0), provider=str(item.get("provider") or "none")))
-    return {
-        "windows": windows,
-        "selection": KeyFrameSelection(
-            keyframes=keyframes,
-            raw_keyframes=keyframes,
-            duplicates=[],
-            warnings=[str(item) for item in payload.get("warnings", [])],
-        ),
-        "ocr_results": ocr_results,
-    }
-
-
-def _keyframe_to_dict(frame: KeyFrame, *, image_path: str | None = None) -> dict[str, Any]:
-    return {
-        "frame_id": frame.frame_id,
-        "timestamp_ms": frame.timestamp_ms,
-        "image_path": image_path or frame.image_path,
-        "score": frame.score,
-        "reason": frame.reason,
-        "window_id": frame.window_id,
-    }
-
-
-def _keyframe_from_dict(item: dict[str, Any]) -> KeyFrame:
-    return KeyFrame(
-        frame_id=str(item.get("frame_id") or ""),
-        timestamp_ms=int(item.get("timestamp_ms") or 0),
-        image_path=str(item.get("image_path") or ""),
-        score=float(item.get("score") or 0.0),
-        reason=str(item.get("reason") or ""),
-        window_id=str(item.get("window_id") or ""),
-    )
-
-
-def _analysis_window_to_dict(window: AnalysisWindow) -> dict[str, Any]:
-    return {
-        "start_ms": window.start_ms,
-        "end_ms": window.end_ms,
-        "reason": window.reason,
-        "priority": window.priority,
-        "step_ms": window.step_ms,
-        "max_keyframes": window.max_keyframes,
-        "diff_threshold": window.diff_threshold,
-        "anchor_ms": list(window.anchor_ms),
-        "active_apps": list(window.active_apps),
-    }
-
-
-def _analysis_window_from_dict(item: dict[str, Any]) -> AnalysisWindow:
-    return AnalysisWindow(
-        start_ms=int(item.get("start_ms") or 0),
-        end_ms=int(item.get("end_ms") or 0),
-        reason=str(item.get("reason") or ""),
-        priority=str(item.get("priority") or "medium"),
-        step_ms=int(item.get("step_ms") or 1_000),
-        max_keyframes=int(item.get("max_keyframes") or 0),
-        diff_threshold=float(item.get("diff_threshold") or 0.0),
-        anchor_ms=tuple(int(value) for value in item.get("anchor_ms") or []),
-        active_apps=tuple(str(value) for value in item.get("active_apps") or []),
-    )
-
-
-def _copy_frame_images(frames: list[Any], target_dir: Path) -> list[str]:
-    copied: list[str] = []
-    for index, frame in enumerate(frames):
-        source = Path(str(getattr(frame, "image_path", "")))
-        if not source.exists():
-            continue
-        timestamp = int(getattr(frame, "timestamp_ms", 0))
-        reason = str(getattr(frame, "reason", "frame")).replace(":", "-").replace("/", "-").replace("\\", "-")
-        target = target_dir / f"{index:03d}_{timestamp}ms_{reason}{source.suffix or '.jpg'}"
-        shutil.copy2(source, target)
-        copied.append(str(target))
-    return copied
-
-
-def _ocr_result_to_dict(result: OcrResult) -> dict[str, Any]:
-    return {
-        "frame_id": result.frame.frame_id,
-        "timestamp_ms": result.frame.timestamp_ms,
-        "image_path": result.frame.image_path,
-        "reason": result.frame.reason,
-        "window_id": result.frame.window_id,
-        "text": result.text,
-        "confidence": result.confidence,
-        "provider": result.provider,
-    }
-
-
-def _ocr_candidate_to_dict(candidate: OcrFrameCandidate) -> dict[str, Any]:
-    return {
-        "frame_id": candidate.source_frame.frame_id,
-        "roi_frame_id": candidate.frame.frame_id,
-        "timestamp_ms": candidate.source_frame.timestamp_ms,
-        "source_image_path": candidate.source_frame.image_path,
-        "roi_image_path": candidate.frame.image_path,
-        "selected_for_ocr": candidate.selected_for_ocr,
-        "reason": candidate.reason,
-        "regions": [
-            {
-                "x": region.x,
-                "y": region.y,
-                "width": region.width,
-                "height": region.height,
-                "text_density": region.text_density,
-                "edge_density": region.edge_density,
-            }
-            for region in candidate.regions
-        ],
-    }
-
-
-def _keyframe_duplicate_to_dict(duplicate: KeyFrameDuplicate) -> dict[str, Any]:
-    return {
-        "frame_id": duplicate.frame.frame_id,
-        "timestamp_ms": duplicate.frame.timestamp_ms,
-        "image_path": duplicate.frame.image_path,
-        "reason": duplicate.frame.reason,
-        "window_id": duplicate.frame.window_id,
-        "kept_frame_id": duplicate.kept_frame_id,
-        "duplicate_reason": duplicate.reason,
-        "delta": duplicate.delta,
-        "hash_distance": duplicate.hash_distance,
-    }
-
-
-def _select_ocr_frames_for_ocr(frames: list[Any], config: VisionConfig | None = None) -> list[Any]:
-    """Select OCR input frames while keeping each analysis window represented."""
-
-    unique: list[Any] = []
-    seen_timestamps: set[int] = set()
-    for frame in sorted(frames, key=lambda item: int(getattr(item, "timestamp_ms", 0))):
-        timestamp = int(getattr(frame, "timestamp_ms", 0))
-        if timestamp in seen_timestamps:
-            continue
-        seen_timestamps.add(timestamp)
-        unique.append(frame)
-    if config is None:
-        return unique
-
-    selected: list[Any] = []
-    by_window: dict[str, list[Any]] = {}
-    for frame in unique:
-        by_window.setdefault(str(getattr(frame, "window_id", "") or "window_unknown"), []).append(frame)
-
-    for _, group in sorted(by_window.items(), key=lambda item: min(int(getattr(frame, "timestamp_ms", 0)) for frame in item[1])):
-        priority = _frame_priority(group[0])
-        if priority == "strong":
-            budget = config.max_keyframes_per_strong_window
-        elif priority == "weak":
-            budget = config.max_keyframes_per_weak_window
-        else:
-            budget = config.max_keyframes_per_medium_window
-        anchor_frames = [frame for frame in group if "anchor" in str(getattr(frame, "reason", ""))]
-        budget = max(budget, len(anchor_frames))
-        selected.extend(_representative_frames(group, budget))
-    return sorted(selected, key=lambda item: int(getattr(item, "timestamp_ms", 0)))
-
-
-def _representative_frames(frames: list[Any], budget: int) -> list[Any]:
-    ordered = sorted(frames, key=lambda item: int(getattr(item, "timestamp_ms", 0)))
-    if len(ordered) <= budget:
-        return ordered
-    if budget <= 1:
-        return [ordered[0]]
-    selected: list[Any] = []
-    last_index = len(ordered) - 1
-    for slot in range(budget):
-        selected.append(ordered[round(slot * last_index / (budget - 1))])
-    return selected
-
-
-def _frame_priority(frame: Any) -> str:
-    reason = str(getattr(frame, "reason", ""))
-    return reason.split(":", 1)[0].split("-", 1)[0].lower()
-
-
-def _merge_roi_ocr_results(results: list[OcrResult], candidates: list[OcrFrameCandidate]) -> list[OcrResult]:
-    candidates_by_frame = {candidate.frame.frame_id: candidate for candidate in candidates}
-    grouped: dict[str, list[OcrResult]] = {}
-    source_frames: dict[str, Any] = {}
-    for result in results:
-        candidate = candidates_by_frame.get(result.frame.frame_id)
-        source_frame = candidate.source_frame if candidate is not None else result.frame
-        key = source_frame.frame_id
-        source_frames[key] = source_frame
-        grouped.setdefault(key, []).append(result)
-
-    merged: list[OcrResult] = []
-    for frame_id, items in grouped.items():
-        texts = [item.text.strip() for item in items if item.text.strip()]
-        confidences = [item.confidence for item in items if item.confidence > 0]
-        providers = sorted({item.provider for item in items})
-        confidence = sum(confidences) / len(confidences) if confidences else 0.0
-        provider = "+".join(providers) + ":roi" if providers else "roi"
-        merged.append(OcrResult(frame=source_frames[frame_id], text=" ".join(texts), confidence=round(confidence, 3), provider=provider))
-    return sorted(merged, key=lambda item: item.frame.timestamp_ms)
-
-
-def _dedupe_ocr_results(results: list[OcrResult], config: VisionConfig) -> list[OcrResult]:
-    kept: list[OcrResult] = []
-    texts_by_window: dict[str, list[str]] = {}
-    for result in results:
-        text = " ".join(result.text.split()).lower()
-        if "anchor" in str(getattr(result.frame, "reason", "")):
-            kept.append(result)
-            if text:
-                window_id = result.frame.window_id or "window_unknown"
-                texts_by_window.setdefault(window_id, []).append(text)
-            continue
-        if not text:
-            kept.append(result)
-            continue
-        window_id = result.frame.window_id or "window_unknown"
-        previous = texts_by_window.setdefault(window_id, [])
-        if any(_text_similarity(text, item) >= config.ocr_text_similarity_threshold for item in previous):
-            continue
-        previous.append(text)
-        kept.append(result)
-    return kept
-
-
-def _text_similarity(left: str, right: str) -> float:
-    return SequenceMatcher(None, left, right).ratio()
-
-
-OCR_FILE_RE = re.compile(
-    r"[\w\u4e00-\u9fff ._\-()（）【】\[\]]+"
-    r"\.(?:docx|doc|pdf|txt|png|jpg|jpeg|xlsx|xls|csv|sql|zip|7z|rar|pptx|ppt|mp4|mov)",
-    re.IGNORECASE,
-)
-
-
-def _ocr_mentioned_files(text: str, sensitive_files: list[str]) -> list[str]:
-    mentioned: list[str] = []
-    for match in OCR_FILE_RE.finditer(text):
-        candidate = _clean_ocr_file_candidate(match.group(0))
-        if candidate:
-            mentioned.append(candidate)
-
-    normalized_text = normalize_path(text).lower()
-    for sensitive in sensitive_files:
-        resolved = _resolve_sensitive_from_text(normalized_text, sensitive)
-        if resolved:
-            mentioned.append(resolved)
-    return list(dict.fromkeys(mentioned))
-
-
-def _clean_ocr_file_candidate(value: str) -> str:
-    candidate = normalize_path(value).strip(" .,:;，。：；|[]【】()（）")
-    if "/" in candidate:
-        return candidate
-    parts = [part.strip(" .,:;，。：；|[]【】()（）") for part in candidate.split() if part.strip()]
-    if parts and OCR_FILE_RE.fullmatch(parts[-1]):
-        return parts[-1]
-    return candidate
-
-
-def _resolve_sensitive_from_text(normalized_text: str, sensitive_file: str) -> str:
-    sensitive = normalize_path(sensitive_file)
-    if not sensitive:
-        return ""
-    lowered = sensitive.lower()
-    name = basename(sensitive).lower()
-    stem = Path(name).stem.lower()
-    if lowered in normalized_text or (name and name in normalized_text) or (len(stem) >= 4 and stem in normalized_text):
-        return sensitive
-    return ""
-
-
-def _ocr_fact_prefix(text: str, mentioned_files: list[str]) -> str:
-    facts: list[str] = []
-    if mentioned_files:
-        facts.append("mentioned_files=" + "|".join(mentioned_files[:8]))
-    if contains_any(text, SINK_TOKENS):
-        facts.append("sink_context=true")
-    if contains_any(text, TRANSFER_TOKENS):
-        facts.append("transfer_context=true")
-    return f"OCR facts: {'; '.join(facts)}. " if facts else ""
-
-
-def _ocr_observations(
-    results: list[OcrResult],
+    sensitive_files: list[str],
     config: VisionConfig,
+    artifact_dir: str | Path | None,
+    manifest: dict[str, Any],
+    debug_artifacts: bool,
+) -> dict[str, Any]:
+    empty = {
+        "events": [],
+        "errors": [],
+        "warnings": [],
+        "seconds": 0.0,
+        "parse_errors": 0,
+        "request_metrics": {},
+        "usage": {},
+        "dispatch": {},
+        "api_key_count": len(build_vlm_clients(config)),
+        "parallelism": effective_vlm_parallelism(config),
+        "batch_count": 0,
+    }
+    if not request_frames:
+        return empty
+
+    started = time.perf_counter()
+    try:
+        active_apps = sorted({app for window in windows for app in window.active_apps})
+        clients = build_vlm_clients(config)
+        parallelism = effective_vlm_parallelism(config)
+        batches = vlm_frame_batches(request_frames, parallelism)
+        summaries = [
+            vlm_batch_request_summary(
+                clients[0],
+                batch,
+                batch_index=index,
+                batch_count=len(batches),
+                workers=parallelism,
+                sensitive_files=sensitive_files,
+                active_apps=active_apps,
+            )
+            for index, batch in enumerate(batches)
+        ]
+        if debug_artifacts:
+            write_json_artifact(
+                artifact_dir,
+                "vlm_request.json",
+                vlm_request_artifact_payload(
+                    summaries,
+                    workers=parallelism,
+                    workers_per_key=config.vlm_workers,
+                    fast_dispatch=config.vlm_fast_dispatch,
+                    api_key_count=len(clients),
+                ),
+                manifest,
+                "vlm_request_file",
+            )
+        results = run_vlm_batches(
+            clients,
+            batches,
+            sensitive_files=sensitive_files,
+            active_apps=active_apps,
+            workers_per_key=config.vlm_workers,
+        )
+        if debug_artifacts:
+            write_json_artifact(artifact_dir, "vlm_response.json", vlm_response_artifact_payload(results), manifest, "vlm_response_file")
+            write_json_artifact(artifact_dir, "vlm_parse_result.json", vlm_parse_artifact_payload(results), manifest, "vlm_parse_result_file")
+        return {
+            "events": list(results.get("events") or []),
+            "errors": [str(item) for item in results.get("errors", [])],
+            "warnings": [str(item) for item in results.get("retry_warnings", [])],
+            "seconds": time.perf_counter() - started,
+            "parse_errors": len(results.get("parse_errors") or []),
+            "request_metrics": combine_vlm_request_metrics(summaries),
+            "usage": dict(results.get("usage") or {}),
+            "dispatch": dict(results.get("dispatch") or {}),
+            "api_key_count": len(clients),
+            "parallelism": parallelism,
+            "batch_count": len(batches),
+        }
+    except Exception as exc:
+        return {
+            **empty,
+            "seconds": time.perf_counter() - started,
+            "errors": [f"vlm_failed: {type(exc).__name__}: {exc}"],
+        }
+
+
+def _vision_stats(
     *,
-    sensitive_files: list[str] | None = None,
-    start_index: int,
-) -> list[FrameObservation]:
-    observations: list[FrameObservation] = []
-    sensitive_files = [normalize_path(item) for item in sensitive_files or []]
-    for result in results:
-        if result.confidence < config.ocr_min_confidence or not result.text.strip():
-            continue
-        app = identify_frontend_app(ocr_text=result.text)
-        mentioned_files = _ocr_mentioned_files(result.text, sensitive_files)
-        sink_context = contains_any(result.text, SINK_TOKENS)
-        transfer_context = contains_any(result.text, TRANSFER_TOKENS)
-        if sink_context:
-            operation = "external_sink_interaction"
-        elif transfer_context:
-            operation = "file_or_content_transfer"
-        else:
-            operation = "visual_text_observed"
-        resolved_files = list(
-            dict.fromkeys(
-                resolved
-                for item in mentioned_files
-                for sensitive in sensitive_files
-                for resolved in (_resolve_sensitive_from_text(item.lower(), sensitive),)
-                if resolved
-            )
-        )
-        resource = resolved_files[0] if resolved_files else (mentioned_files[0] if mentioned_files else "")
-        observations.append(
-            FrameObservation(
-                observation_id=f"ocr_{start_index + len(observations)}",
-                start_ms=result.frame.timestamp_ms,
-                end_ms=result.frame.timestamp_ms,
-                app_name=app.app_name,
-                operation_type=operation,
-                resource=resource,
-                related_resources=tuple(mentioned_files),
-                description=f"{_ocr_fact_prefix(result.text, mentioned_files)}OCR text: {result.text[:500]}; app_category={app.category}; risk_hint={app.risk_hint}",
-                confidence=result.confidence,
-                source=result.provider,
-            )
-        )
-    return observations
+    config: VisionConfig,
+    windows: list[AnalysisWindow],
+    selection: KeyFrameSelection,
+    selected_frame_count: int,
+    request_frame_count: int,
+    send_vlm_frames: bool,
+    cache_reused: bool,
+    vision_precompute_file: str | Path | None,
+    manifest: dict[str, Any],
+    log_mining: dict[str, Any] | None,
+    analysis_windows: list[AnalysisWindow] | None,
+    debug_artifacts: bool,
+    windows_seconds: float,
+    keyframes_seconds: float,
+    vlm_result: dict[str, Any],
+    total_seconds: float,
+) -> dict[str, Any]:
+    return {
+        "enabled": config.enabled,
+        "analysis_windows": len(windows),
+        "window_source": str((log_mining or {}).get("source") or ("provided" if analysis_windows is not None else "in_memory")),
+        "log_mining": dict(log_mining or {}),
+        "keyframes": len(selection.keyframes),
+        "keyframes_raw_all": len(selection.raw_keyframes),
+        "keyframe_duplicates": len(selection.duplicates),
+        "vlm_frames": request_frame_count,
+        "vlm_source_frames": selected_frame_count,
+        "vlm_events": len(vlm_result["events"]),
+        "vlm_dry_run": config.vlm_dry_run,
+        "vlm_frame_source": "direct_keyframes",
+        "vlm_grid_size": config.vlm_grid_size,
+        "vlm_workers": config.vlm_workers,
+        "vlm_fast_dispatch": config.vlm_fast_dispatch,
+        "vlm_api_key_count": vlm_result["api_key_count"],
+        "vlm_parallelism": vlm_result["parallelism"],
+        "vlm_max_image_side": config.vlm_max_image_side,
+        "vlm_batches": vlm_result["batch_count"],
+        "vlm_enabled_for_run": send_vlm_frames,
+        "vision_debug_artifacts": debug_artifacts,
+        "vlm_parse_errors": vlm_result["parse_errors"],
+        "vlm_request_metrics": vlm_result["request_metrics"],
+        "vlm_usage": vlm_result["usage"],
+        "vlm_dispatch": vlm_result["dispatch"],
+        "vision_precompute_reused": cache_reused,
+        "vision_precompute_file": str(vision_precompute_file or manifest.get("vision_precompute_file", "")),
+        "timing_seconds": {
+            "windows": round(windows_seconds, 3),
+            "keyframes": round(keyframes_seconds, 3),
+            "vlm": round(vlm_result["seconds"], 3),
+            "total": round(total_seconds, 3),
+        },
+        "artifacts": manifest,
+    }

@@ -104,6 +104,9 @@
     "共享",
     "屏幕共享",
     "可移动",
+    "U盘",
+    "移动磁盘",
+    "移动硬盘",
     "微信",
     "飞书",
     "钉钉"
@@ -120,6 +123,7 @@
     "泄露",
     "隐藏",
     "截图",
+    "截屏",
     "录屏",
     "共享",
     "粘贴",
@@ -134,7 +138,7 @@
     },
     {
       "type": "mail_attachment",
-      "tokens": ["mail", "email", "attachment", "attach", "邮件", "附件"]
+      "tokens": ["mail", "email", "attachment", "attach", "邮件", "邮箱", "附件"]
     },
     {
       "type": "cloud_sync",
@@ -146,7 +150,7 @@
     },
     {
       "type": "removable_media",
-      "tokens": ["usb", "removable", "可移动"]
+      "tokens": ["usb", "removable", "可移动", "U盘", "移动磁盘", "移动硬盘"]
     },
     {
       "type": "screen_share",
@@ -243,6 +247,7 @@
     "chat",
     "mail",
     "cloud_drive",
-    "meeting"
+    "meeting",
+    "removable_media"
   ]
 }

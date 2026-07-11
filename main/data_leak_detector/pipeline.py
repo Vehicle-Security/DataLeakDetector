@@ -1,4 +1,4 @@
-"""End-to-end orchestration for the canonical DataLeakDetector pipeline."""
+﻿"""End-to-end orchestration for the canonical DataLeakDetector pipeline."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from .event_correlator import EventCorrelator
 from .frame_analyzer import analyze_video_behavior
 from .frame_analyzer.config import VisionConfig
 from .log_mining import mine_analysis_windows
-from .neo4j import Neo4jConfig, write_report_to_neo4j
 from .groundtruth import evaluate_groundtruth
 from .io import iso_now, load_json_records, normalize_logs, normalize_path
 from .leak_reasoner import DatalogEngine
@@ -27,10 +26,7 @@ def run_pipeline(
     output_dir: str | Path | None = None,
     sensitive_files: list[str] | None = None,
     observations_file: str | Path | None = None,
-    neo4j_enabled: bool | None = None,
-    neo4j_strict: bool | None = None,
     vision_enabled: bool | None = None,
-    vision_mode: str | None = None,
     max_vlm_frames: int | None = None,
     vision_precompute_file: str | Path | None = None,
     precomputed_baseline_file: str | Path | None = None,
@@ -38,6 +34,7 @@ def run_pipeline(
     neo4j_log_miner: bool | None = None,
     reuse_neo4j_import: bool | None = None,
     non_vlm_enabled: bool | None = None,
+    vision_debug_artifacts: bool = True,
     inherit_ancestor_groundtruth: bool = False,
     case_name: str | None = None,
     session_start_ms: int | None = None,
@@ -66,7 +63,6 @@ def run_pipeline(
         _copy_groundtruth_file({"input": {"groundtruth_file": str(groundtruth_file or "")}}, vision_artifact_dir)
     vision_config = VisionConfig.from_env().with_overrides(
         enabled=vision_enabled,
-        mode=vision_mode,
         max_vlm_frames=max_vlm_frames,
     )
     effective_neo4j_log_miner = neo4j_log_miner
@@ -89,14 +85,15 @@ def run_pipeline(
         sensitive_files=vision_sensitive_files,
         observations_file=observations_file,
         vision_enabled=vision_enabled,
-        vision_mode=vision_mode,
         max_vlm_frames=max_vlm_frames,
         vision_precompute_file=vision_precompute_file,
         artifact_dir=vision_artifact_dir,
         analysis_windows=log_mining.windows if log_mining else None,
         log_mining={"source": log_mining.source, **log_mining.metadata} if log_mining else {"source": "precomputed_baseline"},
+        debug_artifacts=vision_debug_artifacts,
     )
-    if baseline:
+    use_non_vlm = True if non_vlm_enabled is None else bool(non_vlm_enabled)
+    if baseline and use_non_vlm:
         frame_bundle["observations"] = [*baseline.get("log_observations", []), *frame_bundle["observations"]]
     correlation_bundle = EventCorrelator().run(
         {
@@ -105,7 +102,7 @@ def run_pipeline(
             "frame_segments": frame_bundle["observations"],
             "sensitive_files": initial_sensitive_files,
             "recording_start_ms": int(session_start_ms or 0),
-            "non_vlm_enabled": True if non_vlm_enabled is None else bool(non_vlm_enabled),
+            "non_vlm_enabled": use_non_vlm,
         }
     )
 
@@ -183,7 +180,7 @@ def run_pipeline(
     payload["groundtruth"] = groundtruth_verdict.to_dict()
     payload["log_miner"] = {"source": log_mining.source, **log_mining.metadata} if log_mining else {"source": "precomputed_baseline"}
     payload["event_correlator"]["raw_log_events"] = records
-    payload["graph"] = _write_graph(payload, neo4j_enabled=neo4j_enabled, neo4j_strict=neo4j_strict)
+    payload["graph"] = {"enabled": False, "status": "not_supported", "role": "neo4j_log_miner_only"}
 
     if output_dir is not None:
         target_dir = Path(output_dir)
@@ -357,26 +354,23 @@ def _build_detection_core(
     vision = dict(frame_bundle.get("statistics", {}).get("vision", {}))
     datalog_facts = correlation_bundle.get("datalog_facts", [])
     return {
-        "method": "non_uniform_keyframes_ocr_vlm_datalog",
+        "method": "non_uniform_keyframes_vlm_datalog",
         "primary_chain": [
             "log_anchored_suspicious_windows",
             "non_uniform_visual_change_keyframes",
-            "ocr_all_keyframes",
+            "direct_keyframes",
             "vlm_fact_completion",
             "event_correlation",
             "datalog_taint_reasoning",
         ],
         "frame_strategy": {
             "enabled": bool(vision.get("enabled")),
-            "mode": vision.get("mode", "deterministic_log_anchored"),
             "analysis_windows": int(vision.get("analysis_windows") or 0),
             "keyframes": int(vision.get("keyframes") or 0),
-            "ocr_input_keyframes": int(vision.get("ocr_input_keyframes") or vision.get("ocr_raw_frames") or 0),
-            "ocr_raw_frames": int(vision.get("ocr_raw_frames") or vision.get("ocr_frames") or 0),
-            "selection": "可疑日志时间窗内按画面变化抽关键帧，不做均匀抽帧",
+            "selection": "在可疑日志时间窗口内按画面变化抽取关键帧，不做均匀抽帧",
         },
         "vlm_completion": {
-            "enabled": bool(vision.get("enabled")) and str(vision.get("mode", "")).lower() in {"hybrid", "vlm"},
+            "enabled": bool(vision.get("enabled")),
             "frames_sent": int(vision.get("vlm_frames") or 0),
             "events_completed": int(vision.get("vlm_events") or 0),
             "role": "补全日志无法直接提供的前端应用、屏幕内容、文件名和外发动作证据",
@@ -389,11 +383,12 @@ def _build_detection_core(
             "role": "基于 OpenFile/TransferFile/LeakFile/SuspiciousBehavior 等事实做可解释污点传播",
         },
         "evaluation": {
-            "final_conclusion_source": verdict_source,
-            "groundtruth_is_evaluation_only": groundtruth_available,
+            "verdict_source": verdict_source,
+            "groundtruth_available": groundtruth_available,
+            "groundtruth_is_evaluation_only": True,
+            "note": "groundtruth 只用于最终评测，不参与 detector 判定。",
         },
     }
-
 
 def run_data_case(
     case_dir: str | Path,
@@ -401,16 +396,14 @@ def run_data_case(
     output_dir: str | Path | None = None,
     sensitive_files: list[str] | None = None,
     observations_file: str | Path | None = None,
-    neo4j_enabled: bool | None = None,
-    neo4j_strict: bool | None = None,
     vision_enabled: bool | None = None,
-    vision_mode: str | None = None,
     max_vlm_frames: int | None = None,
     vision_precompute_file: str | Path | None = None,
     precomputed_baseline_file: str | Path | None = None,
     neo4j_log_miner: bool | None = None,
     reuse_neo4j_import: bool | None = None,
     non_vlm_enabled: bool | None = None,
+    vision_debug_artifacts: bool = True,
     case_root: str | Path | None = None,
     report_case_name: str | None = None,
     inherit_ancestor_groundtruth: bool = False,
@@ -429,10 +422,7 @@ def run_data_case(
         output_dir=output_dir,
         sensitive_files=merged_sensitive,
         observations_file=observations_file,
-        neo4j_enabled=neo4j_enabled,
-        neo4j_strict=neo4j_strict,
         vision_enabled=vision_enabled,
-        vision_mode=vision_mode,
         max_vlm_frames=max_vlm_frames,
         vision_precompute_file=vision_precompute_file,
         precomputed_baseline_file=precomputed_baseline_file,
@@ -440,6 +430,7 @@ def run_data_case(
         neo4j_log_miner=neo4j_log_miner,
         reuse_neo4j_import=reuse_neo4j_import,
         non_vlm_enabled=non_vlm_enabled,
+        vision_debug_artifacts=vision_debug_artifacts,
         case_name=report_case_name or case.case_id,
         session_start_ms=case.recording_start_ms,
         case_metadata=case.to_input_metadata(),
@@ -512,27 +503,4 @@ def _dedupe_paths(paths: list[str]) -> list[str]:
     return result
 
 
-def _write_graph(
-    payload: dict[str, Any],
-    *,
-    neo4j_enabled: bool | None,
-    neo4j_strict: bool | None,
-) -> dict[str, Any]:
-    config = Neo4jConfig.from_env()
-    if neo4j_enabled is not None:
-        config = config.with_overrides(enabled=neo4j_enabled)
-    if neo4j_strict is not None:
-        config = config.with_overrides(strict=neo4j_strict)
 
-    try:
-        return write_report_to_neo4j(payload, config)
-    except Exception as exc:
-        if config.strict:
-            raise
-        return {
-            "enabled": config.enabled,
-            "status": "error",
-            "uri": config.uri,
-            "database": config.database,
-            "error": f"{type(exc).__name__}: {exc}",
-        }
