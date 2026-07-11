@@ -14,6 +14,7 @@ from .config import VisionConfig
 from .frames import KeyFrame
 
 _RAPIDOCR_ENGINE_CACHE: dict[tuple[bool, int], object] = {}
+_PADDLEOCR_ENGINE_CACHE: dict[tuple[bool, int], object] = {}
 _DLL_DIRECTORY_HANDLES: list[object] = []
 _NVIDIA_DLL_DIRS_READY = False
 
@@ -200,6 +201,11 @@ class PaddleOcrProvider:
     def _get_engine(self):
         if self._engine is not None:
             return self._engine
+        cache_key = (self.use_cuda, threading.get_ident())
+        cached = _PADDLEOCR_ENGINE_CACHE.get(cache_key)
+        if cached is not None:
+            self._engine = cached
+            return self._engine
         if self.use_cuda:
             _add_nvidia_cuda_dll_directories()
         from paddleocr import PaddleOCR
@@ -215,6 +221,7 @@ class PaddleOcrProvider:
             )
         except TypeError:
             self._engine = PaddleOCR(lang="ch", use_gpu=self.use_cuda, show_log=False)
+        _PADDLEOCR_ENGINE_CACHE[cache_key] = self._engine
         return self._engine
 
     def _load_image(self, image_path: str):
