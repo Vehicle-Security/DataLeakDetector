@@ -83,6 +83,7 @@ def run_pipeline(
         vision_enabled=vision_enabled,
         vision_mode=vision_mode,
         max_vlm_frames=max_vlm_frames,
+        vision_precompute_file=vision_precompute_file,
         artifact_dir=vision_artifact_dir,
         analysis_windows=log_mining.windows if log_mining else None,
         log_mining={"source": log_mining.source, **log_mining.metadata} if log_mining else {"source": "precomputed_baseline"},
