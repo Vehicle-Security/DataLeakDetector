@@ -511,9 +511,7 @@ def _is_removable_media_context(text: str) -> bool:
         "移动硬盘",
         "u盘",
     )
-    if contains_any(normalized, removable_terms):
-        return True
-    return bool(re.search(r"\b[a-z]:/", normalized)) and contains_any(normalized, ("copy to", "copied to", "move to", "moved to"))
+    return contains_any(normalized, removable_terms)
 
 
 def _correlated_operation_type(log, observation, text: str) -> str:
