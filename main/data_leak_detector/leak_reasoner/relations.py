@@ -12,6 +12,7 @@ SUPPORTED_RELATIONS = {
     "TransferFile",
     "CrossProcessTransfer",
     "LeakFile",
+    "SuspiciousBehavior",
     "ClipboardWrite",
     "ClipboardRead",
 }

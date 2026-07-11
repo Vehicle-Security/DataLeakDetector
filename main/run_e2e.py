@@ -12,7 +12,8 @@ import time
 from pathlib import Path
 
 from data_leak_detector import run_data_case, run_pipeline
-from data_leak_detector.datasets import discover_data_case_directories
+from data_leak_detector.datasets import data_case_id, discover_data_case_directories
+from data_leak_detector.frame_analyzer.analyzer import vlm_dispatcher_snapshots
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -195,7 +196,8 @@ def _run_case_root(
     progress_context: dict | None = None,
 ) -> dict:
     root = Path(case_root)
-    cases = discover_data_case_directories(root)
+    case_dirs = discover_data_case_directories(root)
+    cases = [(data_case_id(case, root), case) for case in case_dirs]
     if not cases:
         raise ValueError(f"no case directories found under {root}")
 
@@ -233,6 +235,7 @@ def _run_case_root(
             "recent_cases": recent_cases[-20:],
             "elapsed_seconds": round(time.perf_counter() - started, 3),
             "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "vlm_dispatchers": vlm_dispatcher_snapshots(),
         }
         if progress_context:
             payload.update(progress_context)
@@ -258,22 +261,25 @@ def _run_case_root(
             finished_uncollected.add(case_name)
             persist_progress("running")
 
-    def run_one(case: Path) -> tuple[str, dict, float]:
+    def run_one(case_id: str, case: Path) -> tuple[str, dict, float]:
         case_args = dict(common_args)
-        case_args.update((case_arg_overrides or {}).get(case.name, {}))
+        overrides = (case_arg_overrides or {}).get(case_id) or (case_arg_overrides or {}).get(case.name) or {}
+        case_args.update(overrides)
         if output_root is not None and not release:
-            case_args["output_dir"] = str(output_root / case.name)
+            case_args["output_dir"] = str(output_root / Path(case_id))
         elif release:
             case_args["output_dir"] = None
         case_started = time.perf_counter()
-        mark_started(case.name)
+        mark_started(case_id)
         try:
-            return case.name, run_data_case(case, **case_args), time.perf_counter() - case_started
+            return case_id, run_data_case(case, case_root=root, **case_args), time.perf_counter() - case_started
         finally:
-            mark_finished(case.name)
+            mark_finished(case_id)
 
     completed: list[tuple[str, dict, float]] = []
     errors: list[dict[str, str]] = []
+    heartbeat_stop = threading.Event()
+    heartbeat_thread: threading.Thread | None = None
     if release:
         with progress_lock:
             persist_progress("starting")
@@ -281,50 +287,62 @@ def _run_case_root(
             f"release cases=0/{len(cases)} workers={min(workers, len(cases))} progress={progress_file}",
             flush=True,
         )
-    with ThreadPoolExecutor(max_workers=min(workers, len(cases))) as executor:
-        futures = {executor.submit(run_one, case): case.name for case in cases}
-        for future in as_completed(futures):
-            case_name = futures[future]
-            try:
-                name, result, seconds = future.result()
+        def heartbeat() -> None:
+            while not heartbeat_stop.wait(5):
                 with progress_lock:
-                    finished_uncollected.discard(name)
-                    completed.append((name, result, seconds))
-                    evaluation = _release_case_evaluation(result)
-                    last_case = {
-                        "case": name,
-                        "state": "completed",
-                        "seconds": round(seconds, 3),
-                        "conclusion": result.get("conclusion", ""),
-                        **evaluation,
-                    }
-                    recent_cases.append(last_case)
                     persist_progress("running")
-                    correct = evaluation["detector_correct"]
-                    correct_text = str(correct).lower() if correct is not None else "n/a"
-                    print(
-                        f"  [{len(completed) + len(errors)}/{len(cases)}] completed "
-                        f"case={name} seconds={seconds:.1f} "
-                        f"detector={evaluation['detector_conclusion']} "
-                        f"expected={evaluation['expected_conclusion'] or 'n/a'} correct={correct_text} "
-                        f"running={len(running)} "
-                        f"queued={max(0, len(cases) - len(completed) - len(errors) - len(running) - len(finished_uncollected))}",
-                        flush=True,
-                    )
-            except Exception as exc:
-                with progress_lock:
-                    running.discard(case_name)
-                    finished_uncollected.discard(case_name)
-                    error = {"case": case_name, "error": f"{type(exc).__name__}: {exc}"}
-                    errors.append(error)
-                    last_case = {"case": case_name, "state": "failed", "error": error["error"]}
-                    recent_cases.append(last_case)
-                    persist_progress("running")
-                    print(
-                        f"  [{len(completed) + len(errors)}/{len(cases)}] failed "
-                        f"case={case_name} error={error['error']}",
-                        flush=True,
-                    )
+
+        heartbeat_thread = threading.Thread(target=heartbeat, name="dld_release_progress", daemon=True)
+        heartbeat_thread.start()
+    try:
+        with ThreadPoolExecutor(max_workers=min(workers, len(cases))) as executor:
+            futures = {executor.submit(run_one, case_id, case): case_id for case_id, case in cases}
+            for future in as_completed(futures):
+                case_name = futures[future]
+                try:
+                    name, result, seconds = future.result()
+                    with progress_lock:
+                        finished_uncollected.discard(name)
+                        completed.append((name, result, seconds))
+                        evaluation = _release_case_evaluation(result)
+                        last_case = {
+                            "case": name,
+                            "state": "completed",
+                            "seconds": round(seconds, 3),
+                            "conclusion": result.get("conclusion", ""),
+                            **evaluation,
+                        }
+                        recent_cases.append(last_case)
+                        persist_progress("running")
+                        correct = evaluation["detector_correct"]
+                        correct_text = str(correct).lower() if correct is not None else "n/a"
+                        print(
+                            f"  [{len(completed) + len(errors)}/{len(cases)}] completed "
+                            f"case={name} seconds={seconds:.1f} "
+                            f"detector={evaluation['detector_conclusion']} "
+                            f"expected={evaluation['expected_conclusion'] or 'n/a'} correct={correct_text} "
+                            f"running={len(running)} "
+                            f"queued={max(0, len(cases) - len(completed) - len(errors) - len(running) - len(finished_uncollected))}",
+                            flush=True,
+                        )
+                except Exception as exc:
+                    with progress_lock:
+                        running.discard(case_name)
+                        finished_uncollected.discard(case_name)
+                        error = {"case": case_name, "error": f"{type(exc).__name__}: {exc}"}
+                        errors.append(error)
+                        last_case = {"case": case_name, "state": "failed", "error": error["error"]}
+                        recent_cases.append(last_case)
+                        persist_progress("running")
+                        print(
+                            f"  [{len(completed) + len(errors)}/{len(cases)}] failed "
+                            f"case={case_name} error={error['error']}",
+                            flush=True,
+                        )
+    finally:
+        heartbeat_stop.set()
+        if heartbeat_thread is not None:
+            heartbeat_thread.join(timeout=1)
 
     completed.sort(key=lambda item: item[0])
     batch = {
@@ -483,23 +501,25 @@ def _build_release_vision_precompute(
     workers: int,
     neo4j_log_miner: bool | None,
 ) -> dict[str, str]:
-    cases = discover_data_case_directories(Path(case_root))
+    root = Path(case_root)
+    case_dirs = discover_data_case_directories(root)
+    cases = [(data_case_id(case, root), case) for case in case_dirs]
     cache_root.mkdir(parents=True, exist_ok=True)
 
-    def run_one(case: Path) -> tuple[str, str]:
-        case_root_dir = cache_root / case.name
+    def run_one(case_id: str, case: Path) -> tuple[str, str]:
+        case_root_dir = cache_root / Path(case_id)
         existing = sorted(case_root_dir.rglob("pipeline_baseline.json")) if case_root_dir.exists() else []
         if existing:
-            return case.name, str(existing[-1])
+            return case_id, str(existing[-1])
         args = dict(common_args)
         args.update({"output_dir": str(case_root_dir), "vision_enabled": True, "vision_mode": "ocr", "max_vlm_frames": 0})
         if neo4j_log_miner is not None:
             args["neo4j_log_miner"] = neo4j_log_miner
-        report = run_data_case(case, **args)
+        report = run_data_case(case, case_root=root, **args)
         vision = dict(report.get("frame_analyzer", {}).get("statistics", {}).get("vision", {}))
         cache_file = str(vision.get("artifacts", {}).get("vision_precompute_file") or "")
         if not cache_file or not Path(cache_file).exists():
-            raise RuntimeError(f"vision_precompute_missing: {case.name}")
+            raise RuntimeError(f"vision_precompute_missing: {case_id}")
         baseline_file = Path(cache_file).with_name("pipeline_baseline.json")
         baseline_file.write_text(
             json.dumps(
@@ -517,12 +537,12 @@ def _build_release_vision_precompute(
             ),
             encoding="utf-8",
         )
-        return case.name, str(baseline_file)
+        return case_id, str(baseline_file)
 
     print(f"release precompute cases=0/{len(cases)} workers={min(workers, len(cases))}", flush=True)
     completed: dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=min(workers, len(cases))) as executor:
-        futures = {executor.submit(run_one, case): case.name for case in cases}
+        futures = {executor.submit(run_one, case_id, case): case_id for case_id, case in cases}
         for future in as_completed(futures):
             name, cache_file = future.result()
             completed[name] = cache_file
@@ -576,6 +596,11 @@ def _build_release_matrix_comparison(
         evaluations = [dict(case.get("evaluation", {})) for case in cases]
         correct = sum(evaluation.get("detector_correct") is True for evaluation in evaluations)
         incorrect = sum(evaluation.get("detector_correct") is False for evaluation in evaluations)
+        missing_groundtruth = sum(evaluation.get("unscored_reason") == "missing_groundtruth" for evaluation in evaluations)
+        unsupported_groundtruth = sum(
+            str(evaluation.get("unscored_reason") or "").startswith("unsupported_groundtruth:")
+            for evaluation in evaluations
+        )
         scored = correct + incorrect
         variant_rows.append(
             {
@@ -592,6 +617,8 @@ def _build_release_matrix_comparison(
                 "correct_cases": correct,
                 "incorrect_cases": incorrect,
                 "unscored_cases": len(cases) - scored,
+                "unscored_missing_groundtruth_cases": missing_groundtruth,
+                "unscored_unsupported_groundtruth_cases": unsupported_groundtruth,
                 "accuracy": round(correct / scored, 6) if scored else None,
             }
         )
@@ -600,11 +627,19 @@ def _build_release_matrix_comparison(
             case_rows.append(
                 {
                     "case": case.get("case", ""),
+                    "case_id": case.get("case_id", case.get("case", "")),
+                    "case_name": case.get("case_name", ""),
+                    "case_relative_path": case.get("case_relative_path", ""),
                     "vlm_frame_strategy": item["vlm_frame_strategy"],
                     "vlm_grid_size": item["vlm_grid_size"],
                     "seconds": case.get("seconds", 0),
                     "detector_conclusion": evaluation.get("detector_conclusion", case.get("conclusion", "")),
                     "expected_conclusion": evaluation.get("expected_conclusion", ""),
+                    "score_status": evaluation.get("score_status", ""),
+                    "unscored_reason": evaluation.get("unscored_reason", ""),
+                    "groundtruth_available": evaluation.get("groundtruth_available"),
+                    "groundtruth_status": evaluation.get("groundtruth_status", ""),
+                    "nearest_ancestor_groundtruth_file": evaluation.get("nearest_ancestor_groundtruth_file", ""),
                     "detector_correct": evaluation.get("detector_correct"),
                     "errors": case.get("errors", []),
                 }
@@ -626,9 +661,13 @@ def _build_release_matrix_comparison(
 def _release_case_report(case_name: str, report: dict, seconds: float) -> dict:
     vision = dict(report.get("frame_analyzer", {}).get("statistics", {}).get("vision", {}))
     event_correlator = dict(report.get("event_correlator", {}))
+    input_metadata = dict(report.get("input", {}))
     event_correlator.pop("raw_log_events", None)
     return {
         "case": case_name,
+        "case_id": input_metadata.get("case_id", case_name),
+        "case_name": input_metadata.get("case_name", ""),
+        "case_relative_path": input_metadata.get("case_relative_path", case_name),
         "seconds": round(seconds, 3),
         "report_id": report.get("report_id", ""),
         "conclusion": report.get("conclusion", ""),
@@ -646,21 +685,48 @@ def _release_case_report(case_name: str, report: dict, seconds: float) -> dict:
 def _release_case_evaluation(report: dict) -> dict[str, object]:
     verdict = dict(report.get("verdict", {}))
     groundtruth = dict(report.get("groundtruth", {}))
+    input_metadata = dict(report.get("input", {}))
     detector = str(verdict.get("detector_conclusion") or report.get("conclusion") or "")
     expected = str(groundtruth.get("conclusion") or verdict.get("groundtruth_conclusion") or "")
-    is_binary_expected = expected in {"data_leak_risk_detected", "no_confirmed_data_leak"}
+    available = bool(groundtruth.get("available"))
+    is_scorable_expected = _is_scorable_conclusion(expected)
+    if not available:
+        score_status = "unscored"
+        unscored_reason = "missing_groundtruth"
+    elif is_scorable_expected:
+        score_status = "scored"
+        unscored_reason = ""
+    else:
+        score_status = "unscored"
+        unscored_reason = f"unsupported_groundtruth:{expected or 'unknown'}"
     return {
         "detector_conclusion": detector,
         "expected_conclusion": expected,
-        "detector_correct": detector == expected if is_binary_expected else None,
+        "groundtruth_available": available,
+        "groundtruth_status": input_metadata.get("groundtruth_status", ""),
+        "nearest_ancestor_groundtruth_file": input_metadata.get("nearest_ancestor_groundtruth_file", ""),
+        "score_status": score_status,
+        "unscored_reason": unscored_reason,
+        "detector_correct": detector == expected if available and is_scorable_expected else None,
     }
 
 
 def _release_summary(completed: list[tuple[str, dict, float]]) -> dict:
     reports = [report for _, report, _ in completed]
     visions = [dict(report.get("frame_analyzer", {}).get("statistics", {}).get("vision", {})) for report in reports]
+    evaluations = [_release_case_evaluation(report) for report in reports]
+    correct = sum(item.get("detector_correct") is True for item in evaluations)
+    incorrect = sum(item.get("detector_correct") is False for item in evaluations)
+    scored = correct + incorrect
     return {
         "case_count": len(reports),
+        "scored_cases": scored,
+        "correct_cases": correct,
+        "incorrect_cases": incorrect,
+        "unscored_cases": len(reports) - scored,
+        "unscored_missing_groundtruth_cases": sum(
+            item.get("unscored_reason") == "missing_groundtruth" for item in evaluations
+        ),
         "data_leak_risk_detected": sum(report.get("conclusion") == "data_leak_risk_detected" for report in reports),
         "logs": sum(int(report.get("summary", {}).get("logs", 0)) for report in reports),
         "frame_observations": sum(int(report.get("summary", {}).get("frame_observations", 0)) for report in reports),
@@ -669,6 +735,10 @@ def _release_summary(completed: list[tuple[str, dict, float]]) -> dict:
         "vlm_seconds": round(sum(float(vision.get("timing_seconds", {}).get("vlm", 0.0)) for vision in visions), 3),
         "case_seconds": round(sum(seconds for _, _, seconds in completed), 3),
     }
+
+
+def _is_scorable_conclusion(value: str) -> bool:
+    return value in {"data_leak_risk_detected", "suspicious_behavior_detected", "no_confirmed_data_leak"}
 
 
 if __name__ == "__main__":

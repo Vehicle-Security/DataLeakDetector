@@ -440,8 +440,7 @@ def _build_vlm_clients(config: VisionConfig) -> list[OpenAICompatibleVlmClient]:
     endpoints = config.effective_vlm_endpoints()
     if not endpoints:
         return [OpenAICompatibleVlmClient(config)]
-    if not config.vlm_fast_dispatch:
-        endpoints = endpoints[:1]
+    endpoints = endpoints[:1]
     return [
         OpenAICompatibleVlmClient(
             replace(config, vlm_base_url=endpoint.base_url, vlm_chat_url=endpoint.chat_url, vlm_api_key=endpoint.api_key, vlm_api_keys=())
@@ -451,10 +450,8 @@ def _build_vlm_clients(config: VisionConfig) -> list[OpenAICompatibleVlmClient]:
 
 
 def _effective_vlm_parallelism(config: VisionConfig, *, key_count: int | None = None) -> int:
-    if not config.vlm_fast_dispatch:
-        return config.vlm_workers
-    count = len(config.effective_vlm_endpoints()) if key_count is None else key_count
-    return config.vlm_workers * max(1, count)
+    _ = key_count
+    return config.vlm_workers
 
 
 def _vlm_batch_request_summary(
@@ -617,6 +614,9 @@ class _SharedVlmDispatcher:
         self._submitted = 0
         self._completed = 0
         self._failed = 0
+        self._endpoint_waiting: dict[str, int] = {}
+        self._endpoint_active: dict[str, int] = {}
+        self._endpoint_completed: dict[str, int] = {}
 
     def submit(
         self,
@@ -665,14 +665,32 @@ class _SharedVlmDispatcher:
         try:
             for attempt, client in enumerate(ordered_clients):
                 lock = client_locks[id(client)]
+                endpoint = str(getattr(client.config, "vlm_base_url", "")).rstrip("/")
+                slot_acquired = False
+                with self._lock:
+                    self._endpoint_waiting[endpoint] = self._endpoint_waiting.get(endpoint, 0) + 1
                 try:
                     with lock:
-                        response = client.analyze(frames, sensitive_files=sensitive_files, active_apps=active_apps)
+                        with self._lock:
+                            self._endpoint_waiting[endpoint] -= 1
+                            self._endpoint_active[endpoint] = self._endpoint_active.get(endpoint, 0) + 1
+                        slot_acquired = True
+                        try:
+                            response = client.analyze(frames, sensitive_files=sensitive_files, active_apps=active_apps)
+                        finally:
+                            with self._lock:
+                                self._endpoint_active[endpoint] -= 1
+                    with self._lock:
+                        self._endpoint_completed[endpoint] = self._endpoint_completed.get(endpoint, 0) + 1
                     break
                 except Exception as exc:
                     if attempt + 1 == len(ordered_clients):
                         raise
                     retry_warnings.append(f"vlm_key_retry[{batch_index}]: {type(exc).__name__}: {exc}")
+                finally:
+                    if not slot_acquired:
+                        with self._lock:
+                            self._endpoint_waiting[endpoint] -= 1
             if response is None:
                 raise RuntimeError("vlm_response_unavailable")
             parse_result = parse_vlm_response_detailed(response.text, keywords=sensitive_files)
@@ -694,7 +712,7 @@ class _SharedVlmDispatcher:
             with self._lock:
                 self._in_flight -= 1
 
-    def snapshot(self) -> dict[str, int]:
+    def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "parallelism": self.parallelism,
@@ -703,6 +721,14 @@ class _SharedVlmDispatcher:
                 "submitted_batches": self._submitted,
                 "completed_batches": self._completed,
                 "failed_batches": self._failed,
+                "endpoints": {
+                    endpoint: {
+                        "waiting_for_slot": self._endpoint_waiting.get(endpoint, 0),
+                        "active_requests": self._endpoint_active.get(endpoint, 0),
+                        "completed_requests": self._endpoint_completed.get(endpoint, 0),
+                    }
+                    for endpoint in sorted(set(self._endpoint_waiting) | set(self._endpoint_active) | set(self._endpoint_completed))
+                },
             }
 
 
@@ -728,6 +754,13 @@ def _shared_vlm_dispatcher(
             )
             _VLM_DISPATCHERS[key] = dispatcher
         return dispatcher
+
+
+def vlm_dispatcher_snapshots() -> list[dict[str, Any]]:
+    """Return live, key-free queue metrics for Release progress reporting."""
+
+    with _VLM_DISPATCHER_GUARD:
+        return [dispatcher.snapshot() for dispatcher in _VLM_DISPATCHERS.values()]
 
 
 def _vlm_dispatch_metrics(dispatcher: _SharedVlmDispatcher, results: list[dict[str, Any]]) -> dict[str, Any]:

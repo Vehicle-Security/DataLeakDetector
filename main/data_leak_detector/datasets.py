@@ -14,19 +14,29 @@ from .sensitivity import extract_sensitive_sources
 
 @dataclass(frozen=True)
 class DataCase:
+    case_id: str
     case_dir: Path
     log_file: Path
     video_file: Path | None
     groundtruth_file: Path | None
     sensitive_files: tuple[str, ...]
     recording_start_ms: int = 0
+    case_relative_path: str = ""
+    case_name: str = ""
+    groundtruth_status: str = ""
+    nearest_ancestor_groundtruth_file: Path | None = None
 
     def to_input_metadata(self) -> dict[str, Any]:
         return {
+            "case_id": self.case_id,
+            "case_name": self.case_name or self.case_dir.name,
+            "case_relative_path": self.case_relative_path or self.case_id,
             "case_dir": str(self.case_dir),
             "log_file": str(self.log_file),
             "video_file": str(self.video_file or ""),
             "groundtruth_file": str(self.groundtruth_file or ""),
+            "groundtruth_status": self.groundtruth_status,
+            "nearest_ancestor_groundtruth_file": str(self.nearest_ancestor_groundtruth_file or ""),
             "sensitive_files_from_case": list(self.sensitive_files),
             "recording_start_ms": self.recording_start_ms,
         }
@@ -45,7 +55,7 @@ def discover_data_case_directories(root: str | Path) -> list[Path]:
     )
 
 
-def discover_data_case(path: str | Path) -> DataCase:
+def discover_data_case(path: str | Path, *, case_root: str | Path | None = None) -> DataCase:
     """Resolve a NAS-style sample directory into pipeline input files."""
 
     case_dir = Path(path)
@@ -55,23 +65,57 @@ def discover_data_case(path: str | Path) -> DataCase:
     if not case_dir.exists():
         raise FileNotFoundError(f"case path does not exist: {case_dir}")
 
+    case_relative_path = data_case_id(case_dir, case_root)
     log_file = _choose_log_file(case_dir)
     video_file = _choose_video_file(case_dir)
     groundtruth_file = case_dir / "groundtruth.json"
     if not groundtruth_file.exists():
         groundtruth_file = None
+    nearest_ancestor_groundtruth_file = None if groundtruth_file else _nearest_ancestor_groundtruth(case_dir, case_root)
+    if groundtruth_file:
+        groundtruth_status = "available"
+    elif nearest_ancestor_groundtruth_file:
+        groundtruth_status = "missing_current_directory_with_ancestor_groundtruth"
+    else:
+        groundtruth_status = "missing"
 
     sensitive = set(extract_sensitive_sources(groundtruth_file))
     recording_start_ms = _recording_start_ms(case_dir, groundtruth_file)
 
     return DataCase(
+        case_id=case_relative_path,
         case_dir=case_dir,
         log_file=log_file,
         video_file=video_file,
         groundtruth_file=groundtruth_file,
         sensitive_files=tuple(sorted(item for item in sensitive if item)),
         recording_start_ms=recording_start_ms,
+        case_relative_path=case_relative_path,
+        case_name=case_dir.name,
+        groundtruth_status=groundtruth_status,
+        nearest_ancestor_groundtruth_file=nearest_ancestor_groundtruth_file,
     )
+
+
+def data_case_id(path: str | Path, case_root: str | Path | None = None) -> str:
+    """Return a stable, human-readable case id.
+
+    Batch/release runs use paths relative to the case root so duplicated case
+    directory names stay distinct in reports and precompute caches.
+    """
+
+    case_dir = Path(path)
+    if case_dir.is_file():
+        case_dir = case_dir.parent
+    case_dir = case_dir.resolve()
+    if case_root is None:
+        return case_dir.name
+    try:
+        relative = case_dir.relative_to(Path(case_root).resolve())
+    except ValueError:
+        return case_dir.name
+    text = relative.as_posix().strip("/")
+    return text or case_dir.name
 
 
 def _choose_log_file(case_dir: Path) -> Path:
@@ -139,3 +183,24 @@ def _recording_start_ms(case_dir: Path, groundtruth_file: Path | None) -> int:
         if match:
             return parse_timestamp_ms(match.group(1).strip())
     return 0
+
+
+def _nearest_ancestor_groundtruth(case_dir: Path, case_root: str | Path | None) -> Path | None:
+    if case_root is None:
+        return None
+    try:
+        stop_at = Path(case_root).resolve()
+        current = case_dir.resolve().parent
+    except OSError:
+        return None
+    while True:
+        candidate = current / "groundtruth.json"
+        if candidate.exists():
+            return candidate
+        if current == stop_at or current.parent == current:
+            return None
+        try:
+            current.relative_to(stop_at)
+        except ValueError:
+            return None
+        current = current.parent

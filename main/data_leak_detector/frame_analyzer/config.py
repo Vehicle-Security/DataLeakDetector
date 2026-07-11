@@ -67,6 +67,7 @@ class VisionConfig:
     vlm_coding_base_url: str = "https://coding.dashscope.aliyuncs.com/v1"
     vlm_coding_chat_url: str = ""
     vlm_coding_api_key: str = ""
+    vlm_use_coding_plan: bool = True
     vlm_token_base_url: str = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
     vlm_token_chat_url: str = ""
     vlm_token_api_key: str = ""
@@ -75,7 +76,7 @@ class VisionConfig:
     vlm_frame_strategy: str = "ocr_triage"
     vlm_grid_size: int = 1
     vlm_workers: int = 10
-    vlm_fast_dispatch: bool = True
+    vlm_fast_dispatch: bool = False
     vlm_include_empty_ocr_strong_frames: bool = True
     vlm_max_frames_per_window: int = 0
     vlm_max_image_side: int = 1_280
@@ -133,6 +134,7 @@ class VisionConfig:
             vlm_coding_base_url=os.getenv("DLD_VLM_CODING_BASE_URL", "https://coding.dashscope.aliyuncs.com/v1"),
             vlm_coding_chat_url=os.getenv("DLD_VLM_CODING_CHAT_URL", ""),
             vlm_coding_api_key=os.getenv("DLD_VLM_CODING_API_KEY", ""),
+            vlm_use_coding_plan=_env_bool("DLD_VLM_USE_CODING_PLAN", True),
             vlm_token_base_url=os.getenv("DLD_VLM_TOKEN_BASE_URL", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"),
             vlm_token_chat_url=os.getenv("DLD_VLM_TOKEN_CHAT_URL", ""),
             vlm_token_api_key=os.getenv("DLD_VLM_TOKEN_API_KEY", ""),
@@ -141,7 +143,7 @@ class VisionConfig:
             vlm_frame_strategy=os.getenv("DLD_VLM_FRAME_STRATEGY", "ocr_triage"),
             vlm_grid_size=max(1, _env_int("DLD_VLM_GRID_SIZE", 1)),
             vlm_workers=max(1, _env_int("DLD_VLM_WORKERS", 10)),
-            vlm_fast_dispatch=_env_bool("DLD_VLM_FAST_DISPATCH", True),
+            vlm_fast_dispatch=_env_bool("DLD_VLM_FAST_DISPATCH", False),
             vlm_include_empty_ocr_strong_frames=_env_bool("DLD_VLM_INCLUDE_EMPTY_OCR_STRONG_FRAMES", True),
             vlm_max_frames_per_window=max(0, _env_int("DLD_VLM_MAX_FRAMES_PER_WINDOW", 0)),
             vlm_max_image_side=max(0, _env_int("DLD_VLM_MAX_IMAGE_SIDE", 1_280)),
@@ -203,6 +205,7 @@ class VisionConfig:
             vlm_coding_base_url=self.vlm_coding_base_url,
             vlm_coding_chat_url=self.vlm_coding_chat_url,
             vlm_coding_api_key=self.vlm_coding_api_key,
+            vlm_use_coding_plan=self.vlm_use_coding_plan,
             vlm_token_base_url=self.vlm_token_base_url,
             vlm_token_chat_url=self.vlm_token_chat_url,
             vlm_token_api_key=self.vlm_token_api_key,
@@ -220,17 +223,17 @@ class VisionConfig:
     def effective_vlm_api_keys(self) -> tuple[str, ...]:
         """Return the configured key pool without exposing it in artifacts."""
 
-        keys = [self.vlm_api_key, self.vlm_token_api_key, self.vlm_coding_api_key, *self.vlm_api_keys]
+        coding_key = self.vlm_coding_api_key if self.vlm_use_coding_plan else ""
+        keys = [self.vlm_api_key, self.vlm_token_api_key, coding_key, *self.vlm_api_keys]
         return tuple(dict.fromkeys(key.strip() for key in keys if key and key.strip()))
 
     def effective_vlm_endpoints(self) -> tuple[VlmEndpoint, ...]:
         """Return endpoint-key pairs so plan-specific keys never use the wrong URL."""
 
         token_key = self.vlm_token_api_key or self.vlm_api_key
-        endpoints = [
-            VlmEndpoint("coding_plan", self.vlm_coding_base_url, self.vlm_coding_chat_url, self.vlm_coding_api_key),
-            VlmEndpoint("token_plan", self.vlm_token_base_url, self.vlm_token_chat_url, token_key),
-        ]
+        endpoints = [VlmEndpoint("token_plan", self.vlm_token_base_url, self.vlm_token_chat_url, token_key)]
+        if self.vlm_use_coding_plan:
+            endpoints.insert(0, VlmEndpoint("coding_plan", self.vlm_coding_base_url, self.vlm_coding_chat_url, self.vlm_coding_api_key))
         endpoints.extend(VlmEndpoint("legacy", self.vlm_base_url, self.vlm_chat_url, key) for key in self.vlm_api_keys)
         unique: list[VlmEndpoint] = []
         seen: set[tuple[str, str, str]] = set()

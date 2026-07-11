@@ -574,6 +574,8 @@ def _window_priority(event: LogEvent, text: str, sensitive_hit: bool, transfer_h
         return "medium"
     if event_type in {"app_switch", "window_changed", "window_closed"} and _is_sink_app_process(process_name):
         return "medium"
+    if _is_derivation_candidate_event(event, text):
+        return "medium"
 
     if sensitive_hit:
         return "medium"
@@ -608,11 +610,65 @@ def _event_anchors(event: LogEvent, sensitive_hit: bool, action_hit: bool, text:
         return (event.video_time_ms,)
     if event_type in {"app_switch", "window_changed", "window_closed"} and _is_sink_context(process_name, text) and _looks_like_upload_progress(text):
         return (event.video_time_ms,)
+    if _is_derivation_candidate_event(event, text):
+        return (event.video_time_ms,)
+    if sensitive_hit and action_hit:
+        return (event.video_time_ms,)
     if sensitive_hit and _looks_like_screenshot_path(event.file_path):
         return (event.video_time_ms,)
     if event_type in {"clipboard_image", "screenshot", "screen_capture", "file_selected", "file_upload", "upload", "uploaded", "upload_complete"}:
         return (event.video_time_ms,)
     return ()
+
+
+def _is_derivation_candidate_event(event: LogEvent, text: str) -> bool:
+    event_type = event.event_type.lower()
+    extra = event.raw.get("extra") if isinstance(event.raw.get("extra"), dict) else {}
+    raw_operation = str(event.raw.get("operation") or extra.get("raw_operation") or "").lower()
+    window_title = event.window_title or ""
+    derivation_events = {
+        "created",
+        "modified",
+        "renamed",
+        "moved",
+        "copied",
+        "clipboard_text",
+        "clipboard_image",
+        "screenshot",
+        "screen_capture",
+        "print_to_pdf",
+        "save_as",
+        "export",
+        "file_created",
+        "file_modified",
+        "file_renamed",
+    }
+    derivation_ops = {
+        "copy",
+        "paste",
+        "export",
+        "print",
+        "print_to_pdf",
+        "save_as",
+        "screenshot",
+        "screen_capture",
+        "rename",
+        "compress",
+        "translate",
+        "base64",
+    }
+    lowered_text = text.lower()
+    if event_type in derivation_events or raw_operation in derivation_ops:
+        return True
+    if any(token in raw_operation for token in derivation_ops):
+        return True
+    if any(token in lowered_text for token in ("translation", "translate", "base64", "encode", "decode")):
+        return True
+    if _looks_like_print_or_save_dialog(window_title):
+        return True
+    if event_type in {"app_switch", "window_changed", "window_closed"} and contains_any(text, TRANSFER_TOKENS):
+        return True
+    return False
 
 
 def _is_sink_app_process(process_name: str) -> bool:

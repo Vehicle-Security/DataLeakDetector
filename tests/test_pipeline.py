@@ -57,7 +57,7 @@ from data_leak_detector.leak_reasoner import DatalogEngine
 from data_leak_detector.policy import contains_any, load_policy_config
 from data_leak_detector.policy import classify_sink
 from data_leak_detector.sensitivity import SensitiveSourceConfig, extract_sensitive_sources
-from data_leak_detector.pipeline import _build_report_id
+from data_leak_detector.pipeline import _build_report_id, _vision_sensitive_files
 
 
 def _records() -> list[dict]:
@@ -154,6 +154,63 @@ def test_analysis_windows_sample_strong_upload_events_more_densely() -> None:
     assert windows[0].end_ms == 75_000
     assert windows[0].step_ms == 250
     assert windows[0].max_keyframes == VisionConfig().max_keyframes_per_strong_window
+
+
+def test_analysis_windows_keep_derived_transfer_anchor_when_upload_exists() -> None:
+    original = "C:/Users/alice/Documents/board_minutes.docx"
+    derived = "C:/Users/alice/Desktop/share.pdf"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "file_open",
+                "file_path": original,
+                "extra": {"relative_timestamp": 0.0},
+                "process_info": {"process_name": "wps.exe"},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:30",
+                "event_type": "created",
+                "file_path": derived,
+                "source_file": original,
+                "extra": {"raw_operation": "export", "relative_timestamp": 30.0},
+                "process_info": {"process_name": "wps.exe"},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:00",
+                "event_type": "file_selected",
+                "file_path": derived,
+                "extra": {"category": "upload", "raw_operation": "file_selected", "relative_timestamp": 60.0},
+                "process_info": {"process_name": "msedge.exe"},
+                "window_info": {"window_title": "ChatGPT upload"},
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [original, derived], VisionConfig())
+
+    assert any(window.priority == "medium" and 30_000 in window.anchor_ms for window in windows)
+    assert any(window.priority == "strong" and 60_000 in window.anchor_ms for window in windows)
+
+
+def test_derivation_action_without_known_sensitive_file_gets_vlm_window() -> None:
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:30",
+                "event_type": "window_changed",
+                "app_name": "Chrome",
+                "process_info": {"process_name": "chrome.exe"},
+                "window_info": {"window_title": "AI translation - online document"},
+                "extra": {"raw_operation": "translate", "relative_timestamp": 30.0},
+            }
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [], VisionConfig())
+
+    assert windows[0].priority == "medium"
+    assert windows[0].anchor_ms == (30_000,)
 
 
 def test_sink_file_selection_dialog_foreground_logs_become_strong_anchors() -> None:
@@ -1030,6 +1087,47 @@ def test_visual_upload_candidate_uses_sensitive_file_when_context_resource_diffe
     assert bundle["upload_candidates"][0]["current_file"] == original
 
 
+def test_vlm_derived_lineage_links_later_upload_log_to_original() -> None:
+    original = "C:/Users/alice/Documents/secret.docx"
+    derived = "C:/Users/alice/Desktop/secret_screen.png"
+    observations = [
+        {
+            "observation_id": "vlm_0",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Snipping Tool",
+            "operation_type": "file_or_content_transfer",
+            "resource": derived,
+            "related_resources": ["secret.docx", derived],
+            "description": "hidden_transfer: screenshot derived from secret.docx",
+            "confidence": 0.92,
+            "source": "vlm",
+        }
+    ]
+    records = [
+        {
+            "timestamp": "2026-01-01T00:06:00",
+            "event_type": "file_selected",
+            "file_path": derived,
+            "extra": {"category": "upload", "raw_operation": "file_selected"},
+            "process_info": {"process_name": "msedge.exe"},
+            "window_info": {"window_title": "ChatGPT upload"},
+        }
+    ]
+
+    bundle = EventCorrelator().run({"log_events": records, "frame_segments": observations, "sensitive_files": [original]})
+    engine = DatalogEngine()
+    for fact in bundle["datalog_facts"]:
+        engine.add_fact(fact["relation"], *fact["args"])
+
+    leaks = engine.query_leak()
+
+    assert bundle["file_lineage"]["direct_file_mappings"][derived] == original
+    assert bundle["upload_candidates"]
+    assert bundle["upload_candidates"][0]["current_file"] == derived
+    assert leaks
+
+
 def test_datalog_engine_finds_derived_file_leak() -> None:
     engine = DatalogEngine()
     engine.add_fact("OpenFile", "open_1", "excel.exe", "secret.xlsx", 1)
@@ -1164,7 +1262,60 @@ def test_vlm_content_transform_is_recorded_without_leakfile() -> None:
 
     assert bundle["correlated_events"]
     assert bundle["upload_candidates"] == []
+    assert any(fact["relation"] == "SuspiciousBehavior" for fact in bundle["datalog_facts"])
     assert not any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
+
+
+def test_pipeline_reports_suspicious_detector_state_for_hidden_behavior(tmp_path: Path) -> None:
+    original = "C:/Users/alice/Documents/product_design.docx"
+    log_file = tmp_path / "logs.json"
+    groundtruth = tmp_path / "groundtruth.json"
+    observations = tmp_path / "observations.json"
+    log_file.write_text("[]", encoding="utf-8")
+    groundtruth.write_text(
+        json.dumps(
+            {"operations": [{"operation": "潜在隐藏行为-内容提取-Base64在线转换", "sensitive_file_path": original}]},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    observations.write_text(
+        json.dumps(
+            [
+                {
+                    "observation_id": "vlm_0",
+                    "start_ms": 1000,
+                    "end_ms": 1000,
+                    "app_name": "ChatGPT",
+                    "operation_type": "file_or_content_transfer",
+                    "resource": "product_design.docx",
+                    "description": "Sensitive document content is transformed with Base64 in an online service",
+                    "confidence": 0.91,
+                    "source": "vlm",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_pipeline(
+        log_file=log_file,
+        output_dir=tmp_path / "out",
+        sensitive_files=[original],
+        observations_file=observations,
+        groundtruth_file=groundtruth,
+        neo4j_enabled=False,
+    )
+
+    verdict = json.loads(Path(report["detail_files"]["verdict_check"]).read_text(encoding="utf-8"))
+    assert report["conclusion"] == "suspicious_behavior_detected"
+    assert report["leak_reasoner"]["detector_conclusion"] == "suspicious_behavior_detected"
+    assert report["summary"]["suspicious_behaviors"] == 1
+    assert any(fact["relation"] == "SuspiciousBehavior" for fact in report["event_correlator"]["datalog_facts"])
+    assert verdict["expected_conclusion"] == "suspicious_behavior_detected"
+    assert verdict["score_status"] == "scored"
+    assert verdict["detector_correct"] is True
 
 
 def test_visual_observation_can_create_datalog_fact_without_file_path_log() -> None:
@@ -1328,6 +1479,25 @@ def test_lineage_uses_extra_source_and_output_paths() -> None:
     assert any(item["current_file"] == derived for item in bundle["correlated_events"])
 
 
+def test_pipeline_vision_sensitive_context_includes_derived_files() -> None:
+    original = "C:/Users/alice/Documents/strategy.docx"
+    derived = "C:/Users/alice/Desktop/strategy.pdf"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "print_to_pdf",
+            "file_path": derived,
+            "extra": {"source_path": original, "output_path": derived, "raw_operation": "print_to_pdf"},
+            "process_info": {"process_name": "wps.exe"},
+        }
+    ]
+    logs = normalize_logs(records)
+
+    context = _vision_sensitive_files(records, logs, [original], session_start_ms=None)
+
+    assert context == [original, derived]
+
+
 def test_dataset_case_discovery_uses_real_data_layout(tmp_path: Path) -> None:
     case_dir = tmp_path / "case"
     logs_dir = case_dir / "logs"
@@ -1365,6 +1535,27 @@ def test_dataset_case_discovery_prefers_indexed_video(tmp_path: Path) -> None:
     case = discover_data_case(case_dir)
 
     assert case.video_file and case.video_file.name == "recording_20240102_000000.mp4"
+
+
+def test_dataset_case_discovery_uses_relative_case_id_and_marks_missing_child_groundtruth(tmp_path: Path) -> None:
+    root = tmp_path / "stage1"
+    parent = root / "1-email-QQemail-1"
+    child = parent / "1-email-Outlook-2"
+    (child / "logs").mkdir(parents=True)
+    (child / "video").mkdir()
+    (child / "logs" / "keyevents.json").write_text(json.dumps(_records()), encoding="utf-8")
+    (child / "video" / "recording.mp4").write_bytes(b"not a real video")
+    (parent / "groundtruth.json").write_text(
+        json.dumps({"operations": [{"operation": "leak", "sensitive_file_path": "C:/secret.docx"}]}),
+        encoding="utf-8",
+    )
+
+    case = discover_data_case(child, case_root=root)
+
+    assert case.case_id == "1-email-QQemail-1/1-email-Outlook-2"
+    assert case.groundtruth_file is None
+    assert case.groundtruth_status == "missing_current_directory_with_ancestor_groundtruth"
+    assert case.nearest_ancestor_groundtruth_file == parent / "groundtruth.json"
 
 
 def test_report_id_includes_case_name_for_artifact_folders() -> None:
@@ -1587,7 +1778,7 @@ def test_vlm_workers_split_frames_into_contiguous_batches() -> None:
     assert _vlm_frame_batches(frames, workers=1) == [frames]
 
 
-def test_fast_vlm_dispatch_uses_each_key_without_changing_normal_parallelism() -> None:
+def test_vlm_dispatch_uses_single_active_key_without_changing_parallelism() -> None:
     config = VisionConfig(
         vlm_api_key="primary",
         vlm_api_keys=("secondary", "primary"),
@@ -1597,8 +1788,8 @@ def test_fast_vlm_dispatch_uses_each_key_without_changing_normal_parallelism() -
 
     clients = _build_vlm_clients(config)
 
-    assert [client.config.vlm_api_key for client in clients] == ["primary", "secondary"]
-    assert _effective_vlm_parallelism(config, key_count=len(clients)) == 6
+    assert [client.config.vlm_api_key for client in clients] == ["primary"]
+    assert _effective_vlm_parallelism(config, key_count=len(clients)) == 3
     assert _effective_vlm_parallelism(VisionConfig(vlm_workers=3)) == 3
 
 
@@ -1608,7 +1799,7 @@ def test_vlm_key_pool_can_supply_the_only_configured_key() -> None:
     assert [client.config.vlm_api_key for client in clients] == ["secondary"]
 
 
-def test_vlm_client_pool_accepts_coding_and_token_plan_keys() -> None:
+def test_vlm_client_pool_uses_one_configured_plan_key() -> None:
     config = VisionConfig(
         vlm_api_key="sk-sp-coding-plan",
         vlm_api_keys=("sk-token-plan",),
@@ -1618,8 +1809,8 @@ def test_vlm_client_pool_accepts_coding_and_token_plan_keys() -> None:
 
     clients = _build_vlm_clients(config)
 
-    assert [client.config.vlm_api_key for client in clients] == ["sk-sp-coding-plan", "sk-token-plan"]
-    assert _effective_vlm_parallelism(config, key_count=len(clients)) == 20
+    assert [client.config.vlm_api_key for client in clients] == ["sk-sp-coding-plan"]
+    assert _effective_vlm_parallelism(config, key_count=len(clients)) == 10
 
 
 def test_vlm_endpoint_limiter_is_shared_across_concurrent_cases() -> None:
@@ -1635,8 +1826,9 @@ def test_vlm_endpoint_limiter_is_shared_across_concurrent_cases() -> None:
     first_locks = _shared_vlm_endpoint_locks(first_case, workers_per_key=config.vlm_workers)
     second_locks = _shared_vlm_endpoint_locks(second_case, workers_per_key=config.vlm_workers)
 
+    assert len(first_case) == 1
+    assert len(second_case) == 1
     assert first_locks[id(first_case[0])] is second_locks[id(second_case[0])]
-    assert first_locks[id(first_case[1])] is second_locks[id(second_case[1])]
 
 
 @dataclass
@@ -2022,7 +2214,7 @@ def test_pipeline_writes_verdict_check_into_detail_dir(tmp_path: Path) -> None:
     assert verdict["final_correct"] is False
 
 
-def test_pipeline_verdict_check_does_not_score_suspicious_groundtruth_as_binary(tmp_path: Path) -> None:
+def test_pipeline_verdict_check_scores_suspicious_groundtruth_as_detector_state(tmp_path: Path) -> None:
     log_file = tmp_path / "logs.json"
     groundtruth = tmp_path / "groundtruth.json"
     log_file.write_text(
@@ -2047,8 +2239,9 @@ def test_pipeline_verdict_check_does_not_score_suspicious_groundtruth_as_binary(
     verdict = json.loads(Path(report["detail_files"]["verdict_check"]).read_text(encoding="utf-8"))
     assert verdict["expected_conclusion"] == "suspicious_behavior_detected"
     assert verdict["groundtruth_unknown_risk_operations"] == 1
-    assert verdict["detector_correct"] is None
-    assert verdict["final_correct"] is None
+    assert verdict["score_status"] == "scored"
+    assert verdict["detector_correct"] is False
+    assert verdict["final_correct"] is False
 
 
 def test_json_loader_keeps_escaped_windows_paths(tmp_path: Path) -> None:

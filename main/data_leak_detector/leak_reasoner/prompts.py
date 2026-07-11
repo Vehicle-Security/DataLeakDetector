@@ -17,7 +17,7 @@ class PromptTemplates:
         return [
             {
                 "role": "system",
-                "content": "Extract OpenFile, TransferFile, CrossProcessTransfer, and LeakFile facts from evidence.",
+                "content": "Extract OpenFile, TransferFile, CrossProcessTransfer, LeakFile, and SuspiciousBehavior facts from evidence.",
             },
             {
                 "role": "user",

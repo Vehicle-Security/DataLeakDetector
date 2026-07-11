@@ -16,7 +16,7 @@ from .frame_analyzer.config import VisionConfig
 from .log_mining import mine_analysis_windows
 from .neo4j import Neo4jConfig, write_report_to_neo4j
 from .groundtruth import evaluate_groundtruth
-from .io import iso_now, load_json_records, normalize_logs
+from .io import iso_now, load_json_records, normalize_logs, normalize_path
 from .leak_reasoner import DatalogEngine
 from .models import DetectionReport
 
@@ -40,6 +40,7 @@ def run_pipeline(
     non_vlm_enabled: bool | None = None,
     case_name: str | None = None,
     session_start_ms: int | None = None,
+    case_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run FrameAnalyzer -> EventCorrelator -> LeakReasoner."""
 
@@ -51,6 +52,12 @@ def run_pipeline(
         vision_precompute_file = str(baseline.get("vision_precompute_file") or "") or None
     records = list(baseline.get("records", [])) if baseline else load_json_records(log_path)
     logs = [] if baseline else normalize_logs(records, session_start_ms=session_start_ms)
+    initial_sensitive_files = list(sensitive_files or [])
+    vision_sensitive_files = _vision_sensitive_files(records, logs, initial_sensitive_files, session_start_ms=session_start_ms)
+    initial_sensitive_keys = {normalize_path(item).lower() for item in initial_sensitive_files if normalize_path(item)}
+    vision_derived_sensitive_files = [
+        item for item in vision_sensitive_files if normalize_path(item).lower() not in initial_sensitive_keys
+    ]
     report_id = _build_report_id(log_path, len(records), case_name)
     target_dir = Path(output_dir) if output_dir is not None else None
     vision_artifact_dir = target_dir / report_id if target_dir is not None else None
@@ -69,7 +76,7 @@ def run_pipeline(
         log_file=log_path,
         records=records,
         logs=logs,
-        sensitive_files=sensitive_files or [],
+        sensitive_files=vision_sensitive_files,
         vision_config=vision_config,
         neo4j_log_miner=effective_neo4j_log_miner,
         reuse_import=reuse_neo4j_import,
@@ -78,7 +85,7 @@ def run_pipeline(
     frame_bundle = analyze_video_behavior(
         video_path or "",
         logs=logs,
-        sensitive_files=sensitive_files or [],
+        sensitive_files=vision_sensitive_files,
         observations_file=observations_file,
         vision_enabled=vision_enabled,
         vision_mode=vision_mode,
@@ -95,7 +102,7 @@ def run_pipeline(
             "session_id": video_path.stem if video_path else log_path.stem,
             "log_events": records,
             "frame_segments": frame_bundle["observations"],
-            "sensitive_files": sensitive_files or [],
+            "sensitive_files": initial_sensitive_files,
             "recording_start_ms": int(session_start_ms or 0),
             "non_vlm_enabled": True if non_vlm_enabled is None else bool(non_vlm_enabled),
         }
@@ -105,19 +112,32 @@ def run_pipeline(
     for fact in correlation_bundle["datalog_facts"]:
         engine.add_fact(fact["relation"], *fact["args"])
     leak_paths = engine.query_leak()
-    detector_conclusion = "data_leak_risk_detected" if leak_paths else "no_confirmed_data_leak"
+    suspicious_facts = _suspicious_datalog_facts(correlation_bundle)
+    detector_conclusion = _detector_conclusion(leak_paths, suspicious_facts)
     groundtruth_verdict = evaluate_groundtruth(groundtruth_file)
     final_conclusion = detector_conclusion
+
+    input_metadata = {
+        "log_file": str(log_path),
+        "video_file": video_text,
+        "groundtruth_file": str(groundtruth_file or ""),
+        "recording_start_ms": int(session_start_ms or 0),
+        "vision_sensitive_files": vision_sensitive_files,
+        "vision_derived_sensitive_files": vision_derived_sensitive_files,
+    }
+    if case_metadata:
+        input_metadata.update(case_metadata)
+        input_metadata["log_file"] = str(log_path)
+        input_metadata["video_file"] = video_text
+        input_metadata["groundtruth_file"] = str(groundtruth_file or "")
+        input_metadata["recording_start_ms"] = int(session_start_ms or 0)
+        input_metadata["vision_sensitive_files"] = vision_sensitive_files
+        input_metadata["vision_derived_sensitive_files"] = vision_derived_sensitive_files
 
     report = DetectionReport(
         report_id=report_id,
         generated_at=iso_now(),
-        input={
-            "log_file": str(log_path),
-            "video_file": video_text,
-            "groundtruth_file": str(groundtruth_file or ""),
-            "recording_start_ms": int(session_start_ms or 0),
-        },
+        input=input_metadata,
         summary={
             "logs": len(logs),
             "frame_observations": len(frame_bundle["observations"]),
@@ -125,6 +145,9 @@ def run_pipeline(
             "upload_candidates": len(correlation_bundle["upload_candidates"]),
             "datalog_facts": len(correlation_bundle["datalog_facts"]),
             "leak_paths": len(leak_paths),
+            "suspicious_behaviors": len(suspicious_facts),
+            "vision_sensitive_files": len(vision_sensitive_files),
+            "vision_derived_sensitive_files": len(vision_derived_sensitive_files),
             "groundtruth_operations": groundtruth_verdict.total_operations if groundtruth_verdict.available else 0,
             "groundtruth_leak_operations": len(groundtruth_verdict.leak_operations) if groundtruth_verdict.available else 0,
             "groundtruth_unknown_risk_operations": len(groundtruth_verdict.unknown_risk_operations)
@@ -136,6 +159,7 @@ def run_pipeline(
         leak_reasoner={
             "engine": "python_taint",
             "leak_paths": [item.to_dict() for item in leak_paths],
+            "suspicious_behaviors": suspicious_facts,
             "detector_conclusion": detector_conclusion,
         },
         conclusion=final_conclusion,
@@ -237,20 +261,37 @@ def _build_verdict_check(payload: dict[str, Any]) -> dict[str, Any]:
     groundtruth = payload.get("groundtruth", {})
     verdict = payload.get("verdict", {})
     leak_reasoner = payload.get("leak_reasoner", {})
+    input_metadata = dict(payload.get("input", {}))
     expected = str(groundtruth.get("conclusion") or "")
     detector = str(leak_reasoner.get("detector_conclusion") or "")
     final = str(payload.get("conclusion") or "")
     available = bool(groundtruth.get("available"))
-    is_binary_expected = expected in {"data_leak_risk_detected", "no_confirmed_data_leak"}
+    is_scorable_expected = _is_scorable_conclusion(expected)
+    if not available:
+        score_status = "unscored"
+        unscored_reason = "missing_groundtruth"
+    elif is_scorable_expected:
+        score_status = "scored"
+        unscored_reason = ""
+    else:
+        score_status = "unscored"
+        unscored_reason = f"unsupported_groundtruth:{expected or 'unknown'}"
     return {
+        "case_id": input_metadata.get("case_id", ""),
+        "case_relative_path": input_metadata.get("case_relative_path", ""),
+        "groundtruth_status": input_metadata.get("groundtruth_status", ""),
+        "nearest_ancestor_groundtruth_file": input_metadata.get("nearest_ancestor_groundtruth_file", ""),
         "groundtruth_available": available,
         "expected_conclusion": expected,
         "detector_conclusion": detector,
         "final_conclusion": final,
         "final_conclusion_source": verdict.get("source", ""),
-        "detector_correct": detector == expected if available and is_binary_expected else None,
-        "final_correct": final == expected if available and is_binary_expected else None,
+        "score_status": score_status,
+        "unscored_reason": unscored_reason,
+        "detector_correct": detector == expected if available and is_scorable_expected else None,
+        "final_correct": final == expected if available and is_scorable_expected else None,
         "detector_leak_paths": len(leak_reasoner.get("leak_paths", [])),
+        "detector_suspicious_behaviors": len(leak_reasoner.get("suspicious_behaviors", [])),
         "groundtruth_operations": int(payload.get("summary", {}).get("groundtruth_operations") or 0),
         "groundtruth_leak_operations": int(payload.get("summary", {}).get("groundtruth_leak_operations") or 0),
         "groundtruth_unknown_risk_operations": int(
@@ -291,6 +332,7 @@ def _build_readable_report(payload: dict[str, Any], detail_files: dict[str, str]
     frame_analyzer["observations_count"] = len(frame_observations)
     frame_analyzer["observations_file"] = detail_files.get("frame_observations", "")
     leak_reasoner["leak_path_count"] = len(leak_reasoner.get("leak_paths", []))
+    leak_reasoner["suspicious_behavior_count"] = len(leak_reasoner.get("suspicious_behaviors", []))
     leak_reasoner["leak_paths"] = []
     leak_reasoner["leak_paths_file"] = detail_files.get("leak_paths", "")
 
@@ -341,8 +383,9 @@ def _build_detection_core(
         "datalog_reasoning": {
             "facts": len(datalog_facts),
             "leak_paths": len(leak_paths),
+            "suspicious_behaviors": sum(1 for fact in datalog_facts if fact.get("relation") == "SuspiciousBehavior"),
             "detector_conclusion": detector_conclusion,
-            "role": "基于 OpenFile/TransferFile/LeakFile 等事实做可解释污点传播",
+            "role": "基于 OpenFile/TransferFile/LeakFile/SuspiciousBehavior 等事实做可解释污点传播",
         },
         "evaluation": {
             "final_conclusion_source": verdict_source,
@@ -367,10 +410,11 @@ def run_data_case(
     neo4j_log_miner: bool | None = None,
     reuse_neo4j_import: bool | None = None,
     non_vlm_enabled: bool | None = None,
+    case_root: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run a real spec/data sample directory."""
 
-    case = discover_data_case(case_dir)
+    case = discover_data_case(case_dir, case_root=case_root)
     merged_sensitive = list(dict.fromkeys([*case.sensitive_files, *(sensitive_files or [])]))
     report = run_pipeline(
         log_file=case.log_file,
@@ -389,8 +433,9 @@ def run_data_case(
         neo4j_log_miner=neo4j_log_miner,
         reuse_neo4j_import=reuse_neo4j_import,
         non_vlm_enabled=non_vlm_enabled,
-        case_name=case.case_dir.name,
+        case_name=case.case_id,
         session_start_ms=case.recording_start_ms,
+        case_metadata=case.to_input_metadata(),
     )
     report["input"].update(case.to_input_metadata())
     return report
@@ -407,6 +452,57 @@ def _slugify(value: str) -> str:
     slug = re.sub(r"[^0-9A-Za-z._-]+", "-", value.strip())
     slug = slug.strip("-._")
     return slug or ""
+
+
+def _detector_conclusion(leak_paths: list[Any], suspicious_facts: list[dict[str, Any]]) -> str:
+    if leak_paths:
+        return "data_leak_risk_detected"
+    if suspicious_facts:
+        return "suspicious_behavior_detected"
+    return "no_confirmed_data_leak"
+
+
+def _suspicious_datalog_facts(correlation_bundle: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        dict(item)
+        for item in correlation_bundle.get("datalog_facts", [])
+        if isinstance(item, dict) and item.get("relation") == "SuspiciousBehavior"
+    ]
+
+
+def _is_scorable_conclusion(value: str) -> bool:
+    return value in {"data_leak_risk_detected", "suspicious_behavior_detected", "no_confirmed_data_leak"}
+
+
+def _vision_sensitive_files(
+    records: list[Any],
+    logs: list[Any],
+    sensitive_files: list[str],
+    *,
+    session_start_ms: int | None,
+) -> list[str]:
+    normalized_initial = _dedupe_paths(sensitive_files)
+    if not normalized_initial:
+        return []
+    lineage_logs = logs or normalize_logs(
+        [item for item in records if isinstance(item, dict)],
+        session_start_ms=session_start_ms,
+    )
+    derived = EventCorrelator().derived_sensitive_files(lineage_logs, normalized_initial)
+    return _dedupe_paths([*normalized_initial, *derived])
+
+
+def _dedupe_paths(paths: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        text = normalize_path(path)
+        key = text.lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(text)
+    return result
 
 
 def _write_graph(

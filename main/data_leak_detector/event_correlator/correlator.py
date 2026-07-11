@@ -40,6 +40,7 @@ class EventCorrelator:
             observations = [item for item in observations if item.source == "vlm"]
         sensitive_files = self._collect_sensitive_files(logs, payload.get("sensitive_files") or [], config=config)
         lineage = self._build_lineage(logs, sensitive_files) if config.non_vlm_enabled else Lineage()
+        self._add_visual_lineage(observations, sensitive_files, lineage)
         correlated = self._correlate(logs, observations, sensitive_files, lineage, config=config)
         uploads = build_upload_candidates(correlated, default_confidence=config.upload_confidence)
         facts = build_datalog_facts(correlated, uploads, lineage)
@@ -65,6 +66,14 @@ class EventCorrelator:
             },
             "errors": [],
         }
+
+    def derived_sensitive_files(self, logs, sensitive_files: list[str]) -> list[str]:
+        lineage = self._build_lineage(logs, sensitive_files)
+        derived: list[str] = []
+        for file_path in lineage.direct:
+            if self._resolve_original(file_path, sensitive_files, lineage):
+                derived.append(normalize_path(file_path))
+        return _dedupe_paths(derived)
 
     def _collect_sensitive_files(self, logs, explicit: list[Any], *, config: EventCorrelatorConfig | None = None) -> list[str]:
         config = config or self.config
@@ -185,7 +194,7 @@ class EventCorrelator:
                     app_name=(log.app_name or log.process_name or (observation.app_name if observation else "")),
                     original_file=original,
                     current_file=current_file,
-                    operation_type=(observation.operation_type if observation else operation_from_text(text, log.event_type)),
+                    operation_type=_correlated_operation_type(log, observation, text),
                     behavior_category=behavior,
                     confidence=round(min(confidence, 1.0), 3),
                     evidence_refs=tuple(
@@ -302,6 +311,29 @@ class EventCorrelator:
         for sensitive in sensitive_files:
             if sensitive and (sensitive.lower() in description or _mentions_file(description, sensitive)):
                 return sensitive
+        return ""
+
+    def _add_visual_lineage(self, observations, sensitive_files: list[str], lineage: Lineage) -> None:
+        for observation in observations:
+            if observation.source == "log_anchored":
+                continue
+            original = self._resolve_visual_original_without_lineage(observation, sensitive_files)
+            if not original:
+                continue
+            text = _observation_search_text(observation)
+            if not (_is_transfer_observation(observation) or _is_external_observation(observation) or contains_any(text, SINK_TOKENS)):
+                continue
+            for candidate in [observation.resource, *observation.related_resources]:
+                derived = normalize_path(candidate)
+                if _is_visual_derived_candidate(derived, original):
+                    lineage.add(derived, original)
+
+    def _resolve_visual_original_without_lineage(self, observation, sensitive_files: list[str]) -> str:
+        candidates = [observation.resource, *observation.related_resources, observation.description]
+        for candidate in candidates:
+            for sensitive in sensitive_files:
+                if same_file(candidate, sensitive) or _matches_sensitive_file_reference(candidate, sensitive) or _mentions_file(candidate, sensitive):
+                    return sensitive
         return ""
 
     def _correlate_visual_only(self, observations, sensitive_files: list[str], lineage: Lineage, start_index: int) -> list[CorrelatedEvent]:
@@ -421,6 +453,14 @@ def _is_sink_log(log) -> bool:
     return raw_operation in {"file_selected", "file_upload", "upload", "send_click"} or contains_any(category, ("文件上传", "直接外发"))
 
 
+def _correlated_operation_type(log, observation, text: str) -> str:
+    if _is_sink_log(log):
+        return "external_sink_interaction"
+    if observation is not None and observation.operation_type:
+        return observation.operation_type
+    return operation_from_text(text, log.event_type)
+
+
 def _visual_join_reasons(observation, original: str) -> list[str]:
     reasons = ["visual_only"]
     if original:
@@ -456,6 +496,16 @@ def _matches_sensitive_file_reference(file_path: str, sensitive_file: str) -> bo
     if Path(ref_name).suffix:
         return False
     return len(ref_name) >= 4 and ref_name == sensitive_stem
+
+
+def _is_visual_derived_candidate(file_path: str, original: str) -> bool:
+    normalized = normalize_path(file_path).strip().strip("\"'")
+    lowered = normalized.lower()
+    if not lowered or lowered in {"unknown", "n/a", "na", "none", "null", "-", "未知"}:
+        return False
+    if same_file(normalized, original) or _matches_sensitive_file_reference(normalized, original):
+        return False
+    return True
 
 
 def _flatten_search_parts(value: Any) -> list[str]:
@@ -499,3 +549,16 @@ def _guess_source_by_stem_from_index(file_path: str, known_stems: list[tuple[str
         if known_stem and (stem.startswith(known_stem) or known_stem.startswith(stem)):
             return known_path
     return ""
+
+
+def _dedupe_paths(paths: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        normalized = normalize_path(path)
+        key = normalized.lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(normalized)
+    return result
