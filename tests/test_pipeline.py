@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,9 +17,13 @@ from data_leak_detector.frame_analyzer.analyzer import (
     _combine_vlm_request_metrics,
     _combine_vlm_usage,
     _dedupe_ocr_results,
+    _build_vlm_clients,
+    _effective_vlm_parallelism,
     _export_vision_artifacts,
     _ocr_observations,
     _select_ocr_frames_for_ocr,
+    _run_vlm_batches,
+    _shared_vlm_endpoint_locks,
     _vlm_frame_batches,
     _vlm_request_artifact_payload,
 )
@@ -39,7 +45,7 @@ from data_leak_detector.frame_analyzer.frames import (
 from data_leak_detector.frame_analyzer.ocr import OcrResult, RapidOcrProvider, _rapidocr_provider_name
 from data_leak_detector.frame_analyzer.parser import ParsedVisionEvent, parse_vlm_response, parse_vlm_response_detailed, vision_events_to_observations
 from data_leak_detector.frame_analyzer.roi import detect_foreground_window_region, detect_text_regions
-from data_leak_detector.frame_analyzer.vlm import VlmRequestFrame, build_vlm_frame_grids, choose_keyframes_for_vlm, choose_vlm_frames, prepare_vlm_frame_images
+from data_leak_detector.frame_analyzer.vlm import VlmRequestFrame, VlmResponse, build_vlm_frame_grids, choose_keyframes_for_vlm, choose_vlm_frames, prepare_vlm_frame_images
 from data_leak_detector.log_mining import build_analysis_windows, mine_analysis_windows
 from data_leak_detector.neo4j.importer import fingerprint_records, records_to_graph_events
 from data_leak_detector.neo4j.store import Neo4jGraphStore
@@ -1433,6 +1439,29 @@ def test_vlm_frame_selection_ocr_all_sends_normal_ocr_frames() -> None:
     assert selected and selected[0].selection_reason == "ocr_all_to_vlm"
 
 
+def test_vlm_frame_selection_negative_budget_sends_all_candidates() -> None:
+    frames = [
+        OcrResult(
+            KeyFrame(f"frame_{index}", index * 1000, "frame.jpg", 0.9, "medium:visual_change", window_id="window_0"),
+            f"OCR text {index}",
+            0.99,
+            "rapidocr_cuda",
+        )
+        for index in range(5)
+    ]
+
+    selected = choose_vlm_frames(frames, min_confidence=0.70, max_frames=-1, strategy="ocr_all")
+
+    assert [item.frame.frame_id for item in selected] == [f"frame_{index}" for index in range(5)]
+
+
+def test_vlm_frame_selection_zero_budget_disables_vlm_frames() -> None:
+    frame = KeyFrame("frame_1", 1000, "frame.jpg", 0.9, "medium:visual_change", window_id="window_0")
+    ocr = OcrResult(frame=frame, text="upload salary table", confidence=0.99, provider="rapidocr_cuda")
+
+    assert choose_vlm_frames([ocr], min_confidence=0.70, max_frames=0, strategy="ocr_all") == []
+
+
 def test_vlm_frame_selection_can_include_empty_strong_anchor() -> None:
     frame = KeyFrame("frame_1", 1000, "frame.jpg", 0.9, "strong:anchor", window_id="window_0")
     no_ocr = OcrResult(frame=frame, text="", confidence=0.0, provider="none")
@@ -1486,6 +1515,17 @@ def test_direct_keyframe_global_budget_spreads_dense_window_anchors() -> None:
     selected = choose_keyframes_for_vlm(frames, max_frames=3)
 
     assert [item.frame.timestamp_ms for item in selected] == [30_771, 34_280, 36_795]
+
+
+def test_direct_keyframe_negative_budget_sends_all_keyframes() -> None:
+    frames = [
+        KeyFrame(f"frame_{timestamp}", timestamp, "frame.jpg", 0.9, "strong:anchor", window_id="window_0")
+        for timestamp in (30_771, 32_192, 32_727, 34_280, 34_715, 36_795)
+    ]
+
+    selected = choose_keyframes_for_vlm(frames, max_frames=-1)
+
+    assert [item.frame.timestamp_ms for item in selected] == [30_771, 32_192, 32_727, 34_280, 34_715, 36_795]
 
 
 def test_vlm_grid_builder_keeps_source_frame_mapping(tmp_path: Path) -> None:
@@ -1546,6 +1586,87 @@ def test_vlm_workers_split_frames_into_contiguous_batches() -> None:
     assert _vlm_frame_batches(frames, workers=1) == [frames]
 
 
+def test_fast_vlm_dispatch_uses_each_key_without_changing_normal_parallelism() -> None:
+    config = VisionConfig(
+        vlm_api_key="primary",
+        vlm_api_keys=("secondary", "primary"),
+        vlm_workers=3,
+        vlm_fast_dispatch=True,
+    )
+
+    clients = _build_vlm_clients(config)
+
+    assert [client.config.vlm_api_key for client in clients] == ["primary", "secondary"]
+    assert _effective_vlm_parallelism(config, key_count=len(clients)) == 6
+    assert _effective_vlm_parallelism(VisionConfig(vlm_workers=3)) == 3
+
+
+def test_vlm_key_pool_can_supply_the_only_configured_key() -> None:
+    clients = _build_vlm_clients(VisionConfig(vlm_api_keys=("secondary",), vlm_fast_dispatch=True))
+
+    assert [client.config.vlm_api_key for client in clients] == ["secondary"]
+
+
+def test_vlm_client_pool_accepts_coding_and_token_plan_keys() -> None:
+    config = VisionConfig(
+        vlm_api_key="sk-sp-coding-plan",
+        vlm_api_keys=("sk-token-plan",),
+        vlm_workers=10,
+        vlm_fast_dispatch=True,
+    )
+
+    clients = _build_vlm_clients(config)
+
+    assert [client.config.vlm_api_key for client in clients] == ["sk-sp-coding-plan", "sk-token-plan"]
+    assert _effective_vlm_parallelism(config, key_count=len(clients)) == 20
+
+
+def test_vlm_endpoint_limiter_is_shared_across_concurrent_cases() -> None:
+    config = VisionConfig(
+        vlm_coding_api_key="coding-key",
+        vlm_token_api_key="token-key",
+        vlm_fast_dispatch=True,
+        vlm_workers=10,
+    )
+    first_case = _build_vlm_clients(config)
+    second_case = _build_vlm_clients(config)
+
+    first_locks = _shared_vlm_endpoint_locks(first_case, workers_per_key=config.vlm_workers)
+    second_locks = _shared_vlm_endpoint_locks(second_case, workers_per_key=config.vlm_workers)
+
+    assert first_locks[id(first_case[0])] is second_locks[id(second_case[0])]
+    assert first_locks[id(first_case[1])] is second_locks[id(second_case[1])]
+
+
+@dataclass
+class _RetryClient:
+    key: str
+    fail: bool = False
+
+    @property
+    def config(self) -> SimpleNamespace:
+        return SimpleNamespace(vlm_api_key=self.key)
+
+    def analyze(self, *_: object, **__: object) -> VlmResponse:
+        if self.fail:
+            raise RuntimeError("invalid_api_key")
+        return VlmResponse(text='{"events":[]}', provider="unit", model="unit", usage={"total_tokens": 1})
+
+
+def test_vlm_batch_retries_another_key_when_the_assigned_key_fails() -> None:
+    results = _run_vlm_batches(
+        [_RetryClient("invalid", fail=True), _RetryClient("valid")],  # type: ignore[arg-type]
+        [[object()], [object()]],
+        sensitive_files=[],
+        active_apps=[],
+        workers_per_key=1,
+    )
+
+    assert results["errors"] == []
+    assert len(results["batches"]) == 2
+    assert results["retry_warnings"] == ["vlm_key_retry[0]: RuntimeError: invalid_api_key"]
+
+
 def test_vlm_worker_artifacts_combine_real_metrics_and_usage() -> None:
     summaries = [
         {"request_metrics": {"prompt_chars": 10, "image_count": 2, "image_pixels": 100, "image_megapixels": 0.1}},
@@ -1559,7 +1680,13 @@ def test_vlm_worker_artifacts_combine_real_metrics_and_usage() -> None:
             {"prompt_tokens": 80, "completion_tokens": 10, "total_tokens": 90},
         ]
     )
-    request_payload = _vlm_request_artifact_payload(summaries, workers=2)
+    request_payload = _vlm_request_artifact_payload(
+        summaries,
+        workers=4,
+        workers_per_key=2,
+        fast_dispatch=True,
+        api_key_count=2,
+    )
 
     assert metrics["prompt_chars"] == 30
     assert metrics["image_count"] == 3
@@ -1569,8 +1696,14 @@ def test_vlm_worker_artifacts_combine_real_metrics_and_usage() -> None:
     assert usage["completion_tokens"] == 30
     assert usage["total_tokens"] == 210
     assert usage["batches"][0]["total_tokens"] == 120
-    assert request_payload["workers"] == 2
+    assert request_payload["workers"] == 4
     assert request_payload["batch_count"] == 2
+    assert request_payload["dispatch"] == {
+        "fast_dispatch": True,
+        "api_key_count": 2,
+        "workers_per_key": 2,
+        "parallelism": 4,
+    }
 
 
 def test_vlm_frame_selection_prioritizes_strong_late_sink_frame() -> None:

@@ -32,6 +32,19 @@ class DataCase:
         }
 
 
+def discover_data_case_directories(root: str | Path) -> list[Path]:
+    """Recursively find sample directories with direct logs and video folders."""
+
+    root_path = Path(root)
+    if not root_path.is_dir():
+        raise FileNotFoundError(f"case root does not exist: {root_path}")
+    candidates = [root_path, *root_path.rglob("*")]
+    return sorted(
+        (path for path in candidates if path.is_dir() and (path / "logs").is_dir() and (path / "video").is_dir()),
+        key=lambda path: str(path).lower(),
+    )
+
+
 def discover_data_case(path: str | Path) -> DataCase:
     """Resolve a NAS-style sample directory into pipeline input files."""
 

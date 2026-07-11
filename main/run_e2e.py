@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import sys
+import threading
+import time
+from pathlib import Path
 
 from data_leak_detector import run_data_case, run_pipeline
+from data_leak_detector.datasets import discover_data_case_directories
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -16,6 +21,23 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run DataLeakDetector end-to-end.")
     parser.add_argument("--log", "-l", default="", help="Path to a JSON/JSONL monitor log.")
     parser.add_argument("--case", "-c", default="", help="Path to a spec/data sample case directory.")
+    parser.add_argument("--case-root", default="", help="Recursively run every case directory below this root with shared VLM plan quotas.")
+    parser.add_argument("--case-workers", type=int, default=1, help="Concurrent cases for --case-root; VLM plan limits remain global.")
+    parser.add_argument("--release", action="store_true", help="For --case-root, write one consolidated release report instead of per-case debug artifacts.")
+    parser.add_argument(
+        "--release-vlm-strategies",
+        nargs="+",
+        choices=["direct_keyframes", "ocr_all", "ocr_triage"],
+        default=[],
+        help="Release matrix VLM frame strategies; PowerShell arrays can be expanded directly.",
+    )
+    parser.add_argument(
+        "--release-vlm-grids",
+        nargs="+",
+        type=int,
+        default=[],
+        help="Release matrix VLM grid sizes; PowerShell arrays can be expanded directly.",
+    )
     parser.add_argument("--video", "-v", default="", help="Optional screen recording path for frame analysis.")
     parser.add_argument("--groundtruth", default="", help="Optional groundtruth.json path for verdict evaluation.")
     parser.add_argument("--output-dir", "-o", default="", help="Optional directory for the JSON report.")
@@ -23,10 +45,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--observations", default="", help="Optional precomputed frame observation JSON.")
     parser.add_argument("--vision", action="store_true", help="Enable OCR/VLM-assisted frame analysis.")
     parser.add_argument("--vision-mode", choices=["hybrid", "ocr", "vlm"], default="", help="Frame analysis mode.")
-    parser.add_argument("--max-vlm-frames", type=int, default=0, help="Maximum keyframes sent to VLM.")
+    parser.add_argument("--max-vlm-frames", type=int, default=None, help="Maximum keyframes sent to VLM; 0 disables VLM frames, negative means no cap.")
     parser.add_argument("--vlm-dry-run", action="store_true", help="Write VLM request artifacts without calling the model API.")
     parser.add_argument("--vlm-grid-size", type=int, default=0, help="Pack selected VLM frames into NxN grid images before calling the model.")
-    parser.add_argument("--vlm-workers", type=int, default=0, help="Parallel VLM request workers for selected frame batches.")
+    parser.add_argument("--vlm-workers", type=int, default=0, help="VLM workers; in fast dispatch mode this is the per-Key concurrency.")
+    parser.add_argument("--vlm-fast-dispatch", action="store_true", help="Use every configured VLM API Key concurrently without changing frame/OCR/grid strategy.")
     parser.add_argument("--vlm-max-image-side", type=int, default=-1, help="Resize VLM input images to this max side; 0 keeps originals.")
     parser.add_argument(
         "--vlm-frame-strategy",
@@ -38,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--neo4j", action="store_true", help="Write the report graph to Neo4j for this run.")
     parser.add_argument("--neo4j-strict", action="store_true", help="Fail if Neo4j writing fails.")
     parser.add_argument("--neo4j-log-miner", action="store_true", help="Use Neo4j to mine analysis windows before frame extraction.")
+    parser.add_argument("--no-neo4j-log-miner", action="store_true", help="Use in-memory log mining even when the environment enables Neo4j.")
     parser.add_argument("--no-reuse-neo4j-import", action="store_true", help="Reimport logs even when the case fingerprint already exists in Neo4j.")
     args = parser.parse_args(argv)
     if args.vlm_dry_run:
@@ -48,6 +72,8 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["DLD_VLM_GRID_SIZE"] = str(max(1, args.vlm_grid_size))
     if args.vlm_workers:
         os.environ["DLD_VLM_WORKERS"] = str(max(1, args.vlm_workers))
+    if args.vlm_fast_dispatch:
+        os.environ["DLD_VLM_FAST_DISPATCH"] = "1"
     if args.vlm_max_image_side >= 0:
         os.environ["DLD_VLM_MAX_IMAGE_SIDE"] = str(max(0, args.vlm_max_image_side))
 
@@ -57,14 +83,42 @@ def main(argv: list[str] | None = None) -> int:
         "observations_file": args.observations or None,
         "neo4j_enabled": True if args.neo4j else None,
         "neo4j_strict": True if args.neo4j_strict else None,
-        "neo4j_log_miner": True if args.neo4j_log_miner else None,
+        "neo4j_log_miner": False if args.no_neo4j_log_miner else (True if args.neo4j_log_miner else None),
         "reuse_neo4j_import": False if args.no_reuse_neo4j_import else None,
         "vision_enabled": True if args.vision else None,
         "vision_mode": args.vision_mode or None,
-        "max_vlm_frames": args.max_vlm_frames or None,
+        "max_vlm_frames": args.max_vlm_frames,
         "non_vlm_enabled": False if args.no_non_vlm else None,
     }
-    if args.case:
+    if args.release and not args.case_root:
+        parser.error("--release requires --case-root")
+    if args.neo4j_log_miner and args.no_neo4j_log_miner:
+        parser.error("--neo4j-log-miner and --no-neo4j-log-miner cannot be used together")
+    if (args.release_vlm_strategies or args.release_vlm_grids) and not args.release:
+        parser.error("--release-vlm-strategies and --release-vlm-grids require --release")
+    if any(grid < 1 for grid in args.release_vlm_grids):
+        parser.error("--release-vlm-grids values must be positive")
+    if args.case and args.case_root:
+        parser.error("--case and --case-root cannot be used together")
+    if args.case_root:
+        if args.release and (args.release_vlm_strategies or args.release_vlm_grids):
+            report = _run_release_matrix(
+                args.case_root,
+                common_args=common_args,
+                output_dir=args.output_dir or None,
+                workers=max(1, args.case_workers),
+                strategies=args.release_vlm_strategies or [os.getenv("DLD_VLM_FRAME_STRATEGY", "ocr_triage")],
+                grids=args.release_vlm_grids or [max(1, int(os.getenv("DLD_VLM_GRID_SIZE", "1")))],
+            )
+        else:
+            report = _run_case_root(
+                args.case_root,
+                common_args=common_args,
+                output_dir=args.output_dir or None,
+                workers=max(1, args.case_workers),
+                release=args.release,
+            )
+    elif args.case:
         report = run_data_case(args.case, **common_args)
     else:
         if not args.log:
@@ -78,6 +132,23 @@ def main(argv: list[str] | None = None) -> int:
 def _build_cli_summary(report: dict) -> dict:
     """Keep command output readable; full evidence lives in report/detail files."""
 
+    if "batch" in report:
+        batch = dict(report["batch"])
+        if batch.get("mode") == "release_matrix":
+            variants = list(batch.pop("variants", []))
+            batch["variants"] = [
+                {
+                    "vlm_frame_strategy": item.get("vlm_frame_strategy", ""),
+                    "vlm_grid_size": item.get("vlm_grid_size", 0),
+                    "summary": item.get("report", {}).get("summary", {}),
+                    "execution": {
+                        key: item.get("report", {}).get("batch", {}).get(key)
+                        for key in ("case_count", "completed_cases", "failed_cases", "timing_seconds")
+                    },
+                }
+                for item in variants
+            ]
+        return {"batch": batch}
     return {
         "report_id": report.get("report_id", ""),
         "conclusion": report.get("conclusion", ""),
@@ -88,6 +159,295 @@ def _build_cli_summary(report: dict) -> dict:
         "vision": report.get("frame_analyzer", {}).get("statistics", {}).get("vision", {}),
         "verdict": report.get("verdict", {}),
         "graph": report.get("graph", {}),
+    }
+
+
+def _run_case_root(
+    case_root: str,
+    *,
+    common_args: dict,
+    output_dir: str | None,
+    workers: int,
+    release: bool = False,
+    write_release_report: bool = True,
+    progress_file: Path | None = None,
+    progress_context: dict | None = None,
+) -> dict:
+    root = Path(case_root)
+    cases = discover_data_case_directories(root)
+    if not cases:
+        raise ValueError(f"no case directories found under {root}")
+
+    output_root = Path(output_dir) if output_dir else None
+    if release and output_root is None:
+        output_root = Path("artifacts") / f"{root.name}_release_{time.strftime('%Y%m%d_%H%M%S')}"
+    started = time.perf_counter()
+    if release:
+        assert output_root is not None
+        output_root.mkdir(parents=True, exist_ok=True)
+        progress_file = progress_file or output_root / "release_progress.json"
+    progress_lock = threading.Lock()
+    running: set[str] = set()
+    finished_uncollected: set[str] = set()
+    recent_cases: list[dict] = []
+    last_case: dict[str, object] | None = None
+
+    def persist_progress(state: str) -> None:
+        if progress_file is None:
+            return
+        payload = {
+            "mode": "release",
+            "state": state,
+            "case_root": str(root),
+            "case_count": len(cases),
+            "case_workers": min(workers, len(cases)),
+            "completed_cases": len(completed),
+            "failed_cases": len(errors),
+            "running_cases": sorted(running),
+            "queued_cases": max(
+                0,
+                len(cases) - len(completed) - len(errors) - len(running) - len(finished_uncollected),
+            ),
+            "last_case": last_case,
+            "recent_cases": recent_cases[-20:],
+            "elapsed_seconds": round(time.perf_counter() - started, 3),
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        }
+        if progress_context:
+            payload.update(progress_context)
+        temporary_file = progress_file.with_suffix(".tmp")
+        temporary_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temporary_file, progress_file)
+
+    def mark_started(case_name: str) -> None:
+        with progress_lock:
+            running.add(case_name)
+            persist_progress("running")
+            print(
+                f"  started case={case_name} "
+                f"running={len(running)}/{min(workers, len(cases))}",
+                flush=True,
+            )
+
+    def mark_finished(case_name: str) -> None:
+        with progress_lock:
+            running.discard(case_name)
+            finished_uncollected.add(case_name)
+            persist_progress("running")
+
+    def run_one(case: Path) -> tuple[str, dict, float]:
+        case_args = dict(common_args)
+        if output_root is not None and not release:
+            case_args["output_dir"] = str(output_root / case.name)
+        elif release:
+            case_args["output_dir"] = None
+        case_started = time.perf_counter()
+        mark_started(case.name)
+        try:
+            return case.name, run_data_case(case, **case_args), time.perf_counter() - case_started
+        finally:
+            mark_finished(case.name)
+
+    completed: list[tuple[str, dict, float]] = []
+    errors: list[dict[str, str]] = []
+    if release:
+        with progress_lock:
+            persist_progress("starting")
+        print(
+            f"release cases=0/{len(cases)} workers={min(workers, len(cases))} progress={progress_file}",
+            flush=True,
+        )
+    with ThreadPoolExecutor(max_workers=min(workers, len(cases))) as executor:
+        futures = {executor.submit(run_one, case): case.name for case in cases}
+        for future in as_completed(futures):
+            case_name = futures[future]
+            try:
+                name, result, seconds = future.result()
+                with progress_lock:
+                    finished_uncollected.discard(name)
+                    completed.append((name, result, seconds))
+                    last_case = {
+                        "case": name,
+                        "state": "completed",
+                        "seconds": round(seconds, 3),
+                        "conclusion": result.get("conclusion", ""),
+                    }
+                    recent_cases.append(last_case)
+                    persist_progress("running")
+                    print(
+                        f"  [{len(completed) + len(errors)}/{len(cases)}] completed "
+                        f"case={name} seconds={seconds:.1f} "
+                        f"running={len(running)} "
+                        f"queued={max(0, len(cases) - len(completed) - len(errors) - len(running) - len(finished_uncollected))}",
+                        flush=True,
+                    )
+            except Exception as exc:
+                with progress_lock:
+                    finished_uncollected.discard(case_name)
+                    error = {"case": case_name, "error": f"{type(exc).__name__}: {exc}"}
+                    errors.append(error)
+                    last_case = {"case": case_name, "state": "failed", "error": error["error"]}
+                    recent_cases.append(last_case)
+                    persist_progress("running")
+                    print(
+                        f"  [{len(completed) + len(errors)}/{len(cases)}] failed "
+                        f"case={case_name} error={error['error']}",
+                        flush=True,
+                    )
+
+    completed.sort(key=lambda item: item[0])
+    batch = {
+        "mode": "release" if release else "debug",
+        "report_file": "",
+        "case_root": str(root),
+        "case_count": len(cases),
+        "case_workers": min(workers, len(cases)),
+        "completed_cases": len(completed),
+        "failed_cases": len(errors),
+        "timing_seconds": round(time.perf_counter() - started, 3),
+        "cases": [
+            {
+                "case": name,
+                "seconds": round(seconds, 3),
+                "conclusion": result.get("conclusion", ""),
+                "report_file": result.get("report_file", ""),
+            }
+            for name, result, seconds in completed
+        ],
+        "errors": errors,
+    }
+    if not release:
+        return {"batch": batch}
+
+    assert output_root is not None
+    output_root.mkdir(parents=True, exist_ok=True)
+    release_report = {
+        "batch": batch,
+        "summary": _release_summary(completed),
+        "cases": [_release_case_report(name, report, seconds) for name, report, seconds in completed],
+    }
+    if write_release_report:
+        report_file = output_root / "release_report.json"
+        release_report["batch"]["report_file"] = str(report_file)
+        report_file.write_text(json.dumps(release_report, ensure_ascii=False, indent=2), encoding="utf-8")
+    if release:
+        with progress_lock:
+            persist_progress("completed")
+    return {"batch": release_report["batch"], "release_report": release_report}
+
+
+def _run_release_matrix(
+    case_root: str,
+    *,
+    common_args: dict,
+    output_dir: str | None,
+    workers: int,
+    strategies: list[str],
+    grids: list[int],
+) -> dict:
+    root = Path(case_root)
+    output_root = Path(output_dir) if output_dir else Path("artifacts") / f"{root.name}_release_{time.strftime('%Y%m%d_%H%M%S')}"
+    previous_strategy = os.environ.get("DLD_VLM_FRAME_STRATEGY")
+    previous_grid = os.environ.get("DLD_VLM_GRID_SIZE")
+    variants: list[dict] = []
+    started = time.perf_counter()
+    variant_items = [(strategy, grid) for strategy in dict.fromkeys(strategies) for grid in dict.fromkeys(grids)]
+    output_root.mkdir(parents=True, exist_ok=True)
+    progress_file = output_root / "release_progress.json"
+    try:
+        for variant_index, (strategy, grid) in enumerate(variant_items, start=1):
+            os.environ["DLD_VLM_FRAME_STRATEGY"] = strategy
+            os.environ["DLD_VLM_GRID_SIZE"] = str(grid)
+            print(
+                f"release variant={variant_index}/{len(variant_items)} "
+                f"strategy={strategy} grid={grid}",
+                flush=True,
+            )
+            result = _run_case_root(
+                case_root,
+                common_args=common_args,
+                output_dir=str(output_root),
+                workers=workers,
+                release=True,
+                write_release_report=False,
+                progress_file=progress_file,
+                progress_context={
+                    "mode": "release_matrix",
+                    "variant": {
+                        "index": variant_index,
+                        "count": len(variant_items),
+                        "vlm_frame_strategy": strategy,
+                        "vlm_grid_size": grid,
+                    },
+                    "completed_variants": len(variants),
+                },
+            )
+            variants.append(
+                {
+                    "vlm_frame_strategy": strategy,
+                    "vlm_grid_size": grid,
+                    "report": result["release_report"],
+                }
+            )
+    finally:
+        _restore_env("DLD_VLM_FRAME_STRATEGY", previous_strategy)
+        _restore_env("DLD_VLM_GRID_SIZE", previous_grid)
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    report_file = output_root / "release_matrix_report.json"
+    matrix = {
+        "mode": "release_matrix",
+        "report_file": str(report_file),
+        "case_root": str(root),
+        "case_workers": workers,
+        "variant_count": len(variants),
+        "timing_seconds": round(time.perf_counter() - started, 3),
+        "variants": variants,
+    }
+    report_file.write_text(json.dumps(matrix, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"batch": matrix}
+
+
+def _restore_env(name: str, previous: str | None) -> None:
+    if previous is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = previous
+
+
+
+
+def _release_case_report(case_name: str, report: dict, seconds: float) -> dict:
+    vision = dict(report.get("frame_analyzer", {}).get("statistics", {}).get("vision", {}))
+    event_correlator = dict(report.get("event_correlator", {}))
+    event_correlator.pop("raw_log_events", None)
+    return {
+        "case": case_name,
+        "seconds": round(seconds, 3),
+        "report_id": report.get("report_id", ""),
+        "conclusion": report.get("conclusion", ""),
+        "summary": report.get("summary", {}),
+        "vision": vision,
+        "verdict": report.get("verdict", {}),
+        "detection_core": report.get("detection_core", {}),
+        "leak_reasoner": report.get("leak_reasoner", {}),
+        "event_correlator": event_correlator,
+        "errors": report.get("frame_analyzer", {}).get("errors", []),
+    }
+
+
+def _release_summary(completed: list[tuple[str, dict, float]]) -> dict:
+    reports = [report for _, report, _ in completed]
+    visions = [dict(report.get("frame_analyzer", {}).get("statistics", {}).get("vision", {})) for report in reports]
+    return {
+        "case_count": len(reports),
+        "data_leak_risk_detected": sum(report.get("conclusion") == "data_leak_risk_detected" for report in reports),
+        "logs": sum(int(report.get("summary", {}).get("logs", 0)) for report in reports),
+        "frame_observations": sum(int(report.get("summary", {}).get("frame_observations", 0)) for report in reports),
+        "vlm_frames": sum(int(vision.get("vlm_frames", 0)) for vision in visions),
+        "vlm_events": sum(int(vision.get("vlm_events", 0)) for vision in visions),
+        "vlm_seconds": round(sum(float(vision.get("timing_seconds", {}).get("vlm", 0.0)) for vision in visions), 3),
+        "case_seconds": round(sum(seconds for _, _, seconds in completed), 3),
     }
 
 

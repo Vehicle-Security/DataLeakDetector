@@ -8,6 +8,16 @@ from pathlib import Path
 
 
 @dataclass(frozen=True)
+class VlmEndpoint:
+    """One independently rate-limited OpenAI-compatible VLM endpoint."""
+
+    name: str
+    base_url: str
+    chat_url: str
+    api_key: str
+
+
+@dataclass(frozen=True)
 class VisionConfig:
     enabled: bool = False
     mode: str = "hybrid"
@@ -35,7 +45,7 @@ class VisionConfig:
     max_keyframes_per_weak_window: int = 2
     include_weak_windows: bool = False
     include_unanchored_medium_windows: bool = False
-    max_vlm_frames: int = 8
+    max_vlm_frames: int = -1
     ocr_provider: str = "none"
     ocr_min_confidence: float = 0.70
     ocr_max_image_side: int = 1_280
@@ -53,13 +63,21 @@ class VisionConfig:
     vlm_chat_url: str = ""
     vlm_model: str = "qwen-vl-max-latest"
     vlm_api_key: str = ""
+    vlm_api_keys: tuple[str, ...] = ()
+    vlm_coding_base_url: str = "https://coding.dashscope.aliyuncs.com/v1"
+    vlm_coding_chat_url: str = ""
+    vlm_coding_api_key: str = ""
+    vlm_token_base_url: str = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+    vlm_token_chat_url: str = ""
+    vlm_token_api_key: str = ""
     vlm_timeout_seconds: int = 60
     vlm_dry_run: bool = False
     vlm_frame_strategy: str = "ocr_triage"
     vlm_grid_size: int = 1
-    vlm_workers: int = 1
+    vlm_workers: int = 10
+    vlm_fast_dispatch: bool = True
     vlm_include_empty_ocr_strong_frames: bool = True
-    vlm_max_frames_per_window: int = 3
+    vlm_max_frames_per_window: int = 0
     vlm_max_image_side: int = 1_280
 
     @classmethod
@@ -93,7 +111,7 @@ class VisionConfig:
             max_keyframes_per_weak_window=_env_int("DLD_MAX_KEYFRAMES_PER_WEAK_WINDOW", 2),
             include_weak_windows=_env_bool("DLD_INCLUDE_WEAK_WINDOWS", False),
             include_unanchored_medium_windows=_env_bool("DLD_INCLUDE_UNANCHORED_MEDIUM_WINDOWS", False),
-            max_vlm_frames=_env_int("DLD_MAX_VLM_FRAMES", 8),
+            max_vlm_frames=_env_int("DLD_MAX_VLM_FRAMES", -1),
             ocr_provider=os.getenv("DLD_OCR_PROVIDER", "none"),
             ocr_min_confidence=_env_float("DLD_OCR_MIN_CONFIDENCE", 0.70),
             ocr_max_image_side=_env_int("DLD_OCR_MAX_IMAGE_SIDE", 1_280),
@@ -111,13 +129,21 @@ class VisionConfig:
             vlm_chat_url=os.getenv("DLD_VLM_CHAT_URL", ""),
             vlm_model=os.getenv("DLD_VLM_MODEL", "qwen-vl-max-latest"),
             vlm_api_key=os.getenv("DLD_VLM_API_KEY", ""),
+            vlm_api_keys=_env_csv("DLD_VLM_API_KEYS"),
+            vlm_coding_base_url=os.getenv("DLD_VLM_CODING_BASE_URL", "https://coding.dashscope.aliyuncs.com/v1"),
+            vlm_coding_chat_url=os.getenv("DLD_VLM_CODING_CHAT_URL", ""),
+            vlm_coding_api_key=os.getenv("DLD_VLM_CODING_API_KEY", ""),
+            vlm_token_base_url=os.getenv("DLD_VLM_TOKEN_BASE_URL", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"),
+            vlm_token_chat_url=os.getenv("DLD_VLM_TOKEN_CHAT_URL", ""),
+            vlm_token_api_key=os.getenv("DLD_VLM_TOKEN_API_KEY", ""),
             vlm_timeout_seconds=_env_int("DLD_VLM_TIMEOUT_SECONDS", 60),
             vlm_dry_run=_env_bool("DLD_VLM_DRY_RUN", False),
             vlm_frame_strategy=os.getenv("DLD_VLM_FRAME_STRATEGY", "ocr_triage"),
             vlm_grid_size=max(1, _env_int("DLD_VLM_GRID_SIZE", 1)),
-            vlm_workers=max(1, _env_int("DLD_VLM_WORKERS", 1)),
+            vlm_workers=max(1, _env_int("DLD_VLM_WORKERS", 10)),
+            vlm_fast_dispatch=_env_bool("DLD_VLM_FAST_DISPATCH", True),
             vlm_include_empty_ocr_strong_frames=_env_bool("DLD_VLM_INCLUDE_EMPTY_OCR_STRONG_FRAMES", True),
-            vlm_max_frames_per_window=max(1, _env_int("DLD_VLM_MAX_FRAMES_PER_WINDOW", 3)),
+            vlm_max_frames_per_window=max(0, _env_int("DLD_VLM_MAX_FRAMES_PER_WINDOW", 0)),
             vlm_max_image_side=max(0, _env_int("DLD_VLM_MAX_IMAGE_SIDE", 1_280)),
         )
 
@@ -173,15 +199,48 @@ class VisionConfig:
             vlm_chat_url=self.vlm_chat_url,
             vlm_model=self.vlm_model,
             vlm_api_key=self.vlm_api_key,
+            vlm_api_keys=self.vlm_api_keys,
+            vlm_coding_base_url=self.vlm_coding_base_url,
+            vlm_coding_chat_url=self.vlm_coding_chat_url,
+            vlm_coding_api_key=self.vlm_coding_api_key,
+            vlm_token_base_url=self.vlm_token_base_url,
+            vlm_token_chat_url=self.vlm_token_chat_url,
+            vlm_token_api_key=self.vlm_token_api_key,
             vlm_timeout_seconds=self.vlm_timeout_seconds,
             vlm_dry_run=self.vlm_dry_run,
             vlm_frame_strategy=self.vlm_frame_strategy,
             vlm_grid_size=self.vlm_grid_size,
             vlm_workers=self.vlm_workers,
+            vlm_fast_dispatch=self.vlm_fast_dispatch,
             vlm_include_empty_ocr_strong_frames=self.vlm_include_empty_ocr_strong_frames,
             vlm_max_frames_per_window=self.vlm_max_frames_per_window,
             vlm_max_image_side=self.vlm_max_image_side,
         )
+
+    def effective_vlm_api_keys(self) -> tuple[str, ...]:
+        """Return the configured key pool without exposing it in artifacts."""
+
+        keys = [self.vlm_api_key, self.vlm_token_api_key, self.vlm_coding_api_key, *self.vlm_api_keys]
+        return tuple(dict.fromkeys(key.strip() for key in keys if key and key.strip()))
+
+    def effective_vlm_endpoints(self) -> tuple[VlmEndpoint, ...]:
+        """Return endpoint-key pairs so plan-specific keys never use the wrong URL."""
+
+        token_key = self.vlm_token_api_key or self.vlm_api_key
+        endpoints = [
+            VlmEndpoint("coding_plan", self.vlm_coding_base_url, self.vlm_coding_chat_url, self.vlm_coding_api_key),
+            VlmEndpoint("token_plan", self.vlm_token_base_url, self.vlm_token_chat_url, token_key),
+        ]
+        endpoints.extend(VlmEndpoint("legacy", self.vlm_base_url, self.vlm_chat_url, key) for key in self.vlm_api_keys)
+        unique: list[VlmEndpoint] = []
+        seen: set[tuple[str, str, str]] = set()
+        for endpoint in endpoints:
+            normalized = (endpoint.base_url.rstrip("/"), endpoint.chat_url.rstrip("/"), endpoint.api_key.strip())
+            if not endpoint.api_key.strip() or normalized in seen:
+                continue
+            seen.add(normalized)
+            unique.append(endpoint)
+        return tuple(unique)
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -196,6 +255,10 @@ def _env_int(name: str, default: int) -> int:
         return int(os.getenv(name, str(default)))
     except ValueError:
         return default
+
+
+def _env_csv(name: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in os.getenv(name, "").split(",") if item.strip())
 
 
 def _env_float(name: str, default: float) -> float:

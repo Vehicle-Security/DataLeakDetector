@@ -102,6 +102,10 @@ DLD_VLM_API_KEY=...
 DLD_MAX_VLM_FRAMES=8
 ```
 
+### 快速 VLM 调度
+
+Coding Plan 和 Token Plan 使用不同兼容端点，分别配置后可提供各 10 路、总计 20 路 VLM 并发。环境变量、批量运行、Release 聚合与策略/grid 矩阵命令见 [运行命令](spec/docs/运行命令.md)。
+
 不同数据集的策略词可以通过环境变量追加，不需要改代码：
 
 ```text

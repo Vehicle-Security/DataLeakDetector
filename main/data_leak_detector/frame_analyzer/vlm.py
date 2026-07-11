@@ -130,8 +130,11 @@ def choose_vlm_frames(
     include_empty_ocr_strong_frames: bool = False,
     max_frames_per_window: int | None = None,
 ) -> list[VlmRequestFrame]:
-    if max_frames <= 0:
+    if max_frames == 0:
         return []
+    unlimited = max_frames < 0
+    if max_frames_per_window is not None and max_frames_per_window <= 0:
+        max_frames_per_window = None
 
     normalized_strategy = _normalize_frame_strategy(strategy)
     candidates: list[tuple[int, int, VlmRequestFrame]] = []
@@ -177,7 +180,7 @@ def choose_vlm_frames(
                 continue
             per_window[window_id] = per_window.get(window_id, 0) + 1
         selected.append(frame)
-        if len(selected) >= max_frames:
+        if not unlimited and len(selected) >= max_frames:
             break
     return sorted(selected, key=lambda item: item.frame.timestamp_ms)
 
@@ -188,8 +191,11 @@ def choose_keyframes_for_vlm(
     max_frames: int,
     max_frames_per_window: int | None = None,
 ) -> list[VlmRequestFrame]:
-    if max_frames <= 0:
+    if max_frames == 0:
         return []
+    unlimited = max_frames < 0
+    if max_frames_per_window is not None and max_frames_per_window <= 0:
+        max_frames_per_window = None
 
     candidates = [
         (
@@ -214,13 +220,13 @@ def choose_keyframes_for_vlm(
         for window_candidates in candidates_by_window.values():
             limited_candidates.extend(_select_temporally_diverse_candidates(window_candidates, max_frames_per_window))
         candidates = limited_candidates
-    elif len(candidates) > max_frames:
+    elif not unlimited and len(candidates) > max_frames:
         candidates = _select_temporally_diverse_candidates(candidates, max_frames)
 
     selected: list[VlmRequestFrame] = []
     for _, _, frame in sorted(candidates, key=lambda item: (-item[0], item[1])):
         selected.append(frame)
-        if len(selected) >= max_frames:
+        if not unlimited and len(selected) >= max_frames:
             break
     return sorted(selected, key=lambda item: item.frame.timestamp_ms)
 

@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import replace
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,10 @@ from .ocr import OcrResult, run_ocr
 from .parser import parse_vlm_response_detailed, vision_events_to_observations
 from .roi import OcrFrameCandidate, prepare_ocr_candidates
 from .vlm import OpenAICompatibleVlmClient, build_vlm_frame_grids, choose_keyframes_for_vlm, choose_vlm_frames, prepare_vlm_frame_images
+
+
+_VLM_ENDPOINT_LOCK_GUARD = threading.Lock()
+_VLM_ENDPOINT_LOCKS: dict[tuple[str, str, int], threading.BoundedSemaphore] = {}
 
 
 def analyze_video_behavior(
@@ -248,7 +254,7 @@ def _run_vision_pipeline(
             max_frames=config.max_vlm_frames,
             strategy=config.vlm_frame_strategy,
             include_empty_ocr_strong_frames=config.vlm_include_empty_ocr_strong_frames,
-            max_frames_per_window=config.vlm_max_frames_per_window,
+            max_frames_per_window=_vlm_frames_per_window_limit(config),
         )
     artifact_manifest = _export_vision_artifacts(
         artifact_dir=artifact_dir,
@@ -274,15 +280,16 @@ def _run_vision_pipeline(
         try:
             vlm_started = time.perf_counter()
             active_apps = sorted({app for window in windows for app in window.active_apps})
-            client = OpenAICompatibleVlmClient(config)
-            vlm_batches = _vlm_frame_batches(vlm_request_frames, config.vlm_workers)
+            vlm_clients = _build_vlm_clients(config)
+            vlm_parallelism = _effective_vlm_parallelism(config, key_count=len(vlm_clients))
+            vlm_batches = _vlm_frame_batches(vlm_request_frames, vlm_parallelism)
             request_summaries = [
                 _vlm_batch_request_summary(
-                    client,
+                    vlm_clients[0],
                     batch,
                     batch_index=index,
                     batch_count=len(vlm_batches),
-                    workers=config.vlm_workers,
+                    workers=vlm_parallelism,
                     sensitive_files=sensitive_files,
                     active_apps=active_apps,
                 )
@@ -291,17 +298,24 @@ def _run_vision_pipeline(
             vlm_request_metrics = _combine_vlm_request_metrics(request_summaries)
             _write_vlm_request_artifact(
                 artifact_dir,
-                _vlm_request_artifact_payload(request_summaries, workers=config.vlm_workers),
+                _vlm_request_artifact_payload(
+                    request_summaries,
+                    workers=vlm_parallelism,
+                    workers_per_key=config.vlm_workers,
+                    fast_dispatch=config.vlm_fast_dispatch,
+                    api_key_count=len(vlm_clients),
+                ),
                 artifact_manifest,
             )
             vlm_results = _run_vlm_batches(
-                client,
+                vlm_clients,
                 vlm_batches,
                 sensitive_files=sensitive_files,
                 active_apps=active_apps,
-                workers=config.vlm_workers,
+                workers_per_key=config.vlm_workers,
             )
             errors.extend(str(item) for item in vlm_results.get("errors", []))
+            warnings.extend(str(item) for item in vlm_results.get("retry_warnings", []))
             vlm_usage = dict(vlm_results.get("usage") or {})
             _write_vlm_response_payload_artifact(
                 artifact_dir,
@@ -345,8 +359,11 @@ def _run_vision_pipeline(
         "vlm_frame_strategy": config.vlm_frame_strategy,
         "vlm_grid_size": config.vlm_grid_size,
         "vlm_workers": config.vlm_workers,
+        "vlm_fast_dispatch": config.vlm_fast_dispatch,
+        "vlm_api_key_count": len(_build_vlm_clients(config)),
+        "vlm_parallelism": _effective_vlm_parallelism(config),
         "vlm_max_image_side": config.vlm_max_image_side,
-        "vlm_batches": len(_vlm_frame_batches(vlm_request_frames, config.vlm_workers)) if vlm_request_frames else 0,
+        "vlm_batches": len(_vlm_frame_batches(vlm_request_frames, _effective_vlm_parallelism(config))) if vlm_request_frames else 0,
         "ocr_skipped_for_direct_vlm": direct_keyframes_to_vlm,
         "vlm_parse_errors": vlm_parse_errors,
         "vlm_request_metrics": vlm_request_metrics,
@@ -373,6 +390,27 @@ def _vlm_frame_batches(frames: list[Any], workers: int) -> list[list[Any]]:
     return [frames[index : index + batch_size] for index in range(0, len(frames), batch_size)]
 
 
+def _build_vlm_clients(config: VisionConfig) -> list[OpenAICompatibleVlmClient]:
+    endpoints = config.effective_vlm_endpoints()
+    if not endpoints:
+        return [OpenAICompatibleVlmClient(config)]
+    if not config.vlm_fast_dispatch:
+        endpoints = endpoints[:1]
+    return [
+        OpenAICompatibleVlmClient(
+            replace(config, vlm_base_url=endpoint.base_url, vlm_chat_url=endpoint.chat_url, vlm_api_key=endpoint.api_key, vlm_api_keys=())
+        )
+        for endpoint in endpoints
+    ]
+
+
+def _effective_vlm_parallelism(config: VisionConfig, *, key_count: int | None = None) -> int:
+    if not config.vlm_fast_dispatch:
+        return config.vlm_workers
+    count = len(config.effective_vlm_endpoints()) if key_count is None else key_count
+    return config.vlm_workers * max(1, count)
+
+
 def _vlm_batch_request_summary(
     client: OpenAICompatibleVlmClient,
     frames: list[Any],
@@ -391,9 +429,24 @@ def _vlm_batch_request_summary(
     return summary
 
 
-def _vlm_request_artifact_payload(request_summaries: list[dict[str, Any]], *, workers: int) -> dict[str, Any]:
+def _vlm_request_artifact_payload(
+    request_summaries: list[dict[str, Any]],
+    *,
+    workers: int,
+    workers_per_key: int | None = None,
+    fast_dispatch: bool = False,
+    api_key_count: int = 1,
+) -> dict[str, Any]:
+    dispatch = {
+        "fast_dispatch": fast_dispatch,
+        "api_key_count": api_key_count,
+        "workers_per_key": workers if workers_per_key is None else workers_per_key,
+        "parallelism": workers,
+    }
     if len(request_summaries) == 1:
-        return request_summaries[0]
+        payload = dict(request_summaries[0])
+        payload["dispatch"] = dispatch
+        return payload
     first = request_summaries[0] if request_summaries else {}
     return {
         "provider": first.get("provider", ""),
@@ -403,6 +456,7 @@ def _vlm_request_artifact_payload(request_summaries: list[dict[str, Any]], *, wo
         "frame_strategy": first.get("frame_strategy", ""),
         "grid_size": first.get("grid_size", 1),
         "workers": workers,
+        "dispatch": dispatch,
         "batch_count": len(request_summaries),
         "request_metrics": _combine_vlm_request_metrics(request_summaries),
         "batches": request_summaries,
@@ -428,26 +482,47 @@ def _combine_vlm_request_metrics(request_summaries: list[dict[str, Any]]) -> dic
 
 
 def _run_vlm_batches(
-    client: OpenAICompatibleVlmClient,
+    clients: list[OpenAICompatibleVlmClient],
     batches: list[list[Any]],
     *,
     sensitive_files: list[str],
     active_apps: list[str],
-    workers: int,
+    workers_per_key: int,
 ) -> dict[str, Any]:
+    if not clients:
+        return {"batches": [], "errors": ["vlm_client_pool_empty"], "events": [], "parse_errors": [], "usage": {}}
+
+    client_locks = _shared_vlm_endpoint_locks(clients, workers_per_key=workers_per_key)
+
     def run_one(batch_index: int, frames: list[Any]) -> dict[str, Any]:
-        response = client.analyze(frames, sensitive_files=sensitive_files, active_apps=active_apps)
+        start = batch_index % len(clients)
+        ordered_clients = clients[start:] + clients[:start]
+        retry_warnings: list[str] = []
+        response = None
+        for attempt, client in enumerate(ordered_clients):
+            lock = client_locks[id(client)]
+            try:
+                with lock:
+                    response = client.analyze(frames, sensitive_files=sensitive_files, active_apps=active_apps)
+                break
+            except Exception as exc:
+                if attempt + 1 == len(ordered_clients):
+                    raise
+                retry_warnings.append(f"vlm_key_retry[{batch_index}]: {type(exc).__name__}: {exc}")
+        if response is None:
+            raise RuntimeError("vlm_response_unavailable")
         parse_result = parse_vlm_response_detailed(response.text, keywords=sensitive_files)
         return {
             "batch_index": batch_index,
             "frame_count": len(frames),
             "response": response,
             "parse_result": parse_result,
+            "retry_warnings": retry_warnings,
         }
 
     results: list[dict[str, Any]] = []
     errors: list[str] = []
-    max_workers = min(max(1, workers), len(batches) or 1)
+    max_workers = min(max(1, len(clients) * max(1, workers_per_key)), len(batches) or 1)
     if max_workers <= 1:
         for index, batch in enumerate(batches):
             try:
@@ -468,10 +543,12 @@ def _run_vlm_batches(
     events: list[Any] = []
     parse_errors: list[str] = []
     usages: list[dict[str, Any]] = []
+    retry_warnings: list[str] = []
     for result in results:
         parse_result = result["parse_result"]
         events.extend(parse_result.events)
         parse_errors.extend(parse_result.parse_errors)
+        retry_warnings.extend(str(item) for item in result.get("retry_warnings", []))
         usage = result["response"].usage
         if isinstance(usage, dict):
             usages.append(usage)
@@ -480,8 +557,29 @@ def _run_vlm_batches(
         "errors": errors,
         "events": events,
         "parse_errors": parse_errors,
+        "retry_warnings": retry_warnings,
         "usage": _combine_vlm_usage(usages),
     }
+
+
+def _shared_vlm_endpoint_locks(
+    clients: list[OpenAICompatibleVlmClient],
+    *,
+    workers_per_key: int,
+) -> dict[int, threading.BoundedSemaphore]:
+    """Share plan quotas across concurrently analyzed cases in this process."""
+
+    limit = max(1, workers_per_key)
+    locks: dict[int, threading.BoundedSemaphore] = {}
+    with _VLM_ENDPOINT_LOCK_GUARD:
+        for client in clients:
+            identity = (client.config.vlm_base_url.rstrip("/"), client.config.vlm_api_key, limit)
+            lock = _VLM_ENDPOINT_LOCKS.get(identity)
+            if lock is None:
+                lock = threading.BoundedSemaphore(limit)
+                _VLM_ENDPOINT_LOCKS[identity] = lock
+            locks[id(client)] = lock
+    return locks
 
 
 def _combine_vlm_usage(usages: list[dict[str, Any]]) -> dict[str, Any]:
@@ -687,8 +785,14 @@ def _vlm_uses_direct_keyframes(config: VisionConfig) -> bool:
     return (
         strategy in direct_aliases
         and config.mode.lower() in {"hybrid", "vlm"}
-        and config.max_vlm_frames > 0
+        and config.max_vlm_frames != 0
     )
+
+
+def _vlm_frames_per_window_limit(config: VisionConfig) -> int | None:
+    if config.vlm_max_frames_per_window <= 0:
+        return None
+    return config.vlm_max_frames_per_window
 
 
 def _export_vision_artifacts(

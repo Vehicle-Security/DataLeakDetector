@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..frame_analyzer.apps import identify_frontend_app
 from ..io import flatten_text, normalize_path
@@ -37,6 +37,7 @@ class Neo4jLogImporter:
         records: list[dict[str, Any]],
         logs: list[LogEvent],
         sensitive_files: list[str],
+        progress: Callable[[int, int, int], None] | None = None,
     ) -> ImportSummary:
         log_hash = fingerprint_records(records)
         session.execute_write(self._ensure_schema_tx)
@@ -60,6 +61,8 @@ class Neo4jLogImporter:
             session.execute_write(self._write_event_batch_tx, case_id, batch)
             imported_events += len(batch)
             batches += 1
+            if progress is not None:
+                progress(batches, imported_events, len(graph_events))
         session.execute_write(
             self._mark_case_import_tx,
             case_id,
