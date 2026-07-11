@@ -23,6 +23,7 @@ from data_leak_detector.frame_analyzer.analyzer import (
     _ocr_observations,
     _select_ocr_frames_for_ocr,
     _run_vlm_batches,
+    _shared_vlm_dispatcher,
     _shared_vlm_endpoint_locks,
     _vlm_frame_batches,
     _vlm_request_artifact_payload,
@@ -1665,6 +1666,27 @@ def test_vlm_batch_retries_another_key_when_the_assigned_key_fails() -> None:
     assert results["errors"] == []
     assert len(results["batches"]) == 2
     assert results["retry_warnings"] == ["vlm_key_retry[0]: RuntimeError: invalid_api_key"]
+
+
+def test_vlm_batches_reuse_one_process_queue_across_cases() -> None:
+    first_case = [_RetryClient("queue-coding"), _RetryClient("queue-token")]
+    second_case = [_RetryClient("queue-coding"), _RetryClient("queue-token")]
+
+    first_dispatcher = _shared_vlm_dispatcher(first_case, workers_per_key=1)  # type: ignore[arg-type]
+    second_dispatcher = _shared_vlm_dispatcher(second_case, workers_per_key=1)  # type: ignore[arg-type]
+    result = _run_vlm_batches(
+        second_case,  # type: ignore[arg-type]
+        [[object()], [object()]],
+        sensitive_files=[],
+        active_apps=[],
+        workers_per_key=1,
+    )
+
+    assert first_dispatcher is second_dispatcher
+    assert result["errors"] == []
+    assert result["dispatch"]["mode"] == "shared_process_queue"
+    assert result["dispatch"]["snapshot"]["parallelism"] == 2
+    assert result["dispatch"]["snapshot"]["submitted_batches"] >= 2
 
 
 def test_vlm_worker_artifacts_combine_real_metrics_and_usage() -> None:

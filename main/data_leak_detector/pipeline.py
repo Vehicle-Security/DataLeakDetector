@@ -32,6 +32,8 @@ def run_pipeline(
     vision_enabled: bool | None = None,
     vision_mode: str | None = None,
     max_vlm_frames: int | None = None,
+    vision_precompute_file: str | Path | None = None,
+    precomputed_baseline_file: str | Path | None = None,
     groundtruth_file: str | Path | None = None,
     neo4j_log_miner: bool | None = None,
     reuse_neo4j_import: bool | None = None,
@@ -44,8 +46,11 @@ def run_pipeline(
     log_path = Path(log_file)
     video_text = str(video_file or "")
     video_path = Path(video_text) if video_text else None
-    records = load_json_records(log_path)
-    logs = normalize_logs(records, session_start_ms=session_start_ms)
+    baseline = _load_precomputed_baseline(precomputed_baseline_file)
+    if baseline and vision_precompute_file is None:
+        vision_precompute_file = str(baseline.get("vision_precompute_file") or "") or None
+    records = list(baseline.get("records", [])) if baseline else load_json_records(log_path)
+    logs = [] if baseline else normalize_logs(records, session_start_ms=session_start_ms)
     report_id = _build_report_id(log_path, len(records), case_name)
     target_dir = Path(output_dir) if output_dir is not None else None
     vision_artifact_dir = target_dir / report_id if target_dir is not None else None
@@ -68,7 +73,7 @@ def run_pipeline(
         vision_config=vision_config,
         neo4j_log_miner=effective_neo4j_log_miner,
         reuse_import=reuse_neo4j_import,
-    )
+    ) if not baseline else None
 
     frame_bundle = analyze_video_behavior(
         video_path or "",
@@ -79,9 +84,11 @@ def run_pipeline(
         vision_mode=vision_mode,
         max_vlm_frames=max_vlm_frames,
         artifact_dir=vision_artifact_dir,
-        analysis_windows=log_mining.windows,
-        log_mining={"source": log_mining.source, **log_mining.metadata},
+        analysis_windows=log_mining.windows if log_mining else None,
+        log_mining={"source": log_mining.source, **log_mining.metadata} if log_mining else {"source": "precomputed_baseline"},
     )
+    if baseline:
+        frame_bundle["observations"] = [*baseline.get("log_observations", []), *frame_bundle["observations"]]
     correlation_bundle = EventCorrelator().run(
         {
             "session_id": video_path.stem if video_path else log_path.stem,
@@ -148,7 +155,7 @@ def run_pipeline(
         groundtruth_available=groundtruth_verdict.available,
     )
     payload["groundtruth"] = groundtruth_verdict.to_dict()
-    payload["log_miner"] = {"source": log_mining.source, **log_mining.metadata}
+    payload["log_miner"] = {"source": log_mining.source, **log_mining.metadata} if log_mining else {"source": "precomputed_baseline"}
     payload["event_correlator"]["raw_log_events"] = records
     payload["graph"] = _write_graph(payload, neo4j_enabled=neo4j_enabled, neo4j_strict=neo4j_strict)
 
@@ -201,6 +208,15 @@ def _write_detail_files(payload: dict[str, Any], detail_dir: Path) -> dict[str, 
 def _write_json(path: Path, payload: Any) -> str:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return str(path)
+
+
+def _load_precomputed_baseline(path: str | Path | None) -> dict[str, Any]:
+    if path is None:
+        return {}
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        raise ValueError(f"unsupported_precomputed_baseline: {path}")
+    return payload
 
 
 def _copy_groundtruth_file(payload: dict[str, Any], detail_dir: Path) -> str:
@@ -345,6 +361,8 @@ def run_data_case(
     vision_enabled: bool | None = None,
     vision_mode: str | None = None,
     max_vlm_frames: int | None = None,
+    vision_precompute_file: str | Path | None = None,
+    precomputed_baseline_file: str | Path | None = None,
     neo4j_log_miner: bool | None = None,
     reuse_neo4j_import: bool | None = None,
     non_vlm_enabled: bool | None = None,
@@ -364,6 +382,8 @@ def run_data_case(
         vision_enabled=vision_enabled,
         vision_mode=vision_mode,
         max_vlm_frames=max_vlm_frames,
+        vision_precompute_file=vision_precompute_file,
+        precomputed_baseline_file=precomputed_baseline_file,
         groundtruth_file=case.groundtruth_file,
         neo4j_log_miner=neo4j_log_miner,
         reuse_neo4j_import=reuse_neo4j_import,
