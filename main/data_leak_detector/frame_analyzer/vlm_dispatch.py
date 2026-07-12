@@ -122,13 +122,20 @@ def run_vlm_batches(
     sensitive_files: list[str],
     active_apps: list[str],
     workers_per_key: int,
+    retry_attempts: int = 3,
+    retry_backoff_seconds: float = 1.0,
 ) -> dict[str, Any]:
     if not clients:
         return {"batches": [], "errors": ["vlm_client_pool_empty"], "events": [], "parse_errors": [], "usage": {}}
 
     results: list[dict[str, Any]] = []
     errors: list[str] = []
-    dispatcher = _shared_vlm_dispatcher(clients, workers_per_key=workers_per_key)
+    dispatcher = _shared_vlm_dispatcher(
+        clients,
+        workers_per_key=workers_per_key,
+        retry_attempts=retry_attempts,
+        retry_backoff_seconds=retry_backoff_seconds,
+    )
     future_to_index = {
         dispatcher.submit(
             clients=clients,
@@ -268,9 +275,18 @@ def _shared_vlm_endpoint_locks(
 class _SharedVlmDispatcher:
     """One process-wide FIFO queue for a stable endpoint/key pool."""
 
-    def __init__(self, *, parallelism: int, workers_per_key: int):
+    def __init__(
+        self,
+        *,
+        parallelism: int,
+        workers_per_key: int,
+        retry_attempts: int,
+        retry_backoff_seconds: float,
+    ):
         self.parallelism = max(1, parallelism)
         self.workers_per_key = max(1, workers_per_key)
+        self.retry_attempts = max(1, retry_attempts)
+        self.retry_backoff_seconds = max(0.0, retry_backoff_seconds)
         self.executor = ThreadPoolExecutor(max_workers=self.parallelism, thread_name_prefix="dld_vlm")
         self._lock = threading.Lock()
         self._next_client = 0
@@ -328,34 +344,47 @@ class _SharedVlmDispatcher:
         retry_warnings: list[str] = []
         response = None
         try:
-            for attempt, client in enumerate(ordered_clients):
+            for client_index, client in enumerate(ordered_clients):
                 lock = client_locks[id(client)]
                 endpoint = str(getattr(client.config, "vlm_base_url", "")).rstrip("/")
-                slot_acquired = False
-                with self._lock:
-                    self._endpoint_waiting[endpoint] = self._endpoint_waiting.get(endpoint, 0) + 1
-                try:
-                    with lock:
-                        with self._lock:
-                            self._endpoint_waiting[endpoint] -= 1
-                            self._endpoint_active[endpoint] = self._endpoint_active.get(endpoint, 0) + 1
-                        slot_acquired = True
-                        try:
-                            response = client.analyze(frames, sensitive_files=sensitive_files, active_apps=active_apps)
-                        finally:
-                            with self._lock:
-                                self._endpoint_active[endpoint] -= 1
+                for retry_index in range(self.retry_attempts):
+                    slot_acquired = False
                     with self._lock:
-                        self._endpoint_completed[endpoint] = self._endpoint_completed.get(endpoint, 0) + 1
-                    break
-                except Exception as exc:
-                    if attempt + 1 == len(ordered_clients):
-                        raise
-                    retry_warnings.append(f"vlm_key_retry[{batch_index}]: {type(exc).__name__}: {exc}")
-                finally:
-                    if not slot_acquired:
+                        self._endpoint_waiting[endpoint] = self._endpoint_waiting.get(endpoint, 0) + 1
+                    try:
+                        with lock:
+                            with self._lock:
+                                self._endpoint_waiting[endpoint] -= 1
+                                self._endpoint_active[endpoint] = self._endpoint_active.get(endpoint, 0) + 1
+                            slot_acquired = True
+                            try:
+                                response = client.analyze(frames, sensitive_files=sensitive_files, active_apps=active_apps)
+                            finally:
+                                with self._lock:
+                                    self._endpoint_active[endpoint] -= 1
                         with self._lock:
-                            self._endpoint_waiting[endpoint] -= 1
+                            self._endpoint_completed[endpoint] = self._endpoint_completed.get(endpoint, 0) + 1
+                        break
+                    except Exception as exc:
+                        can_retry = retry_index + 1 < self.retry_attempts and _is_transient_vlm_error(exc)
+                        if can_retry:
+                            delay = self.retry_backoff_seconds * (2**retry_index)
+                            retry_warnings.append(
+                                f"vlm_transient_retry[{batch_index}:{retry_index + 1}]: {type(exc).__name__}: {exc}"
+                            )
+                            if delay:
+                                time.sleep(delay)
+                            continue
+                        if client_index + 1 == len(ordered_clients):
+                            raise
+                        retry_warnings.append(f"vlm_key_retry[{batch_index}]: {type(exc).__name__}: {exc}")
+                        break
+                    finally:
+                        if not slot_acquired:
+                            with self._lock:
+                                self._endpoint_waiting[endpoint] -= 1
+                if response is not None:
+                    break
             if response is None:
                 raise RuntimeError("vlm_response_unavailable")
             parse_result = parse_vlm_response_detailed(response.text, keywords=sensitive_files)
@@ -401,6 +430,8 @@ def _shared_vlm_dispatcher(
     clients: list[OpenAICompatibleVlmClient],
     *,
     workers_per_key: int,
+    retry_attempts: int = 3,
+    retry_backoff_seconds: float = 1.0,
 ) -> _SharedVlmDispatcher:
     identity = tuple(
         (
@@ -409,16 +440,32 @@ def _shared_vlm_dispatcher(
         )
         for client in clients
     )
-    key = (identity, max(1, workers_per_key))
+    key = (identity, max(1, workers_per_key), max(1, retry_attempts), max(0.0, retry_backoff_seconds))
     with _VLM_DISPATCHER_GUARD:
         dispatcher = _VLM_DISPATCHERS.get(key)
         if dispatcher is None:
             dispatcher = _SharedVlmDispatcher(
                 parallelism=len(clients) * max(1, workers_per_key),
                 workers_per_key=workers_per_key,
+                retry_attempts=retry_attempts,
+                retry_backoff_seconds=retry_backoff_seconds,
             )
             _VLM_DISPATCHERS[key] = dispatcher
         return dispatcher
+
+
+def _is_transient_vlm_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return (
+        isinstance(exc, TimeoutError)
+        or "timed out" in text
+        or "429" in text
+        or "throttl" in text
+        or "temporar" in text
+        or "connection reset" in text
+        or "eof occurred" in text
+        or "http_error: 5" in text
+    )
 
 
 def _vlm_dispatch_metrics(dispatcher: _SharedVlmDispatcher, results: list[dict[str, Any]]) -> dict[str, Any]:

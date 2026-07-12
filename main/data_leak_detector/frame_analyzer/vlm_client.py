@@ -57,6 +57,7 @@ class OpenAICompatibleVlmClient:
             "dry_run": self.config.vlm_dry_run,
             "frame_source": "direct_keyframes",
             "grid_size": self.config.vlm_grid_size,
+            "grid_layout": self.config.vlm_grid_layout,
             "temperature": 0,
             "prompt": prompt,
             "sensitive_context": _sensitive_context(sensitive_files),
@@ -221,9 +222,10 @@ def build_vlm_frame_grids(
     frames: list[VlmRequestFrame],
     *,
     grid_size: int,
+    grid_layout: str = "",
     output_dir: str | Path | None,
 ) -> list[VlmRequestFrame]:
-    if grid_size <= 1 or len(frames) <= 1:
+    if (grid_size <= 1 and not grid_layout) or len(frames) <= 1:
         return frames
 
     try:
@@ -233,11 +235,12 @@ def build_vlm_frame_grids(
 
     root = Path(output_dir) if output_dir is not None else Path(tempfile.mkdtemp(prefix="dld_vlm_grid_"))
     root.mkdir(parents=True, exist_ok=True)
-    cells_per_grid = grid_size * grid_size
+    rows_per_grid, columns_per_grid = _grid_dimensions(grid_size, grid_layout)
+    cells_per_grid = rows_per_grid * columns_per_grid
     grid_frames: list[VlmRequestFrame] = []
     for grid_index, group in enumerate(_chunks(frames, cells_per_grid)):
         source_images = [(item, Image.open(item.frame.image_path).convert("RGB")) for item in group]
-        columns = min(grid_size, len(source_images))
+        columns = min(columns_per_grid, len(source_images))
         rows = (len(source_images) + columns - 1) // columns
         cell_width, cell_height = _grid_cell_size([image for _, image in source_images])
         label_height = 32
@@ -266,7 +269,7 @@ def build_vlm_frame_grids(
             timestamp_ms=min(timestamps) if timestamps else 0,
             image_path=str(target),
             score=float(score),
-            reason=f"vlm_grid:{grid_size}x{grid_size}",
+            reason=f"vlm_grid:{rows_per_grid}x{columns_per_grid}",
             window_id="vlm_grid",
         )
         grid_frames.append(
@@ -274,12 +277,29 @@ def build_vlm_frame_grids(
                 frame=grid_keyframe,
                 visual_note="",
                 visual_confidence=0.0,
-                selection_reason=f"vlm_grid_{grid_size}x{grid_size}",
+                selection_reason=f"vlm_grid_{rows_per_grid}x{columns_per_grid}",
                 selection_score=score,
                 source_frames=tuple(source_payload),
             )
         )
     return grid_frames
+
+
+def _grid_dimensions(grid_size: int, grid_layout: str) -> tuple[int, int]:
+    layout = grid_layout.strip().lower().replace("*", "x").replace("\u00d7", "x")
+    if not layout:
+        size = max(1, grid_size)
+        return size, size
+    parts = layout.split("x")
+    if len(parts) != 2:
+        raise ValueError(f"invalid_vlm_grid_layout: {grid_layout!r}; expected rowsxcolumns such as 2x1")
+    try:
+        rows, columns = (int(part) for part in parts)
+    except ValueError as exc:
+        raise ValueError(f"invalid_vlm_grid_layout: {grid_layout!r}; expected rowsxcolumns such as 2x1") from exc
+    if rows < 1 or columns < 1:
+        raise ValueError(f"invalid_vlm_grid_layout: {grid_layout!r}; dimensions must be positive")
+    return rows, columns
 
 
 def prepare_vlm_frame_images(
@@ -388,6 +408,14 @@ def _prompt(frames: list[VlmRequestFrame], sensitive_files: list[str], active_ap
         "or destination on a removable drive letter. Treat this as direct_leak, not merely hidden_transfer.\n"
         "When a frame shows a sensitive or derived sensitive file being attached, uploaded, sent, synced, shared, or copied to removable media, "
         "emit behavior_category=direct_leak and the most specific sink_type.\n"
+        "Treat an email send confirmation as an external-send action: when a compose screen shows a sensitive attachment and an explicit Send button "
+        "or a confirmation dialog with Send/Cancel choices, emit direct_leak with sink_type=mail_attachment. "
+        "Do not require an inbox update, a sent-mail receipt, or a server-side success message.\n"
+        "Do not treat a transfer capability that is merely visible as an executed leak: an unselected context-menu or toolbar action such as "
+        "'Send to my phone', a generic share sheet, or a 'drag file to send' panel is not enough by itself. "
+        "Require evidence that the transfer was selected or submitted, such as an addressee/conversation/destination, a file in a transfer queue, "
+        "upload/send progress, or an explicit Send/Confirm control. A generic 'Send File' panel that only offers copy file, drag-to-send, or open-location "
+        "actions without such evidence is a copy/preparation action: classify it as hidden_transfer rather than direct_leak.\n"
         "Sensitive source files and aliases:\n" + "\n".join(sensitive_lines) + "\n"
         f"Non-whitelisted active apps from logs: {active_apps}\n"
         "Frame context:\n" + "\n".join(frame_lines) + "\n"

@@ -42,11 +42,12 @@ from data_leak_detector.frame_analyzer.frames import (
     merge_analysis_windows,
 )
 from data_leak_detector.frame_analyzer.parser import ParsedVisionEvent, parse_vlm_response, parse_vlm_response_detailed, vision_events_to_observations
-from data_leak_detector.frame_analyzer.vlm_client import VlmRequestFrame, VlmResponse, build_vlm_frame_grids, choose_keyframes_for_vlm, prepare_vlm_frame_images
+from data_leak_detector.frame_analyzer.vlm_client import VlmRequestFrame, VlmResponse, _prompt, build_vlm_frame_grids, choose_keyframes_for_vlm, prepare_vlm_frame_images
 from data_leak_detector.log_mining import build_analysis_windows, mine_analysis_windows
 from data_leak_detector.neo4j.importer import fingerprint_records, records_to_graph_events
 from data_leak_detector.groundtruth import evaluate_groundtruth
 from data_leak_detector.io import normalize_logs, same_file
+from run_e2e import _reusable_precompute_baseline
 from data_leak_detector.io import load_json_records
 from data_leak_detector.leak_reasoner import DatalogEngine
 from data_leak_detector.policy import contains_any, load_policy_config
@@ -91,6 +92,66 @@ def test_frame_analyzer_creates_log_anchored_observations() -> None:
 
     assert bundle["statistics"]["observations"] >= 3
     assert any(item["operation_type"] == "external_sink_interaction" for item in bundle["observations"])
+
+
+def test_vlm_prompt_treats_email_send_confirmation_as_direct_leak() -> None:
+    frame = KeyFrame(
+        frame_id="email_send_confirmation",
+        timestamp_ms=20_000,
+        image_path="email-confirmation.jpg",
+        score=1.0,
+        reason="medium:anchor",
+        window_id="window_0",
+    )
+
+    prompt = _prompt(
+        [VlmRequestFrame(frame=frame, visual_note="", visual_confidence=0.0)],
+        ["C:/Users/alice/Desktop/financial_report.docx"],
+        ["Edge"],
+    )
+
+    assert "email send confirmation" in prompt
+    assert "Do not require an inbox update" in prompt
+
+
+def test_vlm_prompt_requires_executed_transfer_evidence() -> None:
+    frame = KeyFrame(
+        frame_id="copy_preparation",
+        timestamp_ms=20_000,
+        image_path="copy-preparation.jpg",
+        score=1.0,
+        reason="medium:anchor",
+        window_id="window_0",
+    )
+
+    prompt = _prompt(
+        [VlmRequestFrame(frame=frame, visual_note="", visual_confidence=0.0)],
+        ["C:/Users/alice/Desktop/customer_contacts.pdf"],
+        ["Explorer"],
+    )
+
+    assert "merely visible as an executed leak" in prompt
+    assert "unselected context-menu" in prompt
+    assert "hidden_transfer rather than direct_leak" in prompt
+
+
+def test_reusable_precompute_baseline_excludes_nested_session_cache(tmp_path: Path) -> None:
+    parent = tmp_path / "stage1" / "outlook"
+    direct = parent / "outlook_logs_402" / "pipeline_baseline.json"
+    nested = parent / "session_20260420_191957" / "session_logs_3543" / "pipeline_baseline.json"
+    direct.parent.mkdir(parents=True)
+    nested.parent.mkdir(parents=True)
+    direct.write_text('{"precompute_mode":"direct_keyframes_only"}', encoding="utf-8")
+    nested.write_text('{"precompute_mode":"direct_keyframes_only"}', encoding="utf-8")
+
+    assert _reusable_precompute_baseline(parent) == direct
+
+
+def test_same_file_ignores_whitespace_before_extension() -> None:
+    assert same_file(
+        "C:/Users/alice/Desktop/customer_contacts .pdf",
+        "customer_contacts.pdf",
+    )
 
 
 def test_analysis_windows_use_video_relative_timestamps_from_real_logs() -> None:
@@ -1161,6 +1222,31 @@ def test_vlm_removable_media_event_becomes_external_sink() -> None:
     assert "sink_type=removable_media" in observations[0].description
 
 
+def test_vlm_hidden_transfer_does_not_become_external_sink_from_menu_text() -> None:
+    response = json.dumps(
+        {
+            "events": [
+                {
+                    "evidence_frame_ids": ["frame_0"],
+                    "timestamp_ms": 10_000,
+                    "app_name": "Explorer",
+                    "behavior_category": "hidden_transfer",
+                    "operation_type": "copy_file",
+                    "original_filename": "customer_contacts.pdf",
+                    "modified_filename": "customer_contacts.pdf",
+                    "sink_type": "unknown",
+                    "description": "An unselected context menu merely shows Send to my phone.",
+                    "confidence": 0.8,
+                }
+            ]
+        }
+    )
+
+    observations = vision_events_to_observations(parse_vlm_response(response), source="vlm")
+
+    assert observations[0].operation_type == "file_or_content_transfer"
+
+
 def test_vlm_derived_lineage_links_later_upload_log_to_original() -> None:
     original = "C:/Users/alice/Documents/secret.docx"
     derived = "C:/Users/alice/Desktop/secret_screen.png"
@@ -1770,6 +1856,26 @@ def test_vlm_grid_builder_keeps_direct_keyframe_mapping(tmp_path: Path) -> None:
     assert [item["cell_id"] for item in grids[0].source_frames] == ["A1", "A2", "B1"]
 
 
+def test_vlm_grid_builder_supports_vertical_layout(tmp_path: Path) -> None:
+    Image = pytest.importorskip("PIL.Image")
+    keyframes = []
+    for index, color in enumerate(((255, 0, 0), (0, 255, 0), (0, 0, 255))):
+        image_path = tmp_path / f"frame_{index}.jpg"
+        Image.new("RGB", (120, 80), color).save(image_path)
+        keyframes.append(KeyFrame(f"frame_{index}", index * 1000, str(image_path), 0.9, "strong:anchor", window_id="window_0"))
+
+    grids = build_vlm_frame_grids(
+        choose_keyframes_for_vlm(keyframes, max_frames=-1),
+        grid_size=1,
+        grid_layout="2x1",
+        output_dir=tmp_path / "vertical_grid",
+    )
+
+    assert len(grids) == 2
+    assert [item["cell_id"] for item in grids[0].source_frames] == ["A1", "B1"]
+    assert [item["cell_id"] for item in grids[1].source_frames] == ["A1"]
+
+
 
 
 
@@ -1865,6 +1971,21 @@ class _RetryClient:
         return VlmResponse(text='{"events":[]}', provider="unit", model="unit", usage={"total_tokens": 1})
 
 
+@dataclass
+class _TransientRetryClient:
+    remaining_failures: int
+
+    @property
+    def config(self) -> SimpleNamespace:
+        return SimpleNamespace(vlm_api_key="transient", vlm_base_url="https://unit.test")
+
+    def analyze(self, *_: object, **__: object) -> VlmResponse:
+        if self.remaining_failures:
+            self.remaining_failures -= 1
+            raise TimeoutError("temporary timeout")
+        return VlmResponse(text='{"events":[]}', provider="unit", model="unit", usage={"total_tokens": 1})
+
+
 def test_vlm_batch_retries_another_key_when_the_assigned_key_fails() -> None:
     results = run_vlm_batches(
         [_RetryClient("invalid", fail=True), _RetryClient("valid")],  # type: ignore[arg-type]
@@ -1877,6 +1998,22 @@ def test_vlm_batch_retries_another_key_when_the_assigned_key_fails() -> None:
     assert results["errors"] == []
     assert len(results["batches"]) == 2
     assert results["retry_warnings"] == ["vlm_key_retry[0]: RuntimeError: invalid_api_key"]
+
+
+def test_vlm_batch_retries_transient_failure_with_the_same_key() -> None:
+    results = run_vlm_batches(
+        [_TransientRetryClient(remaining_failures=1)],  # type: ignore[arg-type]
+        [[object()]],
+        sensitive_files=[],
+        active_apps=[],
+        workers_per_key=1,
+        retry_attempts=2,
+        retry_backoff_seconds=0,
+    )
+
+    assert results["errors"] == []
+    assert len(results["batches"]) == 1
+    assert results["retry_warnings"] == ["vlm_transient_retry[0:1]: TimeoutError: temporary timeout"]
 
 
 def test_vlm_batches_reuse_one_process_queue_across_cases() -> None:

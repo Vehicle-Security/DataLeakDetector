@@ -23,8 +23,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--log", "-l", default="", help="Path to a JSON/JSONL monitor log.")
     parser.add_argument("--case", "-c", default="", help="Path to a spec/data sample case directory.")
     parser.add_argument("--case-root", default="", help="Recursively run every case directory below this root with shared VLM plan quotas.")
+    parser.add_argument("--case-list", default="", help="Optional UTF-8 file of case IDs, one per line, relative to --case-root.")
     parser.add_argument("--case-workers", type=int, default=1, help="Concurrent cases for --case-root; VLM plan limits remain global.")
     parser.add_argument("--release", action="store_true", help="For --case-root, write one consolidated release report instead of per-case debug artifacts.")
+    parser.add_argument(
+        "--release-debug-artifacts",
+        action="store_true",
+        help="With --release, also write per-case VLM request/response artifacts under case_debug.",
+    )
+    parser.add_argument("--vision-precompute-root", default="", help="Optional existing vision_precompute cache root for a filtered Release rerun.")
     parser.add_argument("--release-precompute-only", action="store_true", help="Build or reuse Release precompute caches, then exit before VLM.")
     parser.add_argument(
         "--release-precompute-neo4j-log-miner",
@@ -40,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-vlm-frames", type=int, default=None, help="Maximum keyframes sent to VLM; 0 disables VLM frames, negative means no cap.")
     parser.add_argument("--vlm-dry-run", action="store_true", help="Write VLM request artifacts without calling the model API.")
     parser.add_argument("--vlm-grid-size", type=int, default=0, help="Pack selected VLM frames into NxN grid images before calling the model.")
+    parser.add_argument("--vlm-grid-layout", default="", help="Optional VLM grid layout as rowsxcolumns, such as 2x1 for vertical pairs.")
     parser.add_argument("--vlm-workers", type=int, default=0, help="VLM workers; in fast dispatch mode this is the per-Key concurrency.")
     parser.add_argument("--vlm-fast-dispatch", action="store_true", help="Use every configured VLM API Key concurrently.")
     parser.add_argument("--vlm-max-image-side", type=int, default=-1, help="Resize VLM input images to this max side; 0 keeps originals.")
@@ -53,10 +61,13 @@ def main(argv: list[str] | None = None) -> int:
         help="For child session cases without groundtruth.json, use the nearest ancestor groundtruth for evaluation and sensitive sources.",
     )
     args = parser.parse_args(argv)
+    selected_case_ids = _load_case_ids(args.case_list) if args.case_list else None
     if args.vlm_dry_run:
         os.environ["DLD_VLM_DRY_RUN"] = "1"
     if args.vlm_grid_size:
         os.environ["DLD_VLM_GRID_SIZE"] = str(max(1, args.vlm_grid_size))
+    if args.vlm_grid_layout:
+        os.environ["DLD_VLM_GRID_LAYOUT"] = args.vlm_grid_layout.strip()
     if args.vlm_workers:
         os.environ["DLD_VLM_WORKERS"] = str(max(1, args.vlm_workers))
     if args.vlm_fast_dispatch:
@@ -80,12 +91,14 @@ def main(argv: list[str] | None = None) -> int:
         common_args = _release_direct_defaults(common_args, args)
     if args.release and not args.case_root:
         parser.error("--release requires --case-root")
+    if args.case_list and not args.case_root:
+        parser.error("--case-list requires --case-root")
     if args.release_precompute_only and not args.release:
         parser.error("--release-precompute-only requires --release")
     if args.neo4j_log_miner and args.no_neo4j_log_miner:
         parser.error("--neo4j-log-miner and --no-neo4j-log-miner cannot be used together")
-    if args.case and args.case_root:
-        parser.error("--case and --case-root cannot be used together")
+    if args.case and (args.case_root or args.case_list):
+        parser.error("--case cannot be used with --case-root or --case-list")
     if args.case_root:
         if args.release_precompute_only:
             root = Path(args.case_root)
@@ -96,16 +109,21 @@ def main(argv: list[str] | None = None) -> int:
                 cache_root=output_root / "vision_precompute",
                 workers=max(1, args.case_workers),
                 neo4j_log_miner=True if args.release_precompute_neo4j_log_miner else None,
+                case_ids=selected_case_ids,
             )
             report = {"batch": {"mode": "release_precompute", "case_count": len(caches), "cache_root": str(output_root / "vision_precompute")}}
         elif args.release:
+            grid_layout = args.vlm_grid_layout.strip() or os.getenv("DLD_VLM_GRID_LAYOUT", "").strip()
             report = _run_release(
                 args.case_root,
                 common_args=common_args,
                 output_dir=args.output_dir or None,
                 workers=max(1, args.case_workers),
-                grid_size=max(1, args.vlm_grid_size or int(os.getenv("DLD_VLM_GRID_SIZE", "2"))),
+                grid_size=max(1, args.vlm_grid_size or int(os.getenv("DLD_VLM_GRID_SIZE", "1" if grid_layout else "2"))),
+                grid_layout=grid_layout,
                 precompute_neo4j_log_miner=True if args.release_precompute_neo4j_log_miner else None,
+                case_ids=selected_case_ids,
+                vision_precompute_root=args.vision_precompute_root or None,
             )
         else:
             report = _run_case_root(
@@ -114,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
                 output_dir=args.output_dir or None,
                 workers=max(1, args.case_workers),
                 release=args.release,
+                case_ids=selected_case_ids,
             )
     elif args.case:
         report = run_data_case(args.case, **common_args)
@@ -131,7 +150,7 @@ def _release_direct_defaults(common_args: dict, args: argparse.Namespace) -> dic
     release_args["vision_enabled"] = True
     release_args["max_vlm_frames"] = -1 if args.max_vlm_frames is None else args.max_vlm_frames
     release_args["non_vlm_enabled"] = False
-    release_args["vision_debug_artifacts"] = False
+    release_args["vision_debug_artifacts"] = bool(args.release_debug_artifacts)
     release_args["inherit_ancestor_groundtruth"] = True
     if not args.neo4j_log_miner:
         release_args["neo4j_log_miner"] = False
@@ -167,10 +186,12 @@ def _run_case_root(
     case_arg_overrides: dict[str, dict] | None = None,
     progress_file: Path | None = None,
     progress_context: dict | None = None,
+    case_ids: set[str] | None = None,
 ) -> dict:
     root = Path(case_root)
     case_dirs = discover_data_case_directories(root)
     cases = [(data_case_id(case, root), case) for case in case_dirs]
+    cases = _filter_cases(cases, case_ids, root)
     if not cases:
         raise ValueError(f"no case directories found under {root}")
 
@@ -205,7 +226,9 @@ def _run_case_root(
                 len(cases) - len(completed) - len(errors) - len(running) - len(finished_uncollected),
             ),
             "last_case": last_case,
-            "recent_cases": recent_cases[-20:],
+            # The live LLM adjudicator must be able to recover every completed
+            # disagreement even when it is temporarily slower than VLM calls.
+            "recent_cases": recent_cases,
             "elapsed_seconds": round(time.perf_counter() - started, 3),
             "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "vlm_dispatchers": vlm_dispatcher_snapshots(),
@@ -240,6 +263,8 @@ def _run_case_root(
         case_args.update(overrides)
         if output_root is not None and not release:
             case_args["output_dir"] = str(output_root / Path(case_id))
+        elif release and case_args.get("vision_debug_artifacts"):
+            case_args["output_dir"] = str(output_root / "case_debug" / Path(case_id))
         elif release:
             case_args["output_dir"] = None
         case_started = time.perf_counter()
@@ -285,6 +310,9 @@ def _run_case_root(
                             "conclusion": result.get("conclusion", ""),
                             **evaluation,
                         }
+                        frame_errors = result.get("frame_analyzer", {}).get("errors", [])
+                        if frame_errors:
+                            last_case["errors"] = frame_errors
                         recent_cases.append(last_case)
                         persist_progress("running")
                         correct = evaluation["detector_correct"]
@@ -365,7 +393,10 @@ def _run_release(
     output_dir: str | None,
     workers: int,
     grid_size: int,
+    grid_layout: str = "",
     precompute_neo4j_log_miner: bool | None = None,
+    case_ids: set[str] | None = None,
+    vision_precompute_root: str | None = None,
 ) -> dict:
     root = Path(case_root)
     output_root = Path(output_dir) if output_dir else Path("artifacts") / f"{root.name}_release_{time.strftime('%Y%m%d_%H%M%S')}"
@@ -377,18 +408,21 @@ def _run_release(
     vision_precompute = _build_release_vision_precompute(
         case_root,
         common_args=common_args,
-        cache_root=output_root / "vision_precompute",
+        cache_root=Path(vision_precompute_root) if vision_precompute_root else output_root / "vision_precompute",
         workers=workers,
         neo4j_log_miner=precompute_neo4j_log_miner,
+        case_ids=case_ids,
     )
     os.environ["DLD_VLM_GRID_SIZE"] = str(grid_size)
     try:
-        print(f"release direct_keyframes grid={grid_size}", flush=True)
+        grid_label = grid_layout or f"{grid_size}x{grid_size}"
+        print(f"release direct_keyframes grid={grid_label}", flush=True)
         case_overrides = {
             name: {
                 "precomputed_baseline_file": path,
+                "detail_output_dir": str(Path(path).parent),
                 "non_vlm_enabled": False,
-                "vision_debug_artifacts": False,
+                "vision_debug_artifacts": bool(common_args.get("vision_debug_artifacts")),
             }
             for name, path in vision_precompute.items()
         }
@@ -400,8 +434,9 @@ def _run_release(
             release=True,
             write_release_report=True,
             progress_file=progress_file,
-            progress_context={"mode": "release", "vlm_grid_size": grid_size},
+            progress_context={"mode": "release", "vlm_grid_size": grid_size, "vlm_grid_layout": grid_layout},
             case_arg_overrides=case_overrides,
+            case_ids=case_ids,
         )
     finally:
         _restore_env("DLD_VLM_GRID_SIZE", previous_grid)
@@ -410,6 +445,7 @@ def _run_release(
     release_report["batch"]["mode"] = "release"
     release_report["batch"]["vlm_frame_source"] = "direct_keyframes"
     release_report["batch"]["vlm_grid_size"] = grid_size
+    release_report["batch"]["vlm_grid_layout"] = grid_layout
     release_report["batch"]["timing_seconds"] = round(time.perf_counter() - started, 3)
     report_file = output_root / "release_report.json"
     release_report["batch"]["report_file"] = str(report_file)
@@ -425,6 +461,7 @@ def _run_release(
             "case_workers": workers,
             "vlm_frame_source": "direct_keyframes",
             "vlm_grid_size": grid_size,
+            "vlm_grid_layout": grid_layout,
             "timing_seconds": round(time.perf_counter() - started, 3),
         },
         "release_report": release_report,
@@ -437,10 +474,12 @@ def _build_release_vision_precompute(
     cache_root: Path,
     workers: int,
     neo4j_log_miner: bool | None,
+    case_ids: set[str] | None = None,
 ) -> dict[str, str]:
     root = Path(case_root)
     case_dirs = discover_data_case_directories(root)
     cases = [(data_case_id(case, root), case) for case in case_dirs]
+    cases = _filter_cases(cases, case_ids, root)
     cache_root.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     progress_file = cache_root.parent / "release_precompute_progress.json"
@@ -475,9 +514,9 @@ def _build_release_vision_precompute(
         print(f"  precompute started case={case_id}", flush=True)
         case_root_dir = cache_root / Path(case_id)
         try:
-            existing = sorted(case_root_dir.rglob("pipeline_baseline.json")) if case_root_dir.exists() else []
-            if existing and _precompute_baseline_matches_mode(existing[-1], "direct_keyframes_only"):
-                return case_id, str(existing[-1])
+            existing = _reusable_precompute_baseline(case_root_dir)
+            if existing and _precompute_baseline_matches_mode(existing, "direct_keyframes_only"):
+                return case_id, str(existing)
             args = dict(common_args)
             args.update(
                 {
@@ -547,6 +586,42 @@ def _restore_env(name: str, previous: str | None) -> None:
         os.environ.pop(name, None)
     else:
         os.environ[name] = previous
+
+
+def _reusable_precompute_baseline(case_cache_root: Path) -> Path | None:
+    """Return a baseline generated for this exact case, never for a nested session."""
+    if not case_cache_root.exists():
+        return None
+    candidates = sorted(case_cache_root.glob("*/pipeline_baseline.json"))
+    return candidates[-1] if candidates else None
+
+
+def _load_case_ids(path: str) -> set[str]:
+    source = Path(path)
+    if not source.is_file():
+        raise ValueError(f"case list file not found: {source}")
+    case_ids: set[str] = set()
+    for raw_line in source.read_text(encoding="utf-8").splitlines():
+        case_id = raw_line.strip().replace("\\", "/").strip("/")
+        if not case_id or case_id.startswith("#"):
+            continue
+        parts = Path(case_id).parts
+        if any(part in {"", ".", ".."} for part in parts):
+            raise ValueError(f"invalid case ID in {source}: {raw_line!r}")
+        case_ids.add(case_id)
+    if not case_ids:
+        raise ValueError(f"case list file is empty: {source}")
+    return case_ids
+
+
+def _filter_cases(cases: list[tuple[str, Path]], case_ids: set[str] | None, root: Path) -> list[tuple[str, Path]]:
+    if not case_ids:
+        return cases
+    known = {case_id for case_id, _ in cases}
+    missing = sorted(case_ids - known)
+    if missing:
+        raise ValueError(f"case IDs not found under {root}: {', '.join(missing)}")
+    return [(case_id, case) for case_id, case in cases if case_id in case_ids]
 
 
 def _precompute_baseline_matches_mode(path: Path, mode: str) -> bool:

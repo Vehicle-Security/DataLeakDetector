@@ -24,6 +24,7 @@ def run_pipeline(
     log_file: str | Path,
     video_file: str | Path = "",
     output_dir: str | Path | None = None,
+    detail_output_dir: str | Path | None = None,
     sensitive_files: list[str] | None = None,
     observations_file: str | Path | None = None,
     vision_enabled: bool | None = None,
@@ -186,6 +187,8 @@ def run_pipeline(
         target_dir = Path(output_dir)
         report_files = _write_report_files(payload, target_dir, report.report_id)
         payload.update(report_files)
+    elif detail_output_dir is not None:
+        _write_detail_files(payload, Path(detail_output_dir))
     return payload
 
 
@@ -394,6 +397,7 @@ def run_data_case(
     case_dir: str | Path,
     *,
     output_dir: str | Path | None = None,
+    detail_output_dir: str | Path | None = None,
     sensitive_files: list[str] | None = None,
     observations_file: str | Path | None = None,
     vision_enabled: bool | None = None,
@@ -420,6 +424,7 @@ def run_data_case(
         log_file=case.log_file,
         video_file=case.video_file or "",
         output_dir=output_dir,
+        detail_output_dir=detail_output_dir,
         sensitive_files=merged_sensitive,
         observations_file=observations_file,
         vision_enabled=vision_enabled,

@@ -161,7 +161,7 @@ def same_file(left: object, right: object) -> bool:
     lhs_name = basename(lhs).lower()
     rhs_name = basename(rhs).lower()
     if _safe_basename_match(lhs_name) and _safe_basename_match(rhs_name):
-        return lhs_name == rhs_name
+        return _basename_match_key(lhs_name) == _basename_match_key(rhs_name)
     return False
 
 
@@ -180,6 +180,11 @@ def _safe_basename_match(name: str) -> bool:
         return False
     path = Path(name)
     return bool(path.suffix and len(path.stem) >= 2)
+
+
+def _basename_match_key(name: str) -> str:
+    """Ignore accidental whitespace immediately before a file extension."""
+    return re.sub(r"\s+(\.[^.]+)$", r"\1", name)
 
 
 def parse_timestamp_ms(value: object) -> int:

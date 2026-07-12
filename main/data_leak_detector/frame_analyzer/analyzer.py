@@ -224,6 +224,7 @@ def _run_vision_pipeline(
         selected_frames,
         max_image_side=config.vlm_max_image_side,
         grid_size=config.vlm_grid_size,
+        grid_layout=config.vlm_grid_layout,
         artifact_dir=artifact_dir,
         manifest=manifest,
     )
@@ -348,6 +349,8 @@ def _run_vlm_if_needed(
             sensitive_files=sensitive_files,
             active_apps=active_apps,
             workers_per_key=config.vlm_workers,
+            retry_attempts=config.vlm_retry_attempts,
+            retry_backoff_seconds=config.vlm_retry_backoff_seconds,
         )
         if debug_artifacts:
             write_json_artifact(artifact_dir, "vlm_response.json", vlm_response_artifact_payload(results), manifest, "vlm_response_file")
@@ -406,6 +409,7 @@ def _vision_stats(
         "vlm_dry_run": config.vlm_dry_run,
         "vlm_frame_source": "direct_keyframes",
         "vlm_grid_size": config.vlm_grid_size,
+        "vlm_grid_layout": config.vlm_grid_layout,
         "vlm_workers": config.vlm_workers,
         "vlm_fast_dispatch": config.vlm_fast_dispatch,
         "vlm_api_key_count": vlm_result["api_key_count"],

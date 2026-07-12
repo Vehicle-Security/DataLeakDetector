@@ -58,8 +58,11 @@ class VisionConfig:
     vlm_token_chat_url: str = ""
     vlm_token_api_key: str = ""
     vlm_timeout_seconds: int = 60
+    vlm_retry_attempts: int = 3
+    vlm_retry_backoff_seconds: float = 1.0
     vlm_dry_run: bool = False
     vlm_grid_size: int = 1
+    vlm_grid_layout: str = ""
     vlm_workers: int = 10
     vlm_fast_dispatch: bool = False
     vlm_max_image_side: int = 1_280
@@ -107,8 +110,11 @@ class VisionConfig:
             vlm_token_chat_url=os.getenv("DLD_VLM_TOKEN_CHAT_URL", ""),
             vlm_token_api_key=os.getenv("DLD_VLM_TOKEN_API_KEY", ""),
             vlm_timeout_seconds=_env_int("DLD_VLM_TIMEOUT_SECONDS", 60),
+            vlm_retry_attempts=max(1, _env_int("DLD_VLM_RETRY_ATTEMPTS", 3)),
+            vlm_retry_backoff_seconds=max(0.0, _env_float("DLD_VLM_RETRY_BACKOFF_SECONDS", 1.0)),
             vlm_dry_run=_env_bool("DLD_VLM_DRY_RUN", False),
             vlm_grid_size=max(1, _env_int("DLD_VLM_GRID_SIZE", 1)),
+            vlm_grid_layout=os.getenv("DLD_VLM_GRID_LAYOUT", "").strip(),
             vlm_workers=max(1, _env_int("DLD_VLM_WORKERS", 10)),
             vlm_fast_dispatch=_env_bool("DLD_VLM_FAST_DISPATCH", False),
             vlm_max_image_side=max(0, _env_int("DLD_VLM_MAX_IMAGE_SIDE", 1_280)),
@@ -160,8 +166,11 @@ class VisionConfig:
             vlm_token_chat_url=self.vlm_token_chat_url,
             vlm_token_api_key=self.vlm_token_api_key,
             vlm_timeout_seconds=self.vlm_timeout_seconds,
+            vlm_retry_attempts=self.vlm_retry_attempts,
+            vlm_retry_backoff_seconds=self.vlm_retry_backoff_seconds,
             vlm_dry_run=self.vlm_dry_run,
             vlm_grid_size=self.vlm_grid_size,
+            vlm_grid_layout=self.vlm_grid_layout,
             vlm_workers=self.vlm_workers,
             vlm_fast_dispatch=self.vlm_fast_dispatch,
             vlm_max_image_side=self.vlm_max_image_side,

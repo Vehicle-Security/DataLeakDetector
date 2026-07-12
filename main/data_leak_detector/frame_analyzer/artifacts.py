@@ -108,6 +108,7 @@ def prepare_vlm_request_frames(
     *,
     max_image_side: int,
     grid_size: int,
+    grid_layout: str,
     artifact_dir: str | Path | None,
     manifest: dict[str, Any],
 ) -> list[Any]:
@@ -124,13 +125,18 @@ def prepare_vlm_request_frames(
             _set_manifest_count(manifest, "keyframes_vlm_input_files", len(input_files))
             update_artifact_manifest_file(manifest, {"keyframes_vlm_input_files": input_files})
 
-    if grid_size <= 1:
+    if grid_size <= 1 and not grid_layout:
         return prepared_frames
 
     grid_dir = Path(artifact_dir) / "keyframes_vlm_grid" if artifact_dir is not None else None
     if grid_dir is not None:
         _reset_dir(grid_dir)
-    grid_frames = build_vlm_frame_grids(prepared_frames, grid_size=grid_size, output_dir=grid_dir)
+    grid_frames = build_vlm_frame_grids(
+        prepared_frames,
+        grid_size=grid_size,
+        grid_layout=grid_layout,
+        output_dir=grid_dir,
+    )
     if grid_dir is not None:
         grid_files = [item.frame.image_path for item in grid_frames]
         manifest["keyframes_vlm_grid_dir"] = str(grid_dir)

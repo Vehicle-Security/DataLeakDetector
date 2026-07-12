@@ -227,6 +227,9 @@ def _is_normal_only(text: str) -> bool:
 
 
 def _operation_to_pipeline(event: ParsedVisionEvent) -> str:
+    behavior = (event.behavior_category or "").lower()
+    if behavior == "hidden_transfer":
+        return "file_or_content_transfer"
     text = f"{event.behavior_category} {event.operation_type} {event.description} {event.sink_type}".lower()
     if _is_suspicious_content_transform(event, text):
         return "file_or_content_transfer"
