@@ -236,6 +236,7 @@ def _analysis_window_to_dict(window: AnalysisWindow) -> dict[str, Any]:
         "max_keyframes": window.max_keyframes,
         "diff_threshold": window.diff_threshold,
         "anchor_ms": list(window.anchor_ms),
+        "action_anchor_ms": list(window.action_anchor_ms),
         "active_apps": list(window.active_apps),
         "active_ranges": [list(item) for item in window.active_ranges],
     }
@@ -251,6 +252,7 @@ def _analysis_window_from_dict(item: dict[str, Any]) -> AnalysisWindow:
         max_keyframes=int(item.get("max_keyframes") or 0),
         diff_threshold=float(item.get("diff_threshold") or 0.0),
         anchor_ms=tuple(int(value) for value in item.get("anchor_ms") or []),
+        action_anchor_ms=tuple(int(value) for value in item.get("action_anchor_ms") or []),
         active_apps=tuple(str(value) for value in item.get("active_apps") or []),
         active_ranges=tuple((int(value[0]), int(value[1])) for value in item.get("active_ranges") or [] if len(value) == 2),
     )

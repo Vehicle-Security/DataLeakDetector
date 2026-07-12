@@ -17,6 +17,10 @@ from pathlib import Path
 from .config import VisionConfig
 
 
+_STRUCTURE_PHASE_THRESHOLD = 0.04
+_STABLE_PHASE_MIN_MS = 1_000
+
+
 @dataclass(frozen=True)
 class AnalysisWindow:
     start_ms: int
@@ -27,6 +31,7 @@ class AnalysisWindow:
     max_keyframes: int = 18
     diff_threshold: float = 0.08
     anchor_ms: tuple[int, ...] = ()
+    action_anchor_ms: tuple[int, ...] = ()
     active_apps: tuple[str, ...] = ()
     active_ranges: tuple[tuple[int, int], ...] = ()
 
@@ -151,12 +156,12 @@ def select_keyframes_detailed(
                 score = 1.0 if previous_small is None else _frame_delta(cv2, previous_small, gray)
                 frame_hash = _average_hash(cv2, gray)
                 force_anchor = _is_near_anchor(timestamp, window.anchor_ms, window.step_ms)
-                force_activity_context = bool(probe_window.active_ranges) and _is_near_anchor(
-                    timestamp,
-                    window.anchor_ms,
-                    window.step_ms * 2,
-                )
-                force_activity_gap = bool(probe_window.active_ranges) and not force_activity_context
+                activity_window = probe_window.priority == "activity"
+                # Activity windows locate potentially relevant work around a
+                # sensitive file. They are not evidence by themselves: only
+                # their explicit event anchors may bypass visual filtering.
+                force_activity_context = activity_window and force_anchor
+                force_activity_gap = False
                 force_coverage = _is_near_anchor(timestamp, coverage_ms, window.step_ms)
                 force_keep = force_anchor or force_activity_context or force_activity_gap or force_coverage
                 exact_duplicate = _is_exact_duplicate(cv2, gray, retained_small_frames, config.frame_exact_duplicate_threshold)
@@ -197,8 +202,8 @@ def select_keyframes_detailed(
         capture.release()
 
     raw_keyframes = [candidate.frame for candidate in candidates]
-    keyframes, duplicates = _dedupe_keyframes_globally(candidates, config)
-    keyframes = _focus_activity_gap_keyframes(keyframes)
+    keyframes, duplicates = _dedupe_keyframes_globally(candidates, config, windows=windows)
+    keyframes = _focus_actionable_keyframes(keyframes, candidates, windows)
     if not keyframes and windows:
         warnings.append("no_keyframes_selected")
     return KeyFrameSelection(keyframes=keyframes, raw_keyframes=raw_keyframes, duplicates=duplicates, warnings=warnings)
@@ -212,33 +217,518 @@ class _FrameCandidate:
     frame_hash: tuple[int, int]
 
 
-def _focus_activity_gap_keyframes(keyframes: list[KeyFrame]) -> list[KeyFrame]:
-    """Keep compact context/action evidence for activity-gap fallback windows."""
+def _focus_actionable_keyframes(
+    keyframes: list[KeyFrame],
+    candidates: list[_FrameCandidate],
+    windows: list[AnalysisWindow],
+) -> list[KeyFrame]:
+    """Keep action evidence while removing activity-only duplicate context."""
 
-    by_window: dict[str, list[KeyFrame]] = {}
-    for frame in keyframes:
-        by_window.setdefault(frame.window_id or "window_unknown", []).append(frame)
+    actionable_input = list(keyframes)
+    has_reportable_action = any(
+        window.priority == "strong" and _is_reportable_action_window(window)
+        for window in windows
+    )
+    if not has_reportable_action:
+        return _focus_unresolved_suspicious_context(actionable_input, windows)
 
-    focused: list[KeyFrame] = []
-    for window_frames in by_window.values():
-        activity_gaps = [frame for frame in window_frames if "activity_gap" in frame.reason.lower()]
-        if not activity_gaps:
-            focused.extend(window_frames)
+    keyframes = _drop_unactionable_strong_frames(keyframes, windows)
+    keyframes = _focus_strong_action_anchors(keyframes, windows)
+    keyframes = _drop_unactionable_activity_frames(keyframes, windows)
+    keyframes = _cap_strong_action_frames(keyframes, windows)
+    keyframes = _compact_activity_frames_covered_by_strong_actions(keyframes, windows)
+    keyframes = _focus_file_dialog_flows(keyframes, candidates, windows)
+    if keyframes:
+        return _ensure_minimum_action_evidence(keyframes, actionable_input, windows)
+    fallback = _fallback_action_frame(actionable_input, windows)
+    return [fallback] if fallback is not None else []
+
+
+def _focus_unresolved_suspicious_context(
+    keyframes: list[KeyFrame],
+    windows: list[AnalysisWindow],
+) -> list[KeyFrame]:
+    """Retain sparse VLM context when logs identify risk but no exact action."""
+
+    strong_frames = [
+        frame
+        for frame in keyframes
+        if _is_strong_window_id(frame.window_id, windows)
+    ]
+    if not any(window.priority == "activity" for window in windows):
+        return []
+    activity_frames = [
+        frame
+        for frame in keyframes
+        if _is_activity_window_id(frame.window_id, windows)
+        and any(
+            _windows_overlap(windows[_window_index(frame.window_id)], window)
+            for window in windows
+            if window.priority == "strong"
+        )
+    ]
+    selected = (
+        [
+            *_pick_temporal_frames(strong_frames, limit=4),
+            *_pick_temporal_frames(activity_frames, limit=2),
+        ]
+        if strong_frames
+        else _pick_temporal_frames(activity_frames, limit=4)
+    )
+    selected_ids = {frame.frame_id for frame in selected}
+    return sorted(
+        (frame for frame in keyframes if frame.frame_id in selected_ids),
+        key=lambda frame: frame.timestamp_ms,
+    )
+
+
+def _pick_temporal_frames(frames: list[KeyFrame], *, limit: int) -> list[KeyFrame]:
+    ordered = sorted(frames, key=lambda frame: frame.timestamp_ms)
+    if len(ordered) <= limit:
+        return ordered
+    last_index = len(ordered) - 1
+    return [ordered[round(slot * last_index / max(1, limit - 1))] for slot in range(limit)]
+
+
+def _ensure_minimum_action_evidence(
+    focused: list[KeyFrame],
+    available: list[KeyFrame],
+    windows: list[AnalysisWindow],
+) -> list[KeyFrame]:
+    """Keep a second deduplicated state when an action flow has one."""
+
+    if len(focused) >= 2:
+        return focused
+    focused_ids = {frame.frame_id for frame in focused}
+    candidates = [
+        frame
+        for frame in available
+        if frame.frame_id not in focused_ids
+        and (
+            _is_activity_window_id(frame.window_id, windows)
+            or (
+                _is_strong_window_id(frame.window_id, windows)
+                and _is_reportable_action_window(windows[_window_index(frame.window_id)])
+                and "clipboard" not in windows[_window_index(frame.window_id)].reason.lower()
+            )
+        )
+    ]
+    if not candidates:
+        return focused
+    reference_ms = focused[0].timestamp_ms if focused else 0
+    complement = max(candidates, key=lambda frame: (abs(frame.timestamp_ms - reference_ms), frame.timestamp_ms))
+    return sorted([*focused, complement], key=lambda frame: frame.timestamp_ms)
+
+
+def _drop_unactionable_strong_frames(
+    keyframes: list[KeyFrame],
+    windows: list[AnalysisWindow],
+) -> list[KeyFrame]:
+    """Ignore generic app switches promoted only as broad visual context."""
+
+    return [
+        frame
+        for frame in keyframes
+        if not _is_strong_window_id(frame.window_id, windows)
+        or _is_reportable_action_window(windows[_window_index(frame.window_id)])
+    ]
+
+
+def _focus_strong_action_anchors(
+    keyframes: list[KeyFrame],
+    windows: list[AnalysisWindow],
+) -> list[KeyFrame]:
+    """Keep a concise before/action/result sequence for explicit actions."""
+
+    selected_ids: set[str] = set()
+    managed_window_ids: set[str] = set()
+    for index, window in enumerate(windows):
+        if window.priority != "strong" or _is_file_dialog_window(window) or not window.action_anchor_ms:
+            continue
+        window_id = f"window_{index}"
+        managed_window_ids.add(window_id)
+        window_frames = sorted(
+            (frame for frame in keyframes if frame.window_id == window_id),
+            key=lambda frame: frame.timestamp_ms,
+        )
+        if not window_frames:
             continue
 
-        action = max(activity_gaps, key=lambda frame: frame.timestamp_ms)
-        preceding_gap = [frame for frame in activity_gaps if frame.timestamp_ms < action.timestamp_ms]
-        preceding_anchors = [
+        clipboard_action = "clipboard" in window.reason.lower()
+        for anchor in window.action_anchor_ms:
+            before = [frame for frame in window_frames if anchor - 2_000 <= frame.timestamp_ms <= anchor]
+            after = [frame for frame in window_frames if anchor <= frame.timestamp_ms <= anchor + 2_500]
+            strict_before = [frame for frame in before if frame.timestamp_ms < anchor]
+            strict_after = [frame for frame in after if frame.timestamp_ms > anchor]
+            if clipboard_action and strict_before:
+                selected_ids.add(strict_before[-1].frame_id)
+            elif before:
+                selected_ids.add(before[-1].frame_id)
+            if after and not (clipboard_action and strict_before):
+                selected_ids.add((strict_after or after)[0].frame_id)
+
+    return [
+        frame
+        for frame in keyframes
+        if frame.window_id not in managed_window_ids or frame.frame_id in selected_ids
+    ]
+
+
+def _drop_unactionable_activity_frames(
+    keyframes: list[KeyFrame],
+    windows: list[AnalysisWindow],
+) -> list[KeyFrame]:
+    """Do not turn ordinary sensitive-file reading into visual evidence.
+
+    Activity windows supply the before/after context for a concrete external
+    transfer or derivation.  On their own, an open document or a file close is
+    not evidence of either outcome and would otherwise consume VLM budget.
+    """
+
+    actionable_windows = [
+        window
+        for window in windows
+        if window.priority == "strong" and _is_reportable_action_window(window)
+    ]
+    if not actionable_windows:
+        return [
             frame
-            for frame in window_frames
-            if "anchor" in frame.reason.lower() and frame.timestamp_ms <= action.timestamp_ms
+            for frame in keyframes
+            if not _is_activity_window_id(frame.window_id, windows)
         ]
-        if preceding_anchors:
-            focused.append(max(preceding_anchors, key=lambda frame: frame.timestamp_ms))
-        if preceding_gap:
-            focused.append(max(preceding_gap, key=lambda frame: frame.timestamp_ms))
-        focused.append(action)
-    return sorted(focused, key=lambda frame: frame.timestamp_ms)
+
+    return [
+        frame
+        for frame in keyframes
+        if not _is_activity_window_id(frame.window_id, windows)
+        or any(_windows_overlap(windows[_window_index(frame.window_id)], action) for action in actionable_windows)
+    ]
+
+
+def _cap_strong_action_frames(
+    keyframes: list[KeyFrame],
+    windows: list[AnalysisWindow],
+) -> list[KeyFrame]:
+    """Limit one non-dialog action flow without losing its terminal state."""
+
+    selected_ids: set[str] = set()
+    capped_window_ids: set[str] = set()
+    for index, window in enumerate(windows):
+        if window.priority != "strong" or _is_file_dialog_window(window) or not window.action_anchor_ms:
+            continue
+        window_id = f"window_{index}"
+        capped_window_ids.add(window_id)
+        window_frames = sorted(
+            (frame for frame in keyframes if frame.window_id == window_id),
+            key=lambda frame: frame.timestamp_ms,
+        )
+        if len(window_frames) <= 6:
+            selected_ids.update(frame.frame_id for frame in window_frames)
+            continue
+        last_index = len(window_frames) - 1
+        selected_ids.update(
+            window_frames[round(slot * last_index / 5)].frame_id
+            for slot in range(6)
+        )
+    return [
+        frame
+        for frame in keyframes
+        if frame.window_id not in capped_window_ids or frame.frame_id in selected_ids
+    ]
+
+
+def _is_reportable_action_window(window: AnalysisWindow) -> bool:
+    reason = window.reason.lower()
+    action_markers = (
+        "file_selected",
+        "file_upload",
+        "upload",
+        "uploaded",
+        "send_click",
+        "fsquirt",
+        "clipboard",
+        "copy",
+        "paste",
+        "screenshot",
+        "screen_capture",
+        "screen_record",
+        "capture",
+        "derivation",
+        "print",
+        "save_as",
+        "export",
+        "compress",
+        "base64",
+        "translate",
+        "removable",
+    )
+    return any(marker in reason for marker in action_markers)
+
+
+def _is_activity_window_id(window_id: str | None, windows: list[AnalysisWindow]) -> bool:
+    if window_id is None or not window_id.startswith("window_"):
+        return False
+    index = _window_index(window_id)
+    return index is not None and index < len(windows) and windows[index].priority == "activity"
+
+
+def _is_strong_window_id(window_id: str | None, windows: list[AnalysisWindow]) -> bool:
+    if window_id is None or not window_id.startswith("window_"):
+        return False
+    index = _window_index(window_id)
+    return index is not None and index < len(windows) and windows[index].priority == "strong"
+
+
+def _window_index(window_id: str) -> int | None:
+    try:
+        return int(window_id.removeprefix("window_"))
+    except ValueError:
+        return None
+
+
+def _compact_activity_frames_covered_by_strong_actions(
+    keyframes: list[KeyFrame],
+    windows: list[AnalysisWindow],
+) -> list[KeyFrame]:
+    """Keep compact post-action evidence instead of dropping activity wholesale."""
+
+    actionable_strong_windows = [
+        window
+        for window in windows
+        if window.priority == "strong"
+        and not _is_file_dialog_window(window)
+        and _is_reportable_action_window(window)
+    ]
+    if not actionable_strong_windows:
+        return keyframes
+
+    activity_window_ids = {
+        f"window_{index}"
+        for index, window in enumerate(windows)
+        if window.priority == "activity"
+        and any(_windows_overlap(window, strong_window) for strong_window in actionable_strong_windows)
+    }
+    selected_activity_ids: set[str] = set()
+    for window_id in activity_window_ids:
+        activity_frames = sorted(
+            (frame for frame in keyframes if frame.window_id == window_id),
+            key=lambda frame: frame.timestamp_ms,
+        )
+        activity_window = windows[_window_index(window_id)]
+        overlapping_actions = [
+            action
+            for action in actionable_strong_windows
+            if _windows_overlap(activity_window, action)
+        ]
+        action_anchors = sorted(
+            anchor
+            for action in overlapping_actions
+            for anchor in (action.action_anchor_ms or action.anchor_ms)
+        )
+        if action_anchors:
+            source_context = [
+                frame
+                for frame in activity_frames
+                if frame.timestamp_ms <= action_anchors[0]
+            ]
+            if source_context:
+                selected_activity_ids.add(source_context[-1].frame_id)
+
+        anchors = [frame for frame in activity_frames if "anchor" in frame.reason.lower()]
+        final_anchor = anchors[-1] if anchors else (activity_frames[-1] if activity_frames else None)
+        if final_anchor is None:
+            continue
+        selected_activity_ids.add(final_anchor.frame_id)
+
+        preceding_changes = [
+            frame
+            for frame in activity_frames
+            if frame.timestamp_ms < final_anchor.timestamp_ms and "anchor" not in frame.reason.lower()
+        ]
+        if preceding_changes:
+            selected_activity_ids.add(preceding_changes[-1].frame_id)
+
+    return [
+        frame
+        for frame in keyframes
+        if frame.window_id not in activity_window_ids or frame.frame_id in selected_activity_ids
+    ]
+
+
+def _focus_file_dialog_flows(
+    keyframes: list[KeyFrame],
+    candidates: list[_FrameCandidate],
+    windows: list[AnalysisWindow],
+) -> list[KeyFrame]:
+    """Keep visually distinct phases across a file-selection workflow."""
+
+    dialog_indices = [index for index, window in enumerate(windows) if _is_file_dialog_window(window)]
+    if not dialog_indices or not keyframes:
+        return keyframes
+
+    try:
+        import cv2
+    except ImportError:
+        return keyframes
+
+    candidate_by_id = {candidate.frame.frame_id: candidate for candidate in candidates}
+    selected_ids: set[str] = set()
+    managed_window_ids: set[str] = set()
+
+    for dialog_index in dialog_indices:
+        dialog_window = windows[dialog_index]
+        if not dialog_window.active_ranges:
+            continue
+
+        related_indices = [
+            index
+            for index, window in enumerate(windows)
+            if index == dialog_index
+            or (window.priority == "activity" and _windows_overlap(window, dialog_window))
+        ]
+        related_window_ids = {f"window_{index}" for index in related_indices}
+        related_frames = [
+            frame
+            for frame in keyframes
+            if frame.window_id in related_window_ids
+        ]
+        if not related_frames:
+            continue
+        managed_window_ids.update(related_window_ids)
+        for active_range in dialog_window.active_ranges:
+            phase_frames = [
+                frame
+                for frame in related_frames
+                if active_range[0] <= frame.timestamp_ms <= active_range[1]
+            ]
+            selected_ids.update(
+                frame.frame_id
+                for frame in _visual_phase_representatives(cv2, phase_frames, candidate_by_id)
+            )
+
+    if not managed_window_ids:
+        return keyframes
+    return [
+        frame
+        for frame in keyframes
+        if frame.window_id not in managed_window_ids or frame.frame_id in selected_ids
+    ]
+
+
+def _visual_phase_representatives(
+    cv2,
+    frames: list[KeyFrame],
+    candidate_by_id: dict[str, _FrameCandidate],
+) -> list[KeyFrame]:
+    """Keep the final frame of every visually distinct foreground phase."""
+
+    ordered = sorted(frames, key=lambda frame: frame.timestamp_ms)
+    if len(ordered) <= 1:
+        return ordered
+    phases: list[list[KeyFrame]] = [[ordered[0]]]
+    for frame in ordered[1:]:
+        previous = phases[-1][-1]
+        previous_candidate = candidate_by_id.get(previous.frame_id)
+        current_candidate = candidate_by_id.get(frame.frame_id)
+        if previous_candidate is None or current_candidate is None:
+            phases.append([frame])
+            continue
+        delta = _structure_delta(cv2, previous_candidate.gray, current_candidate.gray)
+        if delta >= _STRUCTURE_PHASE_THRESHOLD:
+            phases.append([frame])
+        else:
+            phases[-1].append(frame)
+    stable_indices = {
+        index
+        for index, phase in enumerate(phases)
+        if len(phase) >= 2 or phase[-1].timestamp_ms - phase[0].timestamp_ms >= _STABLE_PHASE_MIN_MS
+    }
+    return [
+        phase[-1]
+        for index, phase in enumerate(phases)
+        if len(phase) > 1
+        or index == len(phases) - 1
+        or not any(later > index for later in stable_indices)
+    ]
+
+
+def _fallback_action_frame(
+    keyframes: list[KeyFrame],
+    windows: list[AnalysisWindow],
+) -> KeyFrame | None:
+    """Never erase every visual candidate from a reportable action window."""
+
+    candidates: list[tuple[int, int, KeyFrame]] = []
+    for frame in keyframes:
+        index = _window_index(frame.window_id or "")
+        if index is None or index >= len(windows):
+            continue
+        window = windows[index]
+        if window.priority != "strong" or not _is_reportable_action_window(window):
+            continue
+        anchors = window.action_anchor_ms or window.anchor_ms
+        distance = min((abs(frame.timestamp_ms - anchor) for anchor in anchors), default=0)
+        candidates.append((distance, -frame.timestamp_ms, frame))
+    return min(candidates, key=lambda item: (item[0], item[1]))[2] if candidates else None
+
+
+def _is_file_dialog_window(window: AnalysisWindow) -> bool:
+    reason = window.reason.lower()
+    return window.priority == "strong" and ("file_selected" in reason or "file_dialog" in reason)
+
+
+def _file_dialog_phase_ranges(
+    window: AnalysisWindow,
+) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
+    ranges = list(window.active_ranges)
+    if not ranges:
+        return None, None
+
+    anchored_indices = [
+        index
+        for index, active_range in enumerate(ranges)
+        if any(active_range[0] <= anchor <= active_range[1] for anchor in window.anchor_ms)
+    ]
+    if not anchored_indices:
+        return None, None
+    dialog_index = anchored_indices[0]
+    dialog_range = ranges[dialog_index]
+    result_range = ranges[dialog_index + 1] if dialog_index + 1 < len(ranges) else None
+    return dialog_range, result_range
+
+
+def _stable_result_phase_final(
+    cv2,
+    frames: list[KeyFrame],
+    candidate_by_id: dict[str, _FrameCandidate],
+) -> KeyFrame | None:
+    ordered = [frame for frame in sorted(frames, key=lambda frame: frame.timestamp_ms) if frame.frame_id in candidate_by_id]
+    if not ordered:
+        return None
+
+    phases: list[list[KeyFrame]] = [[ordered[0]]]
+    for frame in ordered[1:]:
+        previous = phases[-1][-1]
+        delta = _structure_delta(cv2, candidate_by_id[previous.frame_id].gray, candidate_by_id[frame.frame_id].gray)
+        if delta >= _STRUCTURE_PHASE_THRESHOLD:
+            phases.append([frame])
+        else:
+            phases[-1].append(frame)
+
+    stable = [phase for phase in phases if phase[-1].timestamp_ms - phase[0].timestamp_ms >= _STABLE_PHASE_MIN_MS]
+    chosen = stable[0] if stable else max(phases, key=lambda phase: (phase[-1].timestamp_ms - phase[0].timestamp_ms, len(phase)))
+    return chosen[-1]
+
+
+def _structure_delta(cv2, previous, current) -> float:
+    previous_edges = cv2.Canny(previous, 40, 120)
+    current_edges = cv2.Canny(current, 40, 120)
+    changed = cv2.countNonZero(cv2.bitwise_xor(previous_edges, current_edges))
+    return float(changed / max(1, previous_edges.size))
+
+
+def _windows_overlap(left: AnalysisWindow, right: AnalysisWindow) -> bool:
+    return left.start_ms <= right.end_ms and right.start_ms <= left.end_ms
 
 
 def _frame_delta(cv2, previous, current) -> float:
@@ -267,6 +757,8 @@ def _is_exact_duplicate(cv2, current, retained_frames: list, threshold: float) -
 def _dedupe_keyframes_globally(
     candidates: list[_FrameCandidate],
     config: VisionConfig,
+    *,
+    windows: list[AnalysisWindow] | None = None,
 ) -> tuple[list[KeyFrame], list[KeyFrameDuplicate]]:
     if not candidates:
         return [], []
@@ -278,7 +770,8 @@ def _dedupe_keyframes_globally(
 
     kept: list[_FrameCandidate] = []
     duplicates: list[KeyFrameDuplicate] = []
-    for candidate in sorted(candidates, key=_dedupe_sort_key):
+    window_by_id = {f"window_{index}": window for index, window in enumerate(windows or [])}
+    for candidate in sorted(candidates, key=lambda item: _dedupe_sort_key(item, window_by_id)):
         duplicate_of = _find_global_duplicate(
             cv2,
             candidate,
@@ -334,7 +827,7 @@ def _find_global_duplicate(
             and anchor_duplicate_gap_ms > 0
             and abs(candidate.frame.timestamp_ms - retained.frame.timestamp_ms) <= anchor_duplicate_gap_ms
         )
-        if (candidate_can_near_dedupe or close_anchor_near_duplicate or anchor_near_duplicate) and delta <= near_threshold and hash_distance <= hash_distance_threshold:
+        if (candidate_can_near_dedupe or close_anchor_near_duplicate) and delta <= near_threshold and hash_distance <= hash_distance_threshold:
             return retained, delta, hash_distance
     return None
 
@@ -344,18 +837,36 @@ def _can_near_dedupe(frame: KeyFrame) -> bool:
     return "coverage" in reason or "window_start" in reason
 
 
-def _dedupe_evidence_priority(candidate: _FrameCandidate) -> int:
+def _dedupe_evidence_priority(
+    candidate: _FrameCandidate,
+    window_by_id: dict[str, AnalysisWindow] | None = None,
+) -> int:
     """Prefer anchors tied to a sensitive-file activity over generic actions."""
 
+    window = (window_by_id or {}).get(candidate.frame.window_id or "")
+    if window is not None and _is_file_dialog_window(window):
+        return -1
+    if window is not None and _is_near_action_anchor(candidate.frame.timestamp_ms, window):
+        return -1
     if candidate.priority == "activity" and "anchor" in candidate.frame.reason:
         return 0
     return _priority_sort_key(candidate.priority) + 1
 
 
-def _dedupe_sort_key(candidate: _FrameCandidate) -> tuple[int, int]:
-    priority = _dedupe_evidence_priority(candidate)
+def _is_near_action_anchor(timestamp_ms: int, window: AnalysisWindow) -> bool:
+    return any(
+        anchor - window.step_ms <= timestamp_ms <= anchor + 1_250
+        for anchor in window.action_anchor_ms
+    )
+
+
+def _dedupe_sort_key(
+    candidate: _FrameCandidate,
+    window_by_id: dict[str, AnalysisWindow] | None = None,
+) -> tuple[int, int]:
+    priority = _dedupe_evidence_priority(candidate, window_by_id)
     timestamp = candidate.frame.timestamp_ms
-    if priority == 0:
+    if priority == 0 or "activity_gap" in candidate.frame.reason.lower():
         return priority, -timestamp
     return priority, timestamp
 
@@ -415,13 +926,14 @@ def _clamp_window_to_duration(window: AnalysisWindow, duration_ms: int) -> Analy
         max_keyframes=window.max_keyframes,
         diff_threshold=window.diff_threshold,
         anchor_ms=tuple(anchor for anchor in window.anchor_ms if start_ms <= anchor <= end_ms),
+        action_anchor_ms=tuple(anchor for anchor in window.action_anchor_ms if start_ms <= anchor <= end_ms),
         active_apps=window.active_apps,
         active_ranges=_clip_active_ranges(window.active_ranges, start_ms, end_ms),
     )
 
 
 def _probe_timestamps(window: AnalysisWindow, config: VisionConfig) -> list[int]:
-    if window.priority == "activity" or window.active_ranges:
+    if window.priority == "activity":
         return _activity_probe_timestamps(window)
     if window.priority == "strong" and window.anchor_ms:
         return _strong_probe_timestamps(window)
@@ -524,6 +1036,10 @@ def _strong_probe_timestamps(window: AnalysisWindow) -> list[int]:
     ordered = list(dict.fromkeys(anchors))
     for anchor in anchors:
         for timestamp in (anchor - window.step_ms, anchor + window.step_ms):
+            if window.start_ms <= timestamp <= window.end_ms and timestamp not in ordered:
+                ordered.append(timestamp)
+    for anchor in window.action_anchor_ms:
+        for timestamp in (anchor - 1_000, anchor + 1_000, anchor + 1_250):
             if window.start_ms <= timestamp <= window.end_ms and timestamp not in ordered:
                 ordered.append(timestamp)
     return ordered
@@ -702,6 +1218,7 @@ def _merge_same_priority_windows(windows: list[AnalysisWindow]) -> list[Analysis
         previous = merged[-1]
         apps = tuple(dict.fromkeys([*previous.active_apps, *window.active_apps]))
         anchors = tuple(sorted({*previous.anchor_ms, *window.anchor_ms}))
+        action_anchors = tuple(sorted({*previous.action_anchor_ms, *window.action_anchor_ms}))
         merged[-1] = AnalysisWindow(
             start_ms=previous.start_ms,
             end_ms=max(previous.end_ms, window.end_ms),
@@ -711,6 +1228,7 @@ def _merge_same_priority_windows(windows: list[AnalysisWindow]) -> list[Analysis
             max_keyframes=max(previous.max_keyframes, window.max_keyframes, len(anchors)),
             diff_threshold=min(previous.diff_threshold, window.diff_threshold),
             anchor_ms=anchors,
+            action_anchor_ms=action_anchors,
             active_apps=apps,
             active_ranges=_merge_active_ranges(previous.active_ranges, window.active_ranges),
         )

@@ -37,6 +37,11 @@
     "ffmpeg",
     "ArmouryCrate.UserSessionHelper"
   ],
+  "window_title_markers": [
+    "DataLeakDetector",
+    "Win Monitor",
+    "数据泄露行为监控系统"
+  ],
   "extension_context_markers": [
     "/onedrive/logs/",
     "/onedrive/listsync/",

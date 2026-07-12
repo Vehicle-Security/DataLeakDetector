@@ -1,14 +1,13 @@
 param(
   [string]$CaseRoot = "spec\data\nas_samples",
   [string]$RunDir = "",
-  [int]$PrecomputeWorkers = 2,
+  [int]$PrecomputeWorkers = 8,
   [int]$VlmCaseWorkers = 4,
   [int]$VlmWorkers = 4,
   [string]$VlmGridLayout = "4x1",
   [int]$VlmRetryAttempts = 6,
   [double]$VlmRetryBackoffSeconds = 2,
-  [string]$JudgeBaseUrl = "https://api.deepseek.com",
-  [string]$JudgeModel = "deepseek-v4-pro",
+  [switch]$UseCodingPlan,
   [switch]$UseNeo4jLogMinerForPrecompute
 )
 
@@ -114,40 +113,9 @@ function Merge-ProcessLogs {
   [System.IO.File]::WriteAllText((Resolve-LogPath "$LogPrefix.log"), $combined, [System.Text.UTF8Encoding]::new($false))
 }
 
-function Wait-ForReleaseStart {
-  param(
-    [string]$ProgressPath,
-    [System.Diagnostics.Process]$VlmProcess
-  )
-
-  while ($true) {
-    if ($VlmProcess.HasExited) {
-      throw "Release VLM exited before release_progress.json entered the running state."
-    }
-    if (Test-Path $ProgressPath) {
-      try {
-        $progress = Get-Content -Raw $ProgressPath | ConvertFrom-Json
-        if ($progress.state -in @("starting", "running")) {
-          return
-        }
-      } catch {
-        # The progress file is replaced atomically; retry if it is temporarily unavailable.
-      }
-    }
-    Start-Sleep -Seconds 1
-  }
-}
-
 if (-not $RunDir) {
   $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
-  $RunDir = "artifacts\full_release_grid4x1_judged_$stamp"
-}
-
-if (-not $env:DLD_JUDGE_API_KEY) {
-  $env:DLD_JUDGE_API_KEY = [Environment]::GetEnvironmentVariable("DLD_JUDGE_API_KEY", "User")
-}
-if (-not $env:DLD_JUDGE_API_KEY) {
-  throw "Missing DLD_JUDGE_API_KEY. Set the user environment variable before starting the full run."
+  $RunDir = "artifacts\full_release_grid4x1_$stamp"
 }
 if ($VlmGridLayout -notmatch '^\d+x\d+$') {
   throw "VlmGridLayout must use ROWSxCOLUMNS, for example 4x1."
@@ -155,17 +123,17 @@ if ($VlmGridLayout -notmatch '^\d+x\d+$') {
 
 $env:DLD_VLM_RETRY_ATTEMPTS = "$VlmRetryAttempts"
 $env:DLD_VLM_RETRY_BACKOFF_SECONDS = "$VlmRetryBackoffSeconds"
+$env:DLD_VLM_USE_CODING_PLAN = if ($UseCodingPlan) { "1" } else { "0" }
+$env:PYTHONUNBUFFERED = "1"
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
 
 $precomputeLog = Join-Path $RunDir "precompute.log"
 $vlmLogPrefix = Join-Path $RunDir "vlm"
-$judgeLogPrefix = Join-Path $RunDir "judge"
-$progressPath = Join-Path $RunDir "release_progress.json"
-$judgeOutput = Join-Path $RunDir "llm_adjudication_live.json"
 
 Write-Host "Run directory: $RunDir"
 Write-Host "Case root: $CaseRoot"
 Write-Host "VLM grid layout: $VlmGridLayout"
+Write-Host "Coding plan enabled: $($UseCodingPlan.IsPresent)"
 
 $precomputeArgs = @(
   "main/run_e2e.py",
@@ -196,39 +164,16 @@ $vlmArgs = @(
   "--vlm-workers", "$VlmWorkers",
   "--vlm-fast-dispatch"
 )
-$judgeArgs = @(
-  "tools/watch_release_adjudication.py",
-  "--release-progress", $progressPath,
-  "--case-debug-root", (Join-Path $RunDir "case_debug"),
-  "--output", $judgeOutput,
-  "--base-url", $JudgeBaseUrl,
-  "--model", $JudgeModel
-)
-
 $vlmProcess = $null
-$judgeProcess = $null
 try {
   Write-Host "Starting full release VLM..."
   $vlmProcess = Start-PythonLogged -Arguments $vlmArgs -LogPrefix $vlmLogPrefix
-  Wait-ForReleaseStart -ProgressPath $progressPath -VlmProcess $vlmProcess
-
-  Write-Host "Starting live LLM adjudication..."
-  $judgeProcess = Start-PythonLogged -Arguments $judgeArgs -LogPrefix $judgeLogPrefix
   $vlmProcess.WaitForExit()
   Merge-ProcessLogs -LogPrefix $vlmLogPrefix
   if ($vlmProcess.ExitCode -ne 0) {
     throw "Release VLM failed. See $vlmLogPrefix.log"
   }
-
-  $judgeProcess.WaitForExit()
-  Merge-ProcessLogs -LogPrefix $judgeLogPrefix
-  if ($judgeProcess.ExitCode -ne 0) {
-    throw "LLM adjudication failed. See $judgeLogPrefix.log"
-  }
 } finally {
-  if ($judgeProcess -and -not $judgeProcess.HasExited) {
-    Stop-Process -Id $judgeProcess.Id -Force
-  }
   if ($vlmProcess -and -not $vlmProcess.HasExited) {
     Stop-Process -Id $vlmProcess.Id -Force
   }
@@ -237,4 +182,3 @@ try {
 Write-Host "Done."
 Write-Host "Release report: $(Join-Path $RunDir "release_report.json")"
 Write-Host "Comparison: $(Join-Path $RunDir "release_comparison.json")"
-Write-Host "Live adjudication: $judgeOutput"

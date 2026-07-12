@@ -338,8 +338,11 @@ def build_analysis_window_for_event(
     file_text = normalize_path(event.file_path).lower()
     sensitive_hit = _matches_sensitive_source(file_text, combined_text, sensitive) or looks_sensitive(file_text)
     sensitive_context_hit = sensitive_hit or (
-        _is_clipboard_or_capture_event(event, combined_text)
-        and _has_sensitive_open_context(logs, event.video_time_ms, sensitive, time_index=time_index)
+        (_is_clipboard_or_capture_event(event, combined_text) or _is_derivation_candidate_event(event, combined_text))
+        and (
+            _has_sensitive_open_context(logs, event.video_time_ms, sensitive, time_index=time_index)
+            or _has_recent_sensitive_signal(logs, event.video_time_ms, sensitive, time_index=time_index)
+        )
     )
     transfer_hit = contains_any(combined_text, TRANSFER_TOKENS)
     sink_hit = contains_any(combined_text, SINK_TOKENS) or _is_cloud_drive_context(combined_text)
@@ -352,18 +355,20 @@ def build_analysis_window_for_event(
 
     before_ms, after_ms, step_ms, max_keyframes, diff_threshold = _window_profile(priority, config)
     anchors = _event_anchors(event, sensitive_hit, action_hit, combined_text, sensitive_context_hit)
+    action_label = _window_action_label(event, combined_text, sensitive_context_hit)
     end_ms = event.video_time_ms + after_ms
     if anchors:
         end_ms = max(end_ms, max(anchors))
     return AnalysisWindow(
         start_ms=max(event.video_time_ms - before_ms, 0),
         end_ms=end_ms,
-        reason=_window_reason(event, priority),
+        reason=_window_reason(event, priority, action_label=action_label),
         priority=priority,
         step_ms=step_ms,
         max_keyframes=max_keyframes,
         diff_threshold=diff_threshold,
         anchor_ms=anchors,
+        action_anchor_ms=anchors if action_label else (),
         active_apps=active_apps
         if active_apps is not None
         else _active_apps_near(logs, event.video_time_ms, after_ms, index=active_app_index),
@@ -442,6 +447,7 @@ def _attach_active_apps_to_windows(
             max_keyframes=window.max_keyframes,
             diff_threshold=window.diff_threshold,
             anchor_ms=window.anchor_ms,
+            action_anchor_ms=window.action_anchor_ms,
             active_apps=app_index.between(window.start_ms, window.end_ms),
             active_ranges=_foreground_app_ranges(logs, window.start_ms, window.end_ms),
         )
@@ -502,6 +508,7 @@ def _with_context_medium_budget(window: AnalysisWindow, config: VisionConfig) ->
         max_keyframes=budget,
         diff_threshold=window.diff_threshold,
         anchor_ms=window.anchor_ms,
+        action_anchor_ms=window.action_anchor_ms,
         active_apps=window.active_apps,
         active_ranges=window.active_ranges,
     )
@@ -513,11 +520,7 @@ def _thin_dense_window_anchors(windows: list[AnalysisWindow], config: VisionConf
 
 def _with_thinned_anchors(window: AnalysisWindow, config: VisionConfig) -> AnalysisWindow:
     base_budget = min(window.max_keyframes, _base_keyframe_budget(window.priority, config))
-    anchors = (
-        _thin_anchors(window.anchor_ms, _anchor_min_gap_ms(window.priority, config), limit=base_budget)
-        if len(window.anchor_ms) > base_budget
-        else window.anchor_ms
-    )
+    anchors = _prioritize_action_anchors(window, base_budget, config)
     return AnalysisWindow(
         start_ms=window.start_ms,
         end_ms=window.end_ms,
@@ -527,9 +530,30 @@ def _with_thinned_anchors(window: AnalysisWindow, config: VisionConfig) -> Analy
         max_keyframes=max(base_budget, len(anchors)),
         diff_threshold=window.diff_threshold,
         anchor_ms=anchors,
+        action_anchor_ms=tuple(anchor for anchor in window.action_anchor_ms if anchor in anchors),
         active_apps=window.active_apps,
         active_ranges=window.active_ranges,
     )
+
+
+def _prioritize_action_anchors(window: AnalysisWindow, base_budget: int, config: VisionConfig) -> tuple[int, ...]:
+    if "file_selected" in window.reason.lower() or "file_dialog" in window.reason.lower():
+        return _thin_anchors(
+            window.anchor_ms,
+            _anchor_min_gap_ms(window.priority, config),
+            limit=base_budget,
+        )
+    actions = tuple(sorted(set(window.action_anchor_ms)))
+    others = tuple(anchor for anchor in window.anchor_ms if anchor not in actions)
+    action_limit = len(actions) if base_budget <= 0 else min(len(actions), base_budget)
+    selected_actions = _pick_evenly_spaced(actions, action_limit)
+    remaining = max(0, base_budget - len(selected_actions))
+    selected_others = _thin_anchors(
+        others,
+        _anchor_min_gap_ms(window.priority, config),
+        limit=remaining,
+    )
+    return tuple(sorted({*selected_actions, *selected_others}))
 
 
 def _thin_anchors(anchors: tuple[int, ...], min_gap_ms: int, *, limit: int | None = None) -> tuple[int, ...]:
@@ -645,6 +669,13 @@ def _matched_sensitive_files(event: LogEvent, sensitive_files: tuple[str, ...]) 
 def _may_need_analysis_window(event: LogEvent, sensitive_files: tuple[str, ...]) -> bool:
     if event.video_time_ms < 0:
         return False
+    if _is_system_noise_path(event.file_path):
+        text = _event_search_text(event)
+        if not (
+            _looks_like_file_selection_dialog(event.window_title)
+            and _is_sink_context((event.process_name or "").lower(), text)
+        ):
+            return False
     if _matched_sensitive_files(event, sensitive_files) or looks_sensitive(normalize_path(event.file_path).lower()):
         return True
 
@@ -707,6 +738,42 @@ def _is_whitelisted_app(app_name: str) -> bool:
     return normalized in _whitelisted_apps()
 
 
+@lru_cache(maxsize=1)
+def _system_noise_path_markers() -> tuple[str, ...]:
+    profile = Path(__file__).resolve().parents[2] / "spec" / "config" / "system_noise_profile.json"
+    try:
+        payload = json.loads(profile.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    configured = payload.get("path_markers") if isinstance(payload, dict) else []
+    if not isinstance(configured, list):
+        return ()
+    return tuple(normalize_path(str(item)).lower() for item in configured if str(item).strip())
+
+
+def _is_system_noise_path(path: str) -> bool:
+    normalized = normalize_path(path).lower()
+    return bool(normalized) and any(marker in normalized for marker in _system_noise_path_markers())
+
+
+@lru_cache(maxsize=1)
+def _whitelisted_window_title_markers() -> tuple[str, ...]:
+    profile = Path(__file__).resolve().parents[2] / "spec" / "config" / "system_noise_profile.json"
+    try:
+        payload = json.loads(profile.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    configured = payload.get("window_title_markers") if isinstance(payload, dict) else []
+    if not isinstance(configured, list):
+        return ()
+    return tuple(str(item).strip().lower() for item in configured if str(item).strip())
+
+
+def _is_whitelisted_window_title(title: str) -> bool:
+    normalized = str(title or "").strip().lower()
+    return bool(normalized) and any(marker in normalized for marker in _whitelisted_window_title_markers())
+
+
 def _is_foreground_app_event(event: LogEvent) -> bool:
     return _is_visible_foreground_app_event(event)
 
@@ -753,9 +820,11 @@ def _is_visible_foreground_app_event(event: LogEvent) -> bool:
         return False
 
     title = str(event.window_title or "").strip().lower()
-    if _is_desktop_title(title):
+    if _is_whitelisted_window_title(title) or _is_desktop_title(title):
         return False
-    if not title and _is_shell_app(app_name):
+    # Known untitled shell/overlay transitions (for example wallpaper
+    # helpers) do not identify a visible user-facing application.
+    if not title and (_is_shell_app(app_name) or _is_noninteractive_overlay_app(app_name)):
         return False
     return bool(title) or _is_foreground_transition(event)
 
@@ -767,6 +836,11 @@ def _is_desktop_title(title: str) -> bool:
 def _is_shell_app(app_name: str) -> bool:
     normalized = app_name.strip().lower().removesuffix(".exe")
     return normalized in {"explorer", "file explorer", "windows explorer"}
+
+
+def _is_noninteractive_overlay_app(app_name: str) -> bool:
+    normalized = app_name.strip().lower().removesuffix(".exe")
+    return normalized in {"kwallpaper", "wallpaperhost", "wallpaper32"}
 
 
 def _nearby_event_search_text(
@@ -847,6 +921,9 @@ def _window_priority(
     sink_context = sink_hit or _is_sink_context(process_name, text)
     removable_context = _is_removable_media_context(f"{text} {window_title}")
 
+    if event_type in {"app_switch", "window_changed", "window_closed"} and not _is_visible_foreground_app_event(event):
+        return "none"
+
     strong_event_types = {"file_selected", "file_upload", "upload", "uploaded", "upload_complete"}
     strong_raw_ops = {"file_selected", "file_upload", "upload", "send_click"}
     if event_type in strong_event_types or raw_operation in strong_raw_ops:
@@ -885,7 +962,10 @@ def _window_priority(
     if event_type in {"app_switch", "window_changed", "window_closed"} and _is_sink_app_process(process_name) and sensitive_context_hit:
         return "medium"
     if _is_derivation_candidate_event(event, text, sensitive_context_hit=sensitive_context_hit):
-        return "medium"
+        # A conversion, export, screenshot, or copy is a reportable action in
+        # its own right. Give it the same focused temporal context as an
+        # upload rather than relying on broad sensitive-file activity probes.
+        return "strong" if sensitive_context_hit else "medium"
 
     if sensitive_hit:
         return "medium"
@@ -1033,6 +1113,27 @@ def _has_sensitive_open_context(
             if _event_interval_contains(item, center_ms) or _event_is_open_until_closed(logs, item, center_ms):
                 return True
         elif _foreground_interval_contains_sensitive_title(logs, item, center_ms, sensitive_files):
+            return True
+    return False
+
+
+def _has_recent_sensitive_signal(
+    logs: list[LogEvent],
+    center_ms: int,
+    sensitive_files: tuple[str, ...],
+    *,
+    time_index: _LogTimeIndex | None = None,
+) -> bool:
+    """Recover clipboard provenance when the source-open event is incomplete."""
+
+    if center_ms < 0:
+        return False
+    candidates = time_index.between(max(0, center_ms - 30_000), center_ms) if time_index is not None else logs
+    for item in candidates:
+        if item.video_time_ms < 0 or item.video_time_ms > center_ms:
+            continue
+        file_text = normalize_path(item.file_path).lower()
+        if _matched_sensitive_files(item, sensitive_files) or looks_sensitive(file_text):
             return True
     return False
 
@@ -1234,7 +1335,22 @@ def _looks_like_print_or_save_dialog(window_title: str) -> bool:
     title = (window_title or "").lower()
     if not title:
         return False
-    return any(token in title for token in ("print", "save as", "save print output", "打印", "另存", "保存"))
+    return any(
+        token in title
+        for token in (
+            "print",
+            "save as",
+            "save print output",
+            "export to pdf",
+            "output to pdf",
+            "输出为pdf",
+            "输出到pdf",
+            "导出pdf",
+            "打印",
+            "另存",
+            "保存",
+        )
+    )
 
 
 def _looks_like_file_selection_dialog(window_title: str) -> bool:
@@ -1284,9 +1400,49 @@ def _window_profile(priority: str, config: VisionConfig) -> tuple[int, int, int,
     )
 
 
-def _window_reason(event: LogEvent, priority: str) -> str:
+def _window_reason(event: LogEvent, priority: str, *, action_label: str = "") -> str:
     extra = event.raw.get("extra") if isinstance(event.raw.get("extra"), dict) else {}
     source = str(extra.get("source") or "")
     category = str(extra.get("category") or "")
-    parts = [priority, event.event_type or "activity", source, category]
+    parts = [priority, event.event_type or "activity", source, category, action_label]
     return ":".join(item for item in parts if item)
+
+
+def _window_action_label(event: LogEvent, text: str, sensitive_context_hit: bool) -> str:
+    """Persist the behavior that made a visual window worth opening."""
+
+    event_type = event.event_type.lower()
+    extra = event.raw.get("extra") if isinstance(event.raw.get("extra"), dict) else {}
+    raw_operation = str(event.raw.get("operation") or extra.get("raw_operation") or "").lower()
+    process_name = (event.process_name or "").lower()
+    direct_text = _event_search_text(event)
+    if event_type in {"file_selected", "file_upload", "upload", "uploaded", "upload_complete"}:
+        return "upload"
+    if raw_operation in {"file_selected", "file_upload", "upload", "send_click"}:
+        return "upload"
+    if _looks_like_file_selection_dialog(event.window_title) and _is_sink_context(process_name, direct_text):
+        return "file_selected"
+    if _looks_like_upload_progress(direct_text):
+        return "upload_progress"
+    if _is_clipboard_or_capture_event(event, direct_text) and sensitive_context_hit:
+        return "capture" if _looks_like_capture_context(f"{direct_text} {event.window_title}") else "clipboard"
+    if _has_direct_derivation_signal(event, direct_text):
+        return "derivation"
+    if _is_removable_media_context(f"{direct_text} {event.window_title}") and sensitive_context_hit:
+        return "removable_transfer"
+    return ""
+
+
+def _has_direct_derivation_signal(event: LogEvent, text: str) -> bool:
+    """Avoid turning nearby document activity into an action label."""
+
+    event_type = event.event_type.lower()
+    extra = event.raw.get("extra") if isinstance(event.raw.get("extra"), dict) else {}
+    raw_operation = str(event.raw.get("operation") or extra.get("raw_operation") or "").lower()
+    derivation_operations = ("export", "print", "save_as", "rename", "compress", "translate", "base64")
+    return (
+        event_type in {"print_to_pdf", "save_as", "export", "copied"}
+        or any(token in raw_operation for token in derivation_operations)
+        or _looks_like_print_or_save_dialog(event.window_title)
+        or _looks_like_screenshot_path(event.file_path)
+    )
