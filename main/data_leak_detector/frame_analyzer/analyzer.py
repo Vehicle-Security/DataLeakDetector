@@ -41,6 +41,7 @@ def analyze_video_behavior(
     *,
     logs: list[LogEvent] | None = None,
     sensitive_files: list[str] | None = None,
+    vlm_sensitive_files: list[str] | None = None,
     observations_file: str | Path | None = None,
     vision_enabled: bool | None = None,
     max_vlm_frames: int | None = None,
@@ -59,6 +60,7 @@ def analyze_video_behavior(
     )
     logs = logs or []
     sensitive_files = [normalize_path(item) for item in sensitive_files or []]
+    vlm_sensitive_files = [normalize_path(item) for item in vlm_sensitive_files or []]
     observations = load_observations(observations_file) if observations_file else []
     warnings: list[str] = []
     errors: list[str] = []
@@ -72,6 +74,7 @@ def analyze_video_behavior(
             video_path=video_path,
             logs=logs,
             sensitive_files=sensitive_files,
+            vlm_sensitive_files=vlm_sensitive_files,
             config=config,
             start_index=len(observations),
             artifact_dir=artifact_dir,
@@ -187,6 +190,7 @@ def _run_vision_pipeline(
     video_path: str | Path,
     logs: list[LogEvent],
     sensitive_files: list[str],
+    vlm_sensitive_files: list[str],
     config: VisionConfig,
     start_index: int,
     artifact_dir: str | Path | None,
@@ -231,7 +235,7 @@ def _run_vision_pipeline(
     vlm_result = _run_vlm_if_needed(
         request_frames,
         windows=windows,
-        sensitive_files=sensitive_files,
+        sensitive_files=vlm_sensitive_files,
         config=config,
         artifact_dir=artifact_dir,
         manifest=manifest,

@@ -14,6 +14,7 @@ from pathlib import Path
 from data_leak_detector import run_data_case, run_pipeline
 from data_leak_detector.datasets import data_case_id, discover_data_case_directories
 from data_leak_detector.frame_analyzer.vlm_dispatch import vlm_dispatcher_snapshots
+from data_leak_detector.sensitivity import DEFAULT_SENSITIVE_FILES_CONFIG_PATH
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -41,7 +42,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--video", "-v", default="", help="Optional screen recording path for frame analysis.")
     parser.add_argument("--groundtruth", default="", help="Optional groundtruth.json path for verdict evaluation.")
     parser.add_argument("--output-dir", "-o", default="", help="Optional directory for the JSON report.")
-    parser.add_argument("--sensitive-file", action="append", default=[], help="Sensitive file path. Can be repeated.")
+    parser.add_argument(
+        "--sensitive-files-config",
+        default=str(DEFAULT_SENSITIVE_FILES_CONFIG_PATH),
+        help="JSON file containing the only initial sensitive-source paths.",
+    )
     parser.add_argument("--observations", default="", help="Optional precomputed frame observation JSON.")
     parser.add_argument("--vision", action="store_true", help="Enable direct-keyframe VLM frame analysis.")
     parser.add_argument("--max-vlm-frames", type=int, default=None, help="Maximum keyframes sent to VLM; 0 disables VLM frames, negative means no cap.")
@@ -58,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--inherit-ancestor-groundtruth",
         action="store_true",
-        help="For child session cases without groundtruth.json, use the nearest ancestor groundtruth for evaluation and sensitive sources.",
+        help="For child session cases without groundtruth.json, use the nearest ancestor groundtruth for evaluation only.",
     )
     args = parser.parse_args(argv)
     selected_case_ids = _load_case_ids(args.case_list) if args.case_list else None
@@ -77,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
 
     common_args = {
         "output_dir": args.output_dir or None,
-        "sensitive_files": args.sensitive_file,
+        "sensitive_files_config": args.sensitive_files_config,
         "observations_file": args.observations or None,
         "neo4j_log_miner": False if args.no_neo4j_log_miner else (True if args.neo4j_log_miner else None),
         "reuse_neo4j_import": False if args.no_reuse_neo4j_import else None,

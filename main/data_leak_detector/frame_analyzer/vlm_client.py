@@ -21,7 +21,6 @@ class VlmRequestFrame:
     frame: KeyFrame
     visual_note: str
     visual_confidence: float
-    selection_reason: str = ""
     selection_score: int = 0
     source_frames: tuple[dict[str, Any], ...] = ()
 
@@ -140,12 +139,12 @@ def choose_keyframes_for_vlm(
                 frame=frame,
                 visual_note="",
                 visual_confidence=0.0,
-                selection_reason="direct_keyframe",
                 selection_score=_keyframe_score(frame),
             ),
         )
         for frame in frames
     ]
+    candidates = _focus_activity_gap_evidence(candidates)
     if max_frames_per_window is not None:
         candidates_by_window: dict[str, list[tuple[int, int, VlmRequestFrame]]] = {}
         for candidate in candidates:
@@ -164,6 +163,38 @@ def choose_keyframes_for_vlm(
         if not unlimited and len(selected) >= max_frames:
             break
     return sorted(selected, key=lambda item: item.frame.timestamp_ms)
+
+
+def _focus_activity_gap_evidence(
+    candidates: list[tuple[int, int, VlmRequestFrame]],
+) -> list[tuple[int, int, VlmRequestFrame]]:
+    """Compact fallback activity coverage to its latest action and log context."""
+
+    by_window: dict[str, list[tuple[int, int, VlmRequestFrame]]] = {}
+    for candidate in candidates:
+        window_id = candidate[2].frame.window_id or "window_unknown"
+        by_window.setdefault(window_id, []).append(candidate)
+
+    focused: list[tuple[int, int, VlmRequestFrame]] = []
+    for window_candidates in by_window.values():
+        activity_gaps = [candidate for candidate in window_candidates if "activity_gap" in candidate[2].frame.reason.lower()]
+        if not activity_gaps:
+            focused.extend(window_candidates)
+            continue
+
+        action = max(activity_gaps, key=lambda candidate: candidate[1])
+        preceding_gap = [candidate for candidate in activity_gaps if candidate[1] < action[1]]
+        preceding_anchors = [
+            candidate
+            for candidate in window_candidates
+            if "anchor" in candidate[2].frame.reason.lower() and candidate[1] <= action[1]
+        ]
+        if preceding_anchors:
+            focused.append(max(preceding_anchors, key=lambda candidate: candidate[1]))
+        if preceding_gap:
+            focused.append(max(preceding_gap, key=lambda candidate: candidate[1]))
+        focused.append(action)
+    return focused
 
 
 def _select_temporally_diverse_candidates(
@@ -277,7 +308,6 @@ def build_vlm_frame_grids(
                 frame=grid_keyframe,
                 visual_note="",
                 visual_confidence=0.0,
-                selection_reason=f"vlm_grid_{rows_per_grid}x{columns_per_grid}",
                 selection_score=score,
                 source_frames=tuple(source_payload),
             )
@@ -357,6 +387,8 @@ def _keyframe_score(frame: KeyFrame) -> int:
         score += 40
     if "anchor" in reason:
         score += 35
+    if "activity_gap" in reason:
+        score += 50
     if "window_start" in reason:
         score += 5
     score += min(int(frame.score * 10), 10)
@@ -367,7 +399,7 @@ def _prompt(frames: list[VlmRequestFrame], sensitive_files: list[str], active_ap
     frame_lines = [
         f"- frame_id={item.frame.frame_id}, timestamp_ms={item.frame.timestamp_ms}, "
         f"window_id={item.frame.window_id}, reason={item.frame.reason}, "
-        f"selection_reason={item.selection_reason}, visual_confidence={item.visual_confidence}, visual_note={item.visual_note[:500]}"
+        f"visual_confidence={item.visual_confidence}, visual_note={item.visual_note[:500]}"
         for item in frames
     ]
     grid_lines = [
@@ -432,7 +464,6 @@ def _request_frame_to_dict(item: VlmRequestFrame) -> dict[str, Any]:
         "window_id": item.frame.window_id,
         "visual_note": item.visual_note,
         "visual_confidence": item.visual_confidence,
-        "selection_reason": item.selection_reason,
         "selection_score": item.selection_score,
     }
     if item.source_frames:
@@ -479,7 +510,7 @@ def _grid_source_line(grid: VlmRequestFrame, source: dict[str, Any]) -> str:
     return (
         f"- grid_frame_id={grid.frame.frame_id}, cell={source.get('cell_id', '')}, "
         f"source_frame_id={source.get('frame_id', '')}, timestamp_ms={source.get('timestamp_ms', 0)}, "
-        f"reason={source.get('reason', '')}, selection_reason={source.get('selection_reason', '')}, "
+        f"reason={source.get('reason', '')}, "
         f"visual_confidence={source.get('visual_confidence', 0.0)}, "
         f"visual_note={str(source.get('visual_note', ''))[:500]}"
     )

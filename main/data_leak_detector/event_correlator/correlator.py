@@ -35,7 +35,9 @@ class EventCorrelator:
         if not config.non_vlm_enabled:
             observations = [item for item in observations if item.source == "vlm"]
         sensitive_files = self._collect_sensitive_files(logs, payload.get("sensitive_files") or [], config=config)
-        lineage = self._build_lineage(logs, sensitive_files) if config.non_vlm_enabled else Lineage()
+        # Log lineage is binding context for VLM evidence as well as deterministic
+        # log evidence, so it must remain available in VLM-only runs.
+        lineage = self._build_lineage(logs, sensitive_files)
         self._add_visual_lineage(observations, sensitive_files, lineage)
         correlated = self._correlate(logs, observations, sensitive_files, lineage, config=config)
         uploads = build_upload_candidates(correlated, default_confidence=config.upload_confidence)
@@ -105,20 +107,27 @@ class EventCorrelator:
             process_key = (event.process_name or event.app_name or "").lower()
             original = original_file_from_metadata(event.raw)
             target = target_file_from_metadata(event.raw) or event.file_path
+            if not _may_contribute_lineage(event, original, target, known_keys, known_stems):
+                continue
+            text = _event_search_text(event)
             if original and self._resolve_original(original, sensitive_files, lineage):
                 lineage.add(target, original)
                 _remember_known(target, known, known_keys, known_stems)
+            elif target:
+                inferred_source = _source_from_derived_filename(target, sensitive_files)
+                if inferred_source and _has_derived_transfer_evidence(event, text):
+                    lineage.add(target, inferred_source)
+                    _remember_known(target, known, known_keys, known_stems)
 
             resolved = self._resolve_original(event.file_path, sensitive_files, lineage)
             if resolved and process_key:
                 last_sensitive_by_process[process_key] = resolved
 
-            text = _event_search_text(event)
             if event.file_path and contains_any(text, TRANSFER_TOKENS):
                 source = original or last_sensitive_by_process.get(process_key, "") or _guess_source_by_stem_from_index(target, known_stems)
                 if source and not self._resolve_original(source, sensitive_files, lineage):
                     source = ""
-                if source:
+                if source and (original or _is_generated_descendant_name(Path(normalize_path(target)).stem.lower(), Path(normalize_path(source)).stem.lower())):
                     lineage.add(target, source)
                     _remember_known(target, known, known_keys, known_stems)
         return lineage
@@ -134,30 +143,18 @@ class EventCorrelator:
     ) -> list[CorrelatedEvent]:
         config = config or self.config
         correlated: list[CorrelatedEvent] = []
-        recent_sensitive: tuple[str, int] | None = None
         observation_time_mode = self._observation_time_mode(observations)
-        observation_index = ObservationIndex.from_observations(observations)
 
         for log in sorted(logs, key=lambda item: item.timestamp_ms):
             original = self._resolve_original(log.file_path, sensitive_files, lineage)
             observation = self._best_observation_for_log(
                 log,
                 observations,
-                observation_index,
                 observation_time_mode,
                 original,
                 sensitive_files,
                 lineage,
             )
-            if original and log.timestamp_ms:
-                recent_sensitive = (original, log.timestamp_ms)
-
-            if not original and recent_sensitive and log.timestamp_ms:
-                source, timestamp_ms = recent_sensitive
-                if 0 <= log.timestamp_ms - timestamp_ms <= self.config.nearby_window_ms:
-                    nearby_text = f"{_event_search_text(log)} {observation.description if observation else ''} {observation.operation_type if observation else ''}"
-                    if contains_any(nearby_text, SINK_TOKENS) or contains_any(nearby_text, TRANSFER_TOKENS):
-                        original = source
 
             if not original and observation:
                 original = self._resolve_observation_original(observation, sensitive_files, lineage)
@@ -207,25 +204,21 @@ class EventCorrelator:
         self,
         log,
         observations,
-        observation_index: ObservationIndex,
         observation_time_mode: str,
         original: str,
         sensitive_files: list[str],
         lineage: Lineage,
     ):
         log_time = self._log_observation_time(log, observation_time_mode)
-        nearest = observation_index.nearest(log_time, self.config.nearby_window_ms)
-        if nearest is not None and not _observation_allowed_for_log(log, nearest):
-            nearest = None
-        best = nearest
-        best_score = self._observation_join_score(log, nearest, original, sensitive_files, lineage) if nearest else -1
+        best = None
+        best_score = -1
         for observation in observations:
             if not _observation_allowed_for_log(log, observation):
                 continue
             distance = abs(log_time - self._observation_center(observation))
-            if distance > self.config.nearby_window_ms:
-                continue
             score = self._observation_join_score(log, observation, original, sensitive_files, lineage)
+            if not _has_file_binding(log, observation, original, sensitive_files, lineage):
+                continue
             if score > best_score or (score == best_score and best is not None and distance < abs(log_time - self._observation_center(best))):
                 best = observation
                 best_score = score
@@ -260,9 +253,6 @@ class EventCorrelator:
         if _is_sink_log(log):
             reasons.append("explicit_sink_log")
         if observation is not None:
-            distance = abs(self._log_observation_time(log, self._observation_time_mode([observation])) - self._observation_center(observation))
-            if distance <= self.config.nearby_window_ms:
-                reasons.append(f"nearby_frame:{distance}ms")
             resolved = self._resolve_observation_original(observation, sensitive_files, lineage)
             if resolved and original and same_file(resolved, original):
                 reasons.append("visual_mentions_sensitive_file")
@@ -393,8 +383,8 @@ class EventCorrelator:
                 windows.append(
                     {
                         "sensitive_file": sensitive,
-                        "start_ms": min(times) - self.config.nearby_window_ms,
-                        "end_ms": max(times) + self.config.nearby_window_ms,
+                        "start_ms": min(times),
+                        "end_ms": max(times),
                     }
                 )
         return windows
@@ -437,6 +427,30 @@ def _observation_search_text(observation) -> str:
 def _is_external_observation(observation) -> bool:
     text = _observation_search_text(observation)
     return observation.operation_type == "external_sink_interaction" or contains_any(text, SINK_TOKENS)
+
+
+def _has_file_binding(log, observation, original: str, sensitive_files: list[str], lineage: Lineage) -> bool:
+    text = _observation_search_text(observation)
+    resolved = ""
+    for candidate in [observation.resource, *observation.related_resources]:
+        for sensitive in sensitive_files:
+            if same_file(candidate, sensitive) or _matches_sensitive_file_reference(candidate, sensitive):
+                resolved = sensitive
+                break
+        if resolved:
+            break
+        root = lineage.root(candidate)
+        for sensitive in sensitive_files:
+            if same_file(root, sensitive):
+                resolved = sensitive
+                break
+        if resolved:
+            break
+    if original and resolved and same_file(original, resolved):
+        return True
+    if original and _mentions_file(text, original):
+        return True
+    return bool(log.file_path and _mentions_file(text, log.file_path))
 
 
 def _is_transfer_observation(observation) -> bool:
@@ -505,8 +519,46 @@ def _is_removable_media_context(text: str) -> bool:
         "移动磁盘",
         "移动硬盘",
         "u盘",
+        "u 盘",
     )
     return contains_any(normalized, removable_terms)
+
+
+def _has_derived_transfer_evidence(event, text: str) -> bool:
+    file_change_events = {
+        "created",
+        "modified",
+        "renamed",
+        "moved",
+        "copied",
+        "file_created",
+        "file_modified",
+        "file_renamed",
+        "file_moved",
+        "file_copied",
+    }
+    if event.event_type.lower() not in file_change_events:
+        return False
+    context = f"{text} {event.window_title} {event.description}"
+    return _is_removable_media_context(context) or contains_any(context, TRANSFER_TOKENS)
+
+
+def _source_from_derived_filename(file_path: str, sensitive_files: list[str]) -> str:
+    candidate_stem = Path(normalize_path(file_path)).stem.lower()
+    if not candidate_stem:
+        return ""
+    matches = [
+        sensitive
+        for sensitive in sensitive_files
+        if _is_generated_descendant_name(candidate_stem, Path(normalize_path(sensitive)).stem.lower())
+    ]
+    return matches[0] if len(matches) == 1 else ""
+
+
+def _is_generated_descendant_name(candidate_stem: str, source_stem: str) -> bool:
+    if not source_stem or candidate_stem == source_stem:
+        return False
+    return candidate_stem.startswith(f"{source_stem}_") or candidate_stem.startswith(f"{source_stem} (")
 
 
 def _correlated_operation_type(log, observation, text: str) -> str:
@@ -595,6 +647,34 @@ def _known_stem(path: str) -> tuple[str, str]:
     normalized = normalize_path(path)
     stem = Path(normalized).stem.lower()
     return stem, normalized
+
+
+def _may_contribute_lineage(
+    event,
+    original: str,
+    target: str,
+    known_keys: set[str],
+    known_stems: list[tuple[str, str]],
+) -> bool:
+    """Cheaply reject file-system noise before expanding raw event metadata."""
+
+    if original:
+        return True
+    normalized_target = normalize_path(target).lower()
+    if normalized_target in known_keys:
+        return True
+
+    candidate_stem = Path(normalized_target).stem.lower()
+    if candidate_stem and any(_is_generated_descendant_name(candidate_stem, stem) for stem, _ in known_stems):
+        return True
+
+    event_type = event.event_type.lower()
+    if event_type in {"app_switch", "window_changed", "window_closed", "file_selected", "file_upload", "upload", "uploaded", "upload_complete"}:
+        return True
+
+    extra = event.raw.get("extra") if isinstance(event.raw.get("extra"), dict) else {}
+    raw_operation = str(event.raw.get("operation") or extra.get("raw_operation") or "").lower()
+    return any(token in raw_operation for token in ("copy", "paste", "export", "print", "save_as", "compress", "upload", "transfer"))
 
 
 def _guess_source_by_stem_from_index(file_path: str, known_stems: list[tuple[str, str]]) -> str:

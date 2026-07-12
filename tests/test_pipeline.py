@@ -36,7 +36,10 @@ from data_leak_detector.frame_analyzer.frames import (
     _clamp_window_to_duration,
     _coverage_timestamps,
     _dedupe_keyframes_globally,
+    _ffmpeg_cuda_frame_command,
+    _focus_activity_gap_keyframes,
     _hamming,
+    _probe_timestamps,
     _should_keep_frame,
     _timestamp_groups,
     merge_analysis_windows,
@@ -52,8 +55,8 @@ from data_leak_detector.io import load_json_records
 from data_leak_detector.leak_reasoner import DatalogEngine
 from data_leak_detector.policy import contains_any, load_policy_config
 from data_leak_detector.policy import classify_sink
-from data_leak_detector.sensitivity import SensitiveSourceConfig, extract_sensitive_sources
-from data_leak_detector.pipeline import _build_report_id, _vision_sensitive_files
+from data_leak_detector.sensitivity import load_sensitive_files_config
+from data_leak_detector.pipeline import _build_report_id
 
 
 def _records() -> list[dict]:
@@ -245,8 +248,113 @@ def test_analysis_windows_keep_derived_transfer_anchor_when_upload_exists() -> N
 
     windows = build_analysis_windows(logs, [original, derived], VisionConfig())
 
-    assert any(window.priority == "medium" and 30_000 in window.anchor_ms for window in windows)
+    assert any(window.priority == "activity" and 30_000 in window.anchor_ms for window in windows)
     assert any(window.priority == "strong" and 60_000 in window.anchor_ms for window in windows)
+
+
+def test_sensitive_activity_window_runs_until_explicit_close_and_filters_system_apps() -> None:
+    sensitive = "C:/Users/alice/Documents/strategy.docx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "file_open",
+                "file_path": sensitive,
+                "app_name": "Word",
+                "extra": {"relative_timestamp": 0.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:07:00",
+                "event_type": "app_switch",
+                "app_name": "System",
+                "extra": {"relative_timestamp": 420.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:11:00",
+                "event_type": "app_switch",
+                "app_name": "ChatGPT",
+                "extra": {"relative_timestamp": 660.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:23:00",
+                "event_type": "file_closed",
+                "file_path": sensitive,
+                "app_name": "Word",
+                "extra": {"relative_timestamp": 1_380.0},
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [sensitive], VisionConfig())
+    activity = next(window for window in windows if window.priority == "activity")
+
+    assert activity.start_ms == 0
+    assert activity.end_ms == 1_380_000
+    assert "ChatGPT" in activity.active_apps
+    assert "System" not in activity.active_apps
+    assert activity.active_ranges == ((660_000, 1_380_000),)
+
+
+def test_sensitive_activity_window_excludes_blank_shell_desktop_interval() -> None:
+    sensitive = "C:/Users/alice/Documents/strategy.docx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "file_open",
+                "file_path": sensitive,
+                "extra": {"relative_timestamp": 0.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:02",
+                "event_type": "app_switch",
+                "app_name": "Word",
+                "window_info": {"window_title": "strategy.docx - Word"},
+                "extra": {"relative_timestamp": 2.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:05",
+                "event_type": "app_switch",
+                "app_name": "File Explorer",
+                "window_info": {"window_title": ""},
+                "extra": {"relative_timestamp": 5.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:10",
+                "event_type": "file_closed",
+                "file_path": sensitive,
+                "extra": {"relative_timestamp": 10.0},
+            },
+        ]
+    )
+
+    activity = next(window for window in build_analysis_windows(logs, [sensitive], VisionConfig()) if window.priority == "activity")
+
+    assert activity.active_ranges == ((2_000, 4_999),)
+
+
+def test_unclosed_sensitive_activity_window_reaches_last_recorded_video_time() -> None:
+    sensitive = "C:/Users/alice/Documents/strategy.docx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "file_open",
+                "file_path": sensitive,
+                "extra": {"relative_timestamp": 0.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:31:00",
+                "event_type": "app_switch",
+                "app_name": "ChatGPT",
+                "extra": {"relative_timestamp": 1_860.0},
+            },
+        ]
+    )
+
+    activity = next(window for window in build_analysis_windows(logs, [sensitive], VisionConfig()) if window.priority == "activity")
+
+    assert activity.end_ms == 1_860_000
 
 
 def test_derivation_action_without_known_sensitive_file_gets_vlm_window() -> None:
@@ -580,7 +688,7 @@ def test_bluetooth_transfer_window_keeps_separate_strong_budget() -> None:
         VisionConfig(include_unanchored_medium_windows=True),
     )
 
-    assert [window.priority for window in windows] == ["strong", "medium"]
+    assert [window.priority for window in windows] == ["strong", "activity"]
     assert windows[0].start_ms == 55_000
     assert windows[0].end_ms == 75_000
     assert windows[0].max_keyframes == VisionConfig().max_keyframes_per_strong_window
@@ -607,7 +715,7 @@ def test_bluetooth_sensitive_file_access_becomes_keyframe_anchor() -> None:
     assert windows[0].anchor_ms == (0, 3_000, 8_000)
 
 
-def test_dense_medium_windows_are_merged_per_case_segment() -> None:
+def test_sensitive_activity_window_replaces_dense_generic_medium_windows() -> None:
     records = [
         {
             "timestamp": "2026-01-01T12:00:00",
@@ -624,10 +732,12 @@ def test_dense_medium_windows_are_merged_per_case_segment() -> None:
         ["C:/Users/alice/Desktop/customer_salary.xlsx"],
         VisionConfig(case_segment_ms=300_000, include_unanchored_medium_windows=True),
     )
-    medium_windows = [window for window in windows if window.priority == "medium"]
+    activity = [window for window in windows if window.priority == "activity"]
 
-    assert len(medium_windows) > 1
-    assert max(window.end_ms - window.start_ms for window in medium_windows) <= 450_000
+    assert len(activity) == 1
+    assert activity[0].start_ms == 0
+    assert activity[0].end_ms == 1_200_000
+    assert not [window for window in windows if window.priority == "medium"]
 
 
 def test_merged_window_budget_keeps_all_log_anchors() -> None:
@@ -666,7 +776,7 @@ def test_weak_analysis_windows_are_opt_in() -> None:
 
 
 
-def test_medium_analysis_windows_keep_raw_keyframe_budget() -> None:
+def test_app_switch_without_sensitive_or_risk_context_does_not_create_window() -> None:
     logs = normalize_logs(
         [
             {
@@ -682,11 +792,10 @@ def test_medium_analysis_windows_keep_raw_keyframe_budget() -> None:
 
     windows = build_analysis_windows(logs, [], VisionConfig())
 
-    assert windows[0].priority == "medium"
-    assert windows[0].max_keyframes == VisionConfig().max_keyframes_per_window
+    assert windows == []
 
 
-def test_medium_windows_use_context_budget_when_strong_evidence_exists() -> None:
+def test_risk_window_does_not_keep_unrelated_app_switch_context() -> None:
     logs = normalize_logs(
         [
             {
@@ -727,9 +836,8 @@ def test_medium_windows_use_context_budget_when_strong_evidence_exists() -> None
 
     windows = build_analysis_windows(logs, [], VisionConfig())
 
-    medium = [window for window in windows if window.priority == "medium"][0]
-    assert medium.max_keyframes == VisionConfig().max_keyframes_per_medium_window
-    assert len(medium.anchor_ms) == VisionConfig().max_keyframes_per_medium_window
+    assert [window.priority for window in windows] == ["strong"]
+    assert windows[0].anchor_ms == (60_000,)
 
 
 def test_long_windows_have_temporal_coverage_targets() -> None:
@@ -741,6 +849,61 @@ def test_long_windows_have_temporal_coverage_targets() -> None:
     assert coverage[0] == 0
     assert coverage[-1] == 156_000
     assert any(25_000 <= timestamp <= 40_000 for timestamp in coverage)
+
+
+def test_sensitive_activity_windows_do_not_force_uniform_coverage_frames() -> None:
+    window = AnalysisWindow(0, 156_000, "sensitive_activity:secret.docx", priority="activity", max_keyframes=18)
+
+    assert _coverage_timestamps(window) == ()
+
+
+def test_anchored_strong_window_prioritizes_risk_anchors_over_coverage() -> None:
+    window = AnalysisWindow(0, 60_000, "upload", priority="strong", step_ms=250, anchor_ms=(10_000, 40_000))
+
+    assert _coverage_timestamps(window) == ()
+    assert _probe_timestamps(window, VisionConfig()) == [10_000, 40_000, 9_750, 10_250, 39_750, 40_250]
+
+
+def test_sensitive_activity_window_probes_relative_positions_between_file_activity_anchors() -> None:
+    window = AnalysisWindow(
+        0,
+        3_600_000,
+        "sensitive_activity:secret.docx",
+        priority="activity",
+        step_ms=1_000,
+        anchor_ms=(120_000, 3_200_000),
+    )
+
+    probes = _probe_timestamps(window, VisionConfig())
+
+    assert {2_430_000, 2_815_000, 90_000, 3_500_000}.issubset(probes)
+    assert {119_000, 120_000, 121_000, 3_199_000, 3_200_000, 3_201_000}.issubset(probes)
+
+
+def test_merged_window_with_sensitive_activity_ranges_uses_activity_probes() -> None:
+    window = AnalysisWindow(
+        0,
+        60_000,
+        "medium:app_switch",
+        priority="medium",
+        step_ms=1_000,
+        anchor_ms=(10_000, 50_000),
+        active_ranges=((10_000, 50_000),),
+    )
+
+    probes = _probe_timestamps(window, VisionConfig())
+
+    assert 40_000 in probes
+    assert 20_000 in probes
+    assert 30_000 in probes
+
+
+def test_ffmpeg_cuda_frame_command_uses_nvdec_decoder() -> None:
+    command = _ffmpeg_cuda_frame_command("ffmpeg", Path("recording.mp4"), 1_234, "h264_cuvid")
+
+    assert command[:8] == ["ffmpeg", "-v", "error", "-hwaccel", "cuda", "-c:v", "h264_cuvid", "-ss"]
+    assert "1.234" in command
+    assert command[-2:] == ["mjpeg", "pipe:1"]
 
 
 def test_window_coverage_clamps_to_video_duration() -> None:
@@ -851,7 +1014,7 @@ def test_global_dedupe_keeps_near_duplicate_visual_change_frames() -> None:
     assert duplicates == []
 
 
-def test_global_dedupe_removes_near_duplicate_anchor_frames() -> None:
+def test_global_dedupe_removes_near_duplicate_anchor_frames_from_distinct_events() -> None:
     pytest.importorskip("cv2")
     np = pytest.importorskip("numpy")
     gray_a = np.full((90, 160), 128, dtype=np.uint8)
@@ -860,6 +1023,40 @@ def test_global_dedupe_removes_near_duplicate_anchor_frames() -> None:
     candidates = [
         _FrameCandidate(KeyFrame("a", 10_000, "a.jpg", 0.0, "strong:anchor"), "strong", gray_a, frame_hash),
         _FrameCandidate(KeyFrame("b", 50_000, "b.jpg", 0.0, "strong:anchor"), "strong", gray_b, frame_hash),
+    ]
+
+    kept, duplicates = _dedupe_keyframes_globally(candidates, VisionConfig())
+
+    assert [item.frame_id for item in kept] == ["a"]
+    assert duplicates[0].frame.frame_id == "b"
+
+
+def test_global_dedupe_prefers_sensitive_activity_anchor_over_generic_strong_anchor() -> None:
+    pytest.importorskip("cv2")
+    np = pytest.importorskip("numpy")
+    gray_a = np.full((90, 160), 128, dtype=np.uint8)
+    gray_b = np.full((90, 160), 129, dtype=np.uint8)
+    frame_hash = (0, 64)
+    candidates = [
+        _FrameCandidate(KeyFrame("strong", 5_424, "strong.jpg", 0.0, "strong:anchor"), "strong", gray_a, frame_hash),
+        _FrameCandidate(KeyFrame("activity", 14_600, "activity.jpg", 0.0, "activity:anchor"), "activity", gray_b, frame_hash),
+    ]
+
+    kept, duplicates = _dedupe_keyframes_globally(candidates, VisionConfig())
+
+    assert [item.frame_id for item in kept] == ["activity"]
+    assert duplicates[0].frame.frame_id == "strong"
+
+
+def test_global_dedupe_removes_near_duplicate_anchor_frames_from_same_event() -> None:
+    pytest.importorskip("cv2")
+    np = pytest.importorskip("numpy")
+    gray_a = np.full((90, 160), 128, dtype=np.uint8)
+    gray_b = np.full((90, 160), 129, dtype=np.uint8)
+    frame_hash = (0, 64)
+    candidates = [
+        _FrameCandidate(KeyFrame("a", 10_000, "a.jpg", 0.0, "strong:anchor"), "strong", gray_a, frame_hash),
+        _FrameCandidate(KeyFrame("b", 10_250, "b.jpg", 0.0, "strong:anchor"), "strong", gray_b, frame_hash),
     ]
 
     kept, duplicates = _dedupe_keyframes_globally(candidates, VisionConfig())
@@ -985,6 +1182,100 @@ def test_event_correlator_uses_real_source_and_destination_fields() -> None:
 
     assert bundle["file_lineage"]["direct_file_mappings"][derived] == original
     assert any(item["current_file"] == derived for item in bundle["correlated_events"])
+
+
+def test_removable_media_temp_copy_derives_from_unique_sensitive_stem() -> None:
+    original = "C:/Users/alice/Documents/strategy.docx"
+    derived = "C:/Users/alice/AppData/Local/Temp/strategy_{a1b2c3}.docx"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:46",
+            "event_type": "created",
+            "file_path": derived,
+            "extra": {"raw_operation": "created", "relative_timestamp": 46.0},
+            "process_info": {"process_name": "explorer.exe"},
+            "window_info": {"window_title": "USB drive (F:) - File Explorer"},
+        }
+    ]
+    logs = normalize_logs(records)
+
+    bundle = EventCorrelator().run({"log_events": records, "frame_segments": [], "sensitive_files": [original]})
+    windows = build_analysis_windows(logs, [original], VisionConfig())
+
+    assert bundle["file_lineage"]["direct_file_mappings"][derived] == original
+    strong = next(window for window in windows if window.priority == "strong")
+    activity = next(window for window in windows if window.priority == "activity")
+    assert strong.anchor_ms == (46_000, 49_000, 54_000)
+    assert activity.start_ms == activity.end_ms == 46_000
+    assert activity.max_keyframes == VisionConfig().max_keyframes_per_window
+
+
+def test_recent_sensitive_process_context_does_not_create_unrelated_lineage_edges() -> None:
+    original = "C:/Users/alice/Documents/strategy.docx"
+    derived = "C:/Users/alice/AppData/Local/Temp/strategy_{a1b2c3}.docx"
+    unrelated = "C:/Users/alice/AppData/Local/Temp/browser_cache.bin"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:46",
+            "event_type": "created",
+            "file_path": derived,
+            "extra": {"raw_operation": "created"},
+            "process_info": {"process_name": "explorer.exe"},
+            "window_info": {"window_title": "USB drive (F:) - File Explorer"},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:47",
+            "event_type": "created",
+            "file_path": unrelated,
+            "extra": {"raw_operation": "copy"},
+            "process_info": {"process_name": "explorer.exe"},
+            "window_info": {"window_title": "USB drive (F:) - File Explorer"},
+        },
+    ]
+
+    bundle = EventCorrelator().run({"log_events": records, "frame_segments": [], "sensitive_files": [original]})
+
+    assert bundle["file_lineage"]["direct_file_mappings"] == {derived: original}
+
+
+def test_event_correlator_keeps_log_lineage_in_vlm_only_mode() -> None:
+    original = "C:/Users/alice/Documents/salary.xlsx"
+    derived = "C:/Users/alice/Desktop/salary_export.pdf"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "print_to_pdf",
+            "file_path": derived,
+            "extra": {"source_path": original, "output_path": derived, "raw_operation": "print_to_pdf"},
+            "process_info": {"process_name": "excel.exe"},
+        }
+    ]
+    observations = [
+        {
+            "observation_id": "vlm_0",
+            "start_ms": 0,
+            "end_ms": 0,
+            "app_name": "ChatGPT",
+            "operation_type": "external_sink_interaction",
+            "resource": derived,
+            "description": "Uploaded salary_export.pdf to an external AI chat.",
+            "confidence": 0.93,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": records,
+            "frame_segments": observations,
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert bundle["file_lineage"]["direct_file_mappings"][derived] == original
+    assert bundle["correlated_events"][0]["original_file"] == original
+    assert bundle["correlated_events"][0]["current_file"] == derived
 
 
 def test_event_correlator_resolves_extensionless_upload_selection() -> None:
@@ -1458,11 +1749,13 @@ def test_pipeline_reports_suspicious_detector_state_for_hidden_behavior(tmp_path
         ),
         encoding="utf-8",
     )
+    sensitive_config = tmp_path / "sensitive_files.json"
+    sensitive_config.write_text(json.dumps({"sensitive_files": [original]}), encoding="utf-8")
 
     report = run_pipeline(
         log_file=log_file,
         output_dir=tmp_path / "out",
-        sensitive_files=[original],
+        sensitive_files_config=sensitive_config,
         observations_file=observations,
         groundtruth_file=groundtruth,
     )
@@ -1516,7 +1809,7 @@ def test_visual_observation_can_create_datalog_fact_without_file_path_log() -> N
     assert any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
 
 
-def test_non_vlm_can_be_disabled_for_vlm_only_evaluation() -> None:
+def test_non_vlm_can_be_disabled_while_retaining_log_lineage_for_vlm_evaluation() -> None:
     bundle = EventCorrelator().run(
         {
             "session_id": "unit",
@@ -1530,7 +1823,7 @@ def test_non_vlm_can_be_disabled_for_vlm_only_evaluation() -> None:
     assert bundle["statistics"]["non_vlm_enabled"] is False
     assert bundle["correlated_events"] == []
     assert bundle["upload_candidates"] == []
-    assert bundle["datalog_facts"] == []
+    assert [item["relation"] for item in bundle["datalog_facts"]] == ["TransferFile"]
 
 
 def test_vlm_observations_still_work_when_non_vlm_is_disabled() -> None:
@@ -1604,23 +1897,57 @@ def test_lineage_uses_extra_source_and_output_paths() -> None:
     assert any(item["current_file"] == derived for item in bundle["correlated_events"])
 
 
-def test_pipeline_vision_sensitive_context_includes_derived_files() -> None:
+def test_pipeline_passes_recursive_log_derived_context_to_log_and_vision(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     original = "C:/Users/alice/Documents/strategy.docx"
-    derived = "C:/Users/alice/Desktop/strategy.pdf"
+    first_derived = "C:/Users/alice/Desktop/strategy.pdf"
+    second_derived = "C:/Users/alice/Desktop/strategy.zip"
     records = [
         {
             "timestamp": "2026-01-01T00:00:00",
             "event_type": "print_to_pdf",
-            "file_path": derived,
-            "extra": {"source_path": original, "output_path": derived, "raw_operation": "print_to_pdf"},
+            "file_path": first_derived,
+            "extra": {"source_path": original, "output_path": first_derived, "raw_operation": "print_to_pdf"},
             "process_info": {"process_name": "wps.exe"},
-        }
+        },
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "archive_created",
+            "file_path": second_derived,
+            "extra": {"source_path": first_derived, "output_path": second_derived, "raw_operation": "compress"},
+            "process_info": {"process_name": "7z.exe"},
+        },
     ]
-    logs = normalize_logs(records)
+    log_file = tmp_path / "logs.json"
+    log_file.write_text(json.dumps(records), encoding="utf-8")
+    sensitive_config = tmp_path / "sensitive_files.json"
+    sensitive_config.write_text(json.dumps({"sensitive_files": [original]}), encoding="utf-8")
+    observed: dict[str, list[str]] = {}
 
-    context = _vision_sensitive_files(records, logs, [original], session_start_ms=None)
+    class FakeMining:
+        windows: list[object] = []
+        source = "unit"
+        metadata: dict[str, object] = {}
 
-    assert context == [original, derived]
+    def fake_analyze(*_: object, **kwargs: object) -> dict:
+        observed["vision"] = list(kwargs["sensitive_files"])
+        observed["vlm"] = list(kwargs["vlm_sensitive_files"])
+        return {"observations": [], "statistics": {}, "warnings": [], "errors": []}
+
+    def fake_mine(**kwargs: object) -> FakeMining:
+        observed["log_mining"] = list(kwargs["sensitive_files"])
+        return FakeMining()
+
+    monkeypatch.setattr("data_leak_detector.pipeline.mine_analysis_windows", fake_mine)
+    monkeypatch.setattr("data_leak_detector.pipeline.analyze_video_behavior", fake_analyze)
+    report = run_pipeline(log_file=log_file, sensitive_files_config=sensitive_config, vision_enabled=True)
+
+    assert observed["log_mining"] == [original, first_derived, second_derived]
+    assert observed["vision"] == [original, first_derived, second_derived]
+    assert observed["vlm"] == [first_derived, second_derived]
+    assert report["input"]["sensitive_source_files"] == [original]
+    assert report["input"]["derived_sensitive_context"] == [first_derived, second_derived]
+    assert report["event_correlator"]["file_lineage"]["direct_file_mappings"][first_derived] == original
+    assert report["event_correlator"]["file_lineage"]["direct_file_mappings"][second_derived] == first_derived
 
 
 def test_dataset_case_discovery_uses_real_data_layout(tmp_path: Path) -> None:
@@ -1632,15 +1959,17 @@ def test_dataset_case_discovery_uses_real_data_layout(tmp_path: Path) -> None:
     (logs_dir / "keyevents.json").write_text(json.dumps(_records()), encoding="utf-8")
     (video_dir / "recording.mp4").write_bytes(b"not a real video")
     (case_dir / "groundtruth.json").write_text(
-        json.dumps({"operations": [{"sensitive_file_path": "C:/Users/alice/Documents/customer_salary.xlsx"}]}),
+        json.dumps({"operations": [{"sensitive_file_path": "C:/from-groundtruth.xlsx"}]}),
         encoding="utf-8",
     )
 
-    case = discover_data_case(case_dir)
+    sensitive_config = tmp_path / "sensitive_files.json"
+    sensitive_config.write_text(json.dumps({"sensitive_files": ["C:/from-config.xlsx"]}), encoding="utf-8")
+    case = discover_data_case(case_dir, sensitive_files_config=sensitive_config)
 
     assert case.log_file.name == "keyevents.json"
     assert case.video_file and case.video_file.name == "recording.mp4"
-    assert case.sensitive_files == ("C:/Users/alice/Documents/customer_salary.xlsx",)
+    assert case.sensitive_files == ("C:/from-config.xlsx",)
 
 
 def test_dataset_case_discovery_accepts_misspelled_groundtruth_name(tmp_path: Path) -> None:
@@ -1656,7 +1985,9 @@ def test_dataset_case_discovery_accepts_misspelled_groundtruth_name(tmp_path: Pa
         encoding="utf-8",
     )
 
-    case = discover_data_case(case_dir)
+    sensitive_config = tmp_path / "sensitive_files.json"
+    sensitive_config.write_text(json.dumps({"sensitive_files": ["C:/Users/alice/Documents/customer_salary.xlsx"]}), encoding="utf-8")
+    case = discover_data_case(case_dir, sensitive_files_config=sensitive_config)
 
     assert case.groundtruth_file == case_dir / "groundtrutn.json"
     assert case.groundtruth_status == "available"
@@ -1722,7 +2053,14 @@ def test_dataset_case_discovery_can_inherit_ancestor_groundtruth(tmp_path: Path)
         encoding="utf-8",
     )
 
-    case = discover_data_case(child, case_root=root, inherit_ancestor_groundtruth=True)
+    sensitive_config = tmp_path / "sensitive_files.json"
+    sensitive_config.write_text(json.dumps({"sensitive_files": ["C:/secret.docx"]}), encoding="utf-8")
+    case = discover_data_case(
+        child,
+        case_root=root,
+        inherit_ancestor_groundtruth=True,
+        sensitive_files_config=sensitive_config,
+    )
 
     assert case.case_id == "3-Messaging-TIM-5/session_20260420_222538"
     assert case.groundtruth_file == parent / "groundtruth.json"
@@ -1738,23 +2076,14 @@ def test_report_id_includes_case_name_for_artifact_folders() -> None:
     assert report_id == "1-email-fastmail-1_logs_528"
 
 
-def test_sensitive_source_extraction_is_configurable(tmp_path: Path) -> None:
-    groundtruth = tmp_path / "groundtruth.json"
-    groundtruth.write_text(
-        json.dumps(
-            {
-                "labels": [
-                    {"source_path": "C://Users//alice//Documents//strategy.docx", "derived_path": "C:/tmp/export.pdf"}
-                ]
-            }
-        ),
+def test_sensitive_files_config_is_the_initial_source_set(tmp_path: Path) -> None:
+    config = tmp_path / "sensitive_files.json"
+    config.write_text(
+        json.dumps({"sensitive_files": ["C://Users//alice//Documents//strategy.docx", "c:/users/alice/documents/strategy.docx", 1]}),
         encoding="utf-8",
     )
-    config = SensitiveSourceConfig(fields=("source_path",), regexes=())
 
-    sources = extract_sensitive_sources(groundtruth, config)
-
-    assert sources == ("C:/Users/alice/Documents/strategy.docx",)
+    assert load_sensitive_files_config(config) == ("C:/Users/alice/Documents/strategy.docx",)
 
 
 def test_policy_terms_are_loaded_from_external_config(tmp_path: Path) -> None:
@@ -1798,7 +2127,6 @@ def test_direct_keyframe_vlm_selection_uses_visual_frames() -> None:
     selected = choose_keyframes_for_vlm(frames, max_frames=2, max_frames_per_window=1)
 
     assert [item.frame.frame_id for item in selected] == ["strong", "weak"]
-    assert all(item.selection_reason == "direct_keyframe" for item in selected)
     assert all(item.visual_note == "" for item in selected)
 
 
@@ -1825,6 +2153,42 @@ def test_direct_keyframe_global_budget_spreads_dense_window_anchors() -> None:
     selected = choose_keyframes_for_vlm(frames, max_frames=3)
 
     assert [item.frame.timestamp_ms for item in selected] == [30_771, 34_280, 36_795]
+
+
+def test_direct_keyframe_vlm_selection_retains_activity_gap_evidence() -> None:
+    frames = [
+        KeyFrame("anchor_start", 0, "start.jpg", 0.2, "medium:anchor", window_id="window_0"),
+        KeyFrame("activity_gap", 49_211, "gap.jpg", 0.9, "medium:activity_gap", window_id="window_0"),
+        KeyFrame("anchor_end", 54_002, "end.jpg", 0.2, "medium:anchor", window_id="window_0"),
+    ]
+
+    selected = choose_keyframes_for_vlm(frames, max_frames=2)
+
+    assert [item.frame.frame_id for item in selected] == ["anchor_start", "activity_gap"]
+
+
+def test_direct_keyframe_vlm_selection_compacts_activity_gap_window() -> None:
+    frames = [
+        KeyFrame("early_gap", 3_000, "early.jpg", 0.9, "medium:activity_gap", window_id="window_0"),
+        KeyFrame("context", 35_000, "context.jpg", 0.3, "medium:anchor", window_id="window_0"),
+        KeyFrame("action", 49_000, "action.jpg", 0.1, "medium:activity_gap", window_id="window_0"),
+        KeyFrame("post_action", 54_000, "post.jpg", 0.8, "medium:anchor", window_id="window_0"),
+    ]
+
+    selected = choose_keyframes_for_vlm(frames, max_frames=12)
+
+    assert [item.frame.frame_id for item in selected] == ["early_gap", "context", "action"]
+
+
+def test_keyframe_selection_compacts_activity_gap_window() -> None:
+    frames = [
+        KeyFrame("early_gap", 3_000, "early.jpg", 0.9, "medium:activity_gap", window_id="window_0"),
+        KeyFrame("context", 35_000, "context.jpg", 0.3, "medium:anchor", window_id="window_0"),
+        KeyFrame("action", 49_000, "action.jpg", 0.1, "medium:activity_gap", window_id="window_0"),
+        KeyFrame("post_action", 54_000, "post.jpg", 0.8, "medium:anchor", window_id="window_0"),
+    ]
+
+    assert [frame.frame_id for frame in _focus_activity_gap_keyframes(frames)] == ["early_gap", "context", "action"]
 
 
 def test_direct_keyframe_negative_budget_sends_all_keyframes() -> None:
@@ -1885,7 +2249,7 @@ def test_vlm_input_images_are_resized_without_touching_raw_frame(tmp_path: Path)
     raw = tmp_path / "raw.jpg"
     Image.new("RGB", (200, 100), (120, 80, 40)).save(raw)
     frame = KeyFrame("frame_0", 1_000, str(raw), 0.0, "medium:coverage")
-    request_frame = VlmRequestFrame(frame, "", 0.0, selection_reason="direct_keyframe")
+    request_frame = VlmRequestFrame(frame, "", 0.0)
 
     prepared = prepare_vlm_frame_images([request_frame], max_image_side=100, output_dir=tmp_path / "vlm_input")
 
@@ -2179,83 +2543,6 @@ def test_groundtruth_verdict_does_not_treat_monitor_name_as_leak(tmp_path: Path)
     assert len(verdict.non_leak_operations) == 1
 
 
-def test_sensitive_source_extraction_ignores_derived_groundtruth_paths(tmp_path: Path) -> None:
-    groundtruth = tmp_path / "groundtruth.json"
-    source = "C:/Users/admin/Desktop/Sensitive/员工薪资明细表R4.xlsx"
-    screenshot = "C:/Users/鐜嬩匠鐟?Pictures/Screenshots/灞忓箷鎴浘 2026-06-03 003300.png"
-    groundtruth.write_text(
-        json.dumps(
-            {
-                "operations": [
-                    {
-                        "operation_time": "2026-06-02 23:48:39",
-                        "sensitive_file_path": source,
-                        "operation": "姝ｅ父鎿嶄綔-打开鏌ョ湅",
-                    },
-                    {
-                        "operation_time": "2026-06-03 00:33:00",
-                        "sensitive_file_path": source,
-                        "operation": f"潜在隐藏行为-屏幕截图-{screenshot}",
-                    },
-                    {
-                        "operation_time": "2026-06-03 00:47:42",
-                        "sensitive_file_path": screenshot,
-                        "operation": "直接外发-豆包AI网站上传",
-                    },
-                ]
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-
-    sources = extract_sensitive_sources(groundtruth)
-
-    assert sources == (source,)
-
-
-def test_sensitive_source_extraction_ignores_placeholder_sources(tmp_path: Path) -> None:
-    groundtruth = tmp_path / "groundtruth.json"
-    source = "C:/Users/alice/Desktop/secret.docx"
-    derived = "E:/secret.docx"
-    groundtruth.write_text(
-        json.dumps(
-            {
-                "operations": [
-                    {"sensitive_file_path": "N/A", "operation": "normal clipboard copy"},
-                    {"sensitive_file_path": source, "operation": "normal open and read"},
-                    {"sensitive_file_path": derived, "operation": "hidden transfer to removable media"},
-                ]
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-
-    sources = extract_sensitive_sources(groundtruth)
-
-    assert sources == (source,)
-
-
-def test_sensitive_source_extraction_repairs_quoted_windows_paths(tmp_path: Path) -> None:
-    groundtruth = tmp_path / "groundtruth.json"
-    groundtruth.write_text(
-        '{\n'
-        '  ""operations"": [\n'
-        '    {\n'
-        '      ""sensitive_file_path"": ""C:\\Users\\17503\\OneDrive\\产品设计方案.docx"",\n'
-        '      ""operation"": ""直接外发-ai对话上传""\n'
-        '    }\n'
-        '  ]\n'
-        '}\n',
-        encoding="utf-8",
-    )
-
-    sources = extract_sensitive_sources(groundtruth)
-
-    assert sources == ("C:/Users/17503/OneDrive/产品设计方案.docx",)
-
-
 def test_pipeline_conclusion_keeps_detector_result_when_groundtruth_available(tmp_path: Path) -> None:
     log_file = tmp_path / "logs.json"
     groundtruth = tmp_path / "groundtruth.json"
@@ -2286,7 +2573,7 @@ def test_pipeline_conclusion_keeps_detector_result_when_groundtruth_available(tm
     assert report["detection_core"]["evaluation"]["groundtruth_is_evaluation_only"] is True
 
 
-def test_pipeline_copies_groundtruth_before_frame_analysis(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pipeline_does_not_expose_groundtruth_to_frame_analysis(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     log_file = tmp_path / "logs.json"
     groundtruth = tmp_path / "groundtruth.json"
     groundtruth_text = json.dumps({"operations": [{"operation": "normal"}]}, ensure_ascii=False)
@@ -2298,8 +2585,7 @@ def test_pipeline_copies_groundtruth_before_frame_analysis(tmp_path: Path, monke
 
     def fake_analyze_video_behavior(*_: object, **kwargs: object) -> dict:
         copied = Path(str(kwargs["artifact_dir"])) / "groundtruth.json"
-        assert copied.exists()
-        assert copied.read_text(encoding="utf-8") == groundtruth_text
+        assert not copied.exists()
         return {
             "observations": [],
             "statistics": {
@@ -2395,11 +2681,16 @@ def test_json_loader_keeps_escaped_windows_paths(tmp_path: Path) -> None:
 def test_pipeline_writes_report_for_inline_leak(tmp_path: Path) -> None:
     log_file = tmp_path / "sample.json"
     log_file.write_text(json.dumps(_records(), ensure_ascii=False), encoding="utf-8")
+    sensitive_config = tmp_path / "sensitive_files.json"
+    sensitive_config.write_text(
+        json.dumps({"sensitive_files": ["C:/Users/alice/Documents/customer_salary.xlsx"]}),
+        encoding="utf-8",
+    )
 
     report = run_pipeline(
         log_file=log_file,
         output_dir=tmp_path / "out",
-        sensitive_files=["C:/Users/alice/Documents/customer_salary.xlsx"],
+        sensitive_files_config=sensitive_config,
     )
 
     assert report["summary"]["leak_paths"] == 1

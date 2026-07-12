@@ -15,9 +15,10 @@ from .frame_analyzer import analyze_video_behavior
 from .frame_analyzer.config import VisionConfig
 from .log_mining import mine_analysis_windows
 from .groundtruth import evaluate_groundtruth
-from .io import iso_now, load_json_records, normalize_logs, normalize_path
+from .io import iso_now, load_json_records, normalize_logs, normalize_path, same_file
 from .leak_reasoner import DatalogEngine
 from .models import DetectionReport
+from .sensitivity import load_sensitive_files_config
 
 
 def run_pipeline(
@@ -25,7 +26,7 @@ def run_pipeline(
     video_file: str | Path = "",
     output_dir: str | Path | None = None,
     detail_output_dir: str | Path | None = None,
-    sensitive_files: list[str] | None = None,
+    sensitive_files_config: str | Path | None = None,
     observations_file: str | Path | None = None,
     vision_enabled: bool | None = None,
     max_vlm_frames: int | None = None,
@@ -51,17 +52,16 @@ def run_pipeline(
         vision_precompute_file = str(baseline.get("vision_precompute_file") or "") or None
     records = list(baseline.get("records", [])) if baseline else load_json_records(log_path)
     logs = [] if baseline else normalize_logs(records, session_start_ms=session_start_ms)
-    initial_sensitive_files = list(sensitive_files or [])
-    vision_sensitive_files = _vision_sensitive_files(records, logs, initial_sensitive_files, session_start_ms=session_start_ms)
-    initial_sensitive_keys = {normalize_path(item).lower() for item in initial_sensitive_files if normalize_path(item)}
-    vision_derived_sensitive_files = [
-        item for item in vision_sensitive_files if normalize_path(item).lower() not in initial_sensitive_keys
-    ]
+    initial_sensitive_files = _dedupe_paths(list(load_sensitive_files_config(sensitive_files_config)))
+    analysis_sensitive_files, derived_sensitive_context = _analysis_sensitive_context(
+        records,
+        logs,
+        initial_sensitive_files,
+        session_start_ms=session_start_ms,
+    )
     report_id = _build_report_id(log_path, len(records), case_name)
     target_dir = Path(output_dir) if output_dir is not None else None
     vision_artifact_dir = target_dir / report_id if target_dir is not None else None
-    if vision_artifact_dir is not None:
-        _copy_groundtruth_file({"input": {"groundtruth_file": str(groundtruth_file or "")}}, vision_artifact_dir)
     vision_config = VisionConfig.from_env().with_overrides(
         enabled=vision_enabled,
         max_vlm_frames=max_vlm_frames,
@@ -74,16 +74,18 @@ def run_pipeline(
         log_file=log_path,
         records=records,
         logs=logs,
-        sensitive_files=vision_sensitive_files,
+        sensitive_files=analysis_sensitive_files,
         vision_config=vision_config,
         neo4j_log_miner=effective_neo4j_log_miner,
         reuse_import=reuse_neo4j_import,
     ) if not baseline else None
+    vlm_sensitive_files = _vlm_file_context(logs, analysis_sensitive_files)
 
     frame_bundle = analyze_video_behavior(
         video_path or "",
         logs=logs,
-        sensitive_files=vision_sensitive_files,
+        sensitive_files=analysis_sensitive_files,
+        vlm_sensitive_files=vlm_sensitive_files,
         observations_file=observations_file,
         vision_enabled=vision_enabled,
         max_vlm_frames=max_vlm_frames,
@@ -120,18 +122,24 @@ def run_pipeline(
         "log_file": str(log_path),
         "video_file": video_text,
         "groundtruth_file": str(groundtruth_file or ""),
+        "sensitive_files_config": str(sensitive_files_config or ""),
         "recording_start_ms": int(session_start_ms or 0),
-        "vision_sensitive_files": vision_sensitive_files,
-        "vision_derived_sensitive_files": vision_derived_sensitive_files,
+        "sensitive_source_files": initial_sensitive_files,
+        "derived_sensitive_context": derived_sensitive_context,
+        "analysis_sensitive_files": analysis_sensitive_files,
+        "vlm_sensitive_files": vlm_sensitive_files,
     }
     if case_metadata:
         input_metadata.update(case_metadata)
         input_metadata["log_file"] = str(log_path)
         input_metadata["video_file"] = video_text
         input_metadata["groundtruth_file"] = str(groundtruth_file or "")
+        input_metadata["sensitive_files_config"] = str(sensitive_files_config or "")
         input_metadata["recording_start_ms"] = int(session_start_ms or 0)
-        input_metadata["vision_sensitive_files"] = vision_sensitive_files
-        input_metadata["vision_derived_sensitive_files"] = vision_derived_sensitive_files
+        input_metadata["sensitive_source_files"] = initial_sensitive_files
+        input_metadata["derived_sensitive_context"] = derived_sensitive_context
+        input_metadata["analysis_sensitive_files"] = analysis_sensitive_files
+        input_metadata["vlm_sensitive_files"] = vlm_sensitive_files
 
     report = DetectionReport(
         report_id=report_id,
@@ -145,8 +153,9 @@ def run_pipeline(
             "datalog_facts": len(correlation_bundle["datalog_facts"]),
             "leak_paths": len(leak_paths),
             "suspicious_behaviors": len(suspicious_facts),
-            "vision_sensitive_files": len(vision_sensitive_files),
-            "vision_derived_sensitive_files": len(vision_derived_sensitive_files),
+            "sensitive_source_files": len(initial_sensitive_files),
+            "derived_sensitive_context": len(derived_sensitive_context),
+            "analysis_sensitive_files": len(analysis_sensitive_files),
             "groundtruth_operations": groundtruth_verdict.total_operations if groundtruth_verdict.available else 0,
             "groundtruth_leak_operations": len(groundtruth_verdict.leak_operations) if groundtruth_verdict.available else 0,
             "groundtruth_unknown_risk_operations": len(groundtruth_verdict.unknown_risk_operations)
@@ -398,7 +407,6 @@ def run_data_case(
     *,
     output_dir: str | Path | None = None,
     detail_output_dir: str | Path | None = None,
-    sensitive_files: list[str] | None = None,
     observations_file: str | Path | None = None,
     vision_enabled: bool | None = None,
     max_vlm_frames: int | None = None,
@@ -411,6 +419,7 @@ def run_data_case(
     case_root: str | Path | None = None,
     report_case_name: str | None = None,
     inherit_ancestor_groundtruth: bool = False,
+    sensitive_files_config: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run a real spec/data sample directory."""
 
@@ -418,14 +427,14 @@ def run_data_case(
         case_dir,
         case_root=case_root,
         inherit_ancestor_groundtruth=inherit_ancestor_groundtruth,
+        sensitive_files_config=sensitive_files_config,
     )
-    merged_sensitive = list(dict.fromkeys([*case.sensitive_files, *(sensitive_files or [])]))
     report = run_pipeline(
         log_file=case.log_file,
         video_file=case.video_file or "",
         output_dir=output_dir,
         detail_output_dir=detail_output_dir,
-        sensitive_files=merged_sensitive,
+        sensitive_files_config=sensitive_files_config,
         observations_file=observations_file,
         vision_enabled=vision_enabled,
         max_vlm_frames=max_vlm_frames,
@@ -477,24 +486,6 @@ def _is_scorable_conclusion(value: str) -> bool:
     return value in {"data_leak_risk_detected", "suspicious_behavior_detected", "no_confirmed_data_leak"}
 
 
-def _vision_sensitive_files(
-    records: list[Any],
-    logs: list[Any],
-    sensitive_files: list[str],
-    *,
-    session_start_ms: int | None,
-) -> list[str]:
-    normalized_initial = _dedupe_paths(sensitive_files)
-    if not normalized_initial:
-        return []
-    lineage_logs = logs or normalize_logs(
-        [item for item in records if isinstance(item, dict)],
-        session_start_ms=session_start_ms,
-    )
-    derived = EventCorrelator().derived_sensitive_files(lineage_logs, normalized_initial)
-    return _dedupe_paths([*normalized_initial, *derived])
-
-
 def _dedupe_paths(paths: list[str]) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
@@ -506,6 +497,34 @@ def _dedupe_paths(paths: list[str]) -> list[str]:
         seen.add(key)
         result.append(text)
     return result
+
+
+def _analysis_sensitive_context(
+    records: list[Any],
+    logs: list[Any],
+    initial_sensitive_files: list[str],
+    *,
+    session_start_ms: int | None,
+) -> tuple[list[str], list[str]]:
+    """Build the recursive, log-evidenced context used before VLM analysis."""
+
+    lineage_logs = logs or normalize_logs(
+        [item for item in records if isinstance(item, dict)],
+        session_start_ms=session_start_ms,
+    )
+    derived = EventCorrelator().derived_sensitive_files(lineage_logs, initial_sensitive_files)
+    return _dedupe_paths([*initial_sensitive_files, *derived]), derived
+
+
+def _vlm_file_context(logs: list[Any], analysis_sensitive_files: list[str]) -> list[str]:
+    """Keep VLM file context limited to sensitive paths observed in this case."""
+
+    observed: list[str] = []
+    for event in logs:
+        path = normalize_path(getattr(event, "file_path", ""))
+        if path and any(same_file(path, sensitive) for sensitive in analysis_sensitive_files):
+            observed.append(path)
+    return _dedupe_paths(observed)
 
 
 

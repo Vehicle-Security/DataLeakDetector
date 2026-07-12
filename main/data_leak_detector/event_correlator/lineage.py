@@ -20,8 +20,11 @@ class Lineage:
     def add(self, derived: str, source: str) -> None:
         derived = normalize_path(derived)
         source = normalize_path(source)
-        if derived and source and not same_file(derived, source):
-            self.direct[derived] = source
+        if not derived or not source or same_file(derived, source) or derived in self.direct:
+            return
+        if any(same_file(derived, item) for item in self.chain(source)):
+            return
+        self.direct[derived] = source
 
     def root(self, file_path: str) -> str:
         current = normalize_path(file_path)

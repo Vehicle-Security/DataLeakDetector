@@ -1,6 +1,128 @@
 # 不规范数据记录
 
-这个文件记录数据集里需要人工修正的样例。这里不修改 `spec/data` 原始数据，只说明问题、影响和建议修法。
+### 已从原始数据移除的 20 个历史 case
+
+这些 case 仍在历史 Release 报告中，但当前 `spec/data/nas_samples` 下已不存在：
+
+```text
+stage1/1-email-Outlook-1
+stage1/1-email-protonmail-1
+stage1/2-ai-Gemini-3
+stage1/3-Messaging-TIM-5/session_20260420_222538
+stage1/3-Messaging-dingding-1
+stage1/4-Drive-kuake-3
+stage1/5-meeting-Tencent-4
+stage1/5-meeting-feishu-1
+stage1/6-workplace-youdao-1
+stage1/7-Tech community-bokeyuan-1
+stage1/7-Tech community-solo-1
+stage1/8-git-GitCode-1
+stage2/2-filestruct-rename-1
+stage2/4-contentchange-transfer-2
+stage2/5-screen-record-3
+stage2/5-screen-record-4
+stage4/2-1
+stage4/4-1
+stage4/9-1
+stage5/U2-Annotation-1
+```
+
+### 确定会影响检测的标注缺陷
+
+| 类型                           |       数量 | 影响                                          | 处理建议                           |
+| ------------------------------ | ---------: | --------------------------------------------- | ---------------------------------- |
+| 缺失 `groundtruth.json`      |          1 | 无法评分，也没有初始敏感源                    | 补标或保持排除                     |
+| JSON 非严格格式                |         31 | 依赖宽松解析；更换工具后结果不稳定            | 修正为标准 UTF-8 JSON              |
+| 宽松解析仍无法恢复结构         |         12 | operation/sensitive source 可能退化为正则兜底 | 优先修复或移除                     |
+| 无法提取初始敏感源             |          4 | VLM 即使识别外发，也无法形成污点路径          | 补充真实源文件路径                 |
+| 敏感源不在独立目录中           | 10 个 case | 全局敏感源目录不能补齐该 case                 | 核查是否漏录或 groundtruth 写错    |
+| `record_id` 与目录标识不一致 |         88 | 证明采集/标注串例风险；当前不直接参与检测     | 人工复核，修正真实串例             |
+| 子 session 继承父 groundtruth  |         19 | 父样本标注可能不对应子 session 视频           | 逐个确认后补独立标注或明确继承关系 |
+
+#### 缺失 groundtruth
+
+```text
+stage2/5-screen-screenshot-1
+```
+
+#### 无法提取初始敏感源
+
+```text
+stage2/1-transfer-print-1
+stage2/1-transfer-USB flash drive-1
+stage2/2-filestruct-rename-4
+stage2/3-content-copy-4
+```
+
+`stage2/1-transfer-print-1` 还混入了裸文件名 `公司战略规划.docx`；应只保留日志中真实出现的完整初始路径。
+
+#### 敏感源未覆盖到独立目录
+
+以下 case 使用的敏感源没有在 `spec/config/sensitive_files..json` 找到可匹配项。名单包含路径尾逗号、把正文当成路径、日志路径被写成敏感源等高风险格式：
+
+```text
+stage1/5-meeting-Tencent-6
+stage1/5-meeting-Tencent-6/session_20260420_142508
+stage1/7-Tech community-CSDN-1
+stage2/2-filestruct-zip-1
+stage2/2-filestruct-zip-2/3-content-copy-1
+stage2/3-content-copy-1
+stage4/3-2
+stage4/7-1
+stage4/e2e-3/session_20260429_193255
+stage5/U2-Annotation-3
+```
+
+全局目录覆盖统计为：75 个当前标注敏感源中，53 个可按规范化完整路径命中，8 个只能按文件名别名命中，14 个无匹配。别名命中必须仅在当前 case 内唯一时使用，不能作为跨 case 的无条件匹配规则。
+
+#### JSON 非严格格式的 31 个 case
+
+以下文件可被当前宽松加载器部分读取，但不是标准 JSON；其中标记为“结构无法恢复”的 12 个，应优先处理。
+
+```text
+stage1/1-email-gmail-1
+stage1/2-ai-copilot-1
+stage1/2-ai-doubao-1
+stage1/3-Messaging-qiyeweixin-1
+stage1/4-Drive-baidu-2
+stage1/4-Drive-dropbox-1
+stage1/4-Drive-OneDrive-2
+stage1/5-meeting-huaweiyun-1
+stage1/5-meeting-zhumu-1
+stage1/5-meeting-Zoom-1
+stage1/7-Tech community-segmentfault-1
+stage1/7-Tech community-stackoverflow-2
+stage1/7-Tech community-zhihu-1
+stage1/8-git-Gitee-2
+stage1/8-git-GitLab-2
+stage2/1-transfer-copy-3/session_20260424_203808
+stage2/1-transfer-copy-4 [结构无法恢复]
+stage2/2-filestruct-pdfsplit-3/session_20260424_224052 [结构无法恢复]
+stage2/2-filestruct-pdfsplit-4 [结构无法恢复]
+stage2/3-content-dataexport-3/session_20260424_212521 [结构无法恢复]
+stage2/3-content-OCR-1 [结构无法恢复]
+stage2/4-contentchange-transfer-3 [结构无法恢复]
+stage2/4-contentchange-transfer-5
+stage2/4-contentchange-transfer-6
+stage4/9-2 [结构无法恢复]
+stage4/e2e-8/session_20260427_154734 [结构无法恢复]
+stage4/e2e-8/session_20260427_184713 [结构无法恢复]
+stage4/e2e-8/session_20260427_192521 [结构无法恢复]
+stage4/e2e-8/session_20260428_185211 [结构无法恢复]
+stage5/U2-Annotation-3
+stage5/U4-Bluetooth-SensitiveLeak-3 [结构无法恢复]
+```
+
+### VLM 外泄但未生成 leak path 的已证实样例
+
+下列证据来自 `artifacts/rerun_grid4x1_debug_70_fixed` 已完成的 4x1 实跑。它们说明问题发生在“VLM 文件名 -> Datalog 初始敏感源”的绑定，不是 VLM 没有识别外部 sink。
+
+| Case                                    | VLM 识别的文件/行为              | groundtruth 初始敏感源 | 判定                                                               |
+| --------------------------------------- | -------------------------------- | ---------------------- | ------------------------------------------------------------------ |
+| `stage1/2-ai-tongyi-1`                | `客户联系方式.pdf` 上传通义 AI | `客户联系方式 .pdf`  | 扩展名前空格导致旧产物未绑定；当前 `same_file` 修复后应重跑验证  |
+| `stage1/6-workplace-notion-1`         | `客户联系方式.pdf` 外发        | `客户联系方式 .pdf`  | 同类路径格式问题；应重跑验证                                       |
+| `stage1/3-Messaging-TIM-2`            | `公司合作合同.docx` 发送到 TIM | `公司财务报告.docx`  | 文件名本身不同，无 lineage；高置信串例/标注错误，交给 Judge 或移除 |
+| `stage2/1-transfer-USB flash drive-1` | `公司合同.docx` 拷贝至 USB     | 无可提取初始敏感源     | 标注缺少敏感源；补真实路径后才能生成 leak path                     |
 
 ## stage1 / 3-Messaging-dingding-1
 
@@ -25,10 +147,6 @@
 - 将 `record_id` 改为 `3-Messaging-dingding-1`。
 - 将 `sensitive_file_path` 改为该样例日志/真实文件操作中的完整源路径，而不是只写 `产品设计方案.docx`。
 - 如存在多个 `产品设计方案(1).docx`、`产品设计方案(2).docx` 等派生/副本，groundtruth 的初始敏感源仍应只标第一个源文件；派生关系交给日志和推理链路处理。
-
-## grid2 批量检查新增疑似数据问题
-
-以下条目来自 `artifacts/all_data_direct_keyframes_grid2` 的错报/漏报复核。这里先只记录更像数据标注或评测口径问题的样例；本地转换、压缩、重命名等更像检测规则误报的样例不放在本节。
 
 ### stage1 / 1-email-protonmail-1
 

@@ -29,6 +29,14 @@
     "state.vscdb",
     "state.vscdb-journal"
   ],
+  "app_names": [
+    "System",
+    "MsMpEng",
+    "svchost",
+    "RuntimeBroker",
+    "ffmpeg",
+    "ArmouryCrate.UserSessionHelper"
+  ],
   "extension_context_markers": [
     "/onedrive/logs/",
     "/onedrive/listsync/",

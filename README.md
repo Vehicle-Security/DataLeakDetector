@@ -8,7 +8,7 @@ DataLeakDetector 是一个面向 `spec/data` 真实样本目录的数据泄漏�
 spec/data 样本目录
   -> logs/logs.json 或 logs/keyevents.json
   -> video/*.mp4
-  -> groundtruth.json 中声明的初始敏感源文件
+  -> spec/config/sensitive_files..json 中声明的初始敏感源文件
   -> FrameAnalyzer：日志时间窗 + 非均匀关键帧 + OCR 全量读帧 + VLM
   -> EventCorrelator：文件血缘 + 前端应用识别 + 泄漏出口候选
   -> LeakReasoner：符号化污点传播
@@ -16,15 +16,17 @@ spec/data 样本目录
   -> JSON 报告
 ```
 
-初始敏感文件只来自 `groundtruth.json` 或显式传入的 `--sensitive-file`。
+初始敏感文件只来自 `spec/config/sensitive_files..json`（可通过 `--sensitive-files-config` 替换）。
 敏感文件被打开、转换、复制、上传后产生的文件都视为衍生文件，由血缘分析和推理
 得出，不写入初始敏感文件表。
+日志会从初始源递归构建有证据的派生文件闭包，并将该闭包用于日志挖掘和 VLM 上下文；
+报告会将它与初始源表分别记录。
+对每个敏感文件，日志挖掘会从首次操作持续到显式关闭；没有关闭事件时持续到录屏最后一个有效日志时刻。
+区间内的系统白名单应用由 `spec/config/system_noise_profile.json` 过滤，剩余活动应用和区间锚点用于帧差异降采样。
 
-当前 `conclusion` 的评估口径优先以 `groundtruth.json` 为准：只要标注中存在
-符合 `spec/config/groundtruth_policy.json` 的泄密操作，报告结论就是
-`data_leak_risk_detected`；没有标注文件时才回退到推理器结果。推理器自身判断会
-保留在 `leak_reasoner.detector_conclusion`，方便后续评估召回和误报。
-`groundtruth` 不参与证据生成，它只解释当前数据集的标签口径。
+当前 `conclusion` 完全来自检测器的证据和推理结果。`groundtruth.json` 只按
+`spec/config/groundtruth_policy.json` 生成评测标签，用于对照隐藏或外发行为是否被检测到；
+它不参与日志挖掘、VLM 请求、事件关联或 Datalog 推理。
 
 项目区别于传统日志规则检测的核心链路是：
 
@@ -72,8 +74,8 @@ python main/run_e2e.py --case spec\data\nas_samples\stage1\2-ai-gpt cherystudio-
 
 - 优先使用 `logs/logs.json`，不存在时回退到 `logs/keyevents.json`
 - `video/*.mp4`
-- `groundtruth.json`
-- `groundtruth.json` 中声明的初始敏感源文件
+- `groundtruth.json`（仅用于评测检测结论）
+- `spec/config/sensitive_files..json` 中声明的初始敏感源文件
 
 ## OCR/VLM 流程
 
@@ -111,6 +113,7 @@ Coding Plan 和 Token Plan 使用不同兼容端点，分别配置后可提供�
 ```text
 DLD_POLICY_CONFIG=spec/config/policy.json
 DLD_GROUNDTRUTH_POLICY_CONFIG=spec/config/groundtruth_policy.json
+DLD_SENSITIVE_FILES_CONFIG=spec/config/sensitive_files..json
 DLD_SENSITIVE_TOKENS=prototype,pricing
 DLD_TRANSFER_TOKENS=watermark,print
 DLD_SINK_TOKENS=slack,github issue
@@ -124,14 +127,11 @@ DLD_SINK_TOKENS=slack,github issue
 `groundtruth.json` 里的操作文本。以后如果数据集把“泄密”“正常”“未知风险”的
 标注方式换掉，优先改这个文件。
 
-初始敏感源文件的提取也可以配置。这里应该只指向标注文件里的“源文件”字段，
-不要把转换后、复制后、上传前临时文件等衍生字段加进去。空值会使用内置默认值，
-所以换数据集时通常只需要调整字段名或 JSON 路径。
+`spec/config/sensitive_files..json` 是唯一的初始敏感源配置。此文件仅列出原始敏感文件，
+不要加入转换、复制、截图或上传产生的派生文件；这些路径只在谱系和推理阶段关联。
 
 ```text
-DLD_SENSITIVE_SOURCE_FIELDS=sensitive_file_path,sensitive_file,sensitive_path,source_file
-DLD_SENSITIVE_SOURCE_JSON_PATHS=operations.*.sensitive_file_path
-DLD_SENSITIVE_SOURCE_REGEXES=
+DLD_SENSITIVE_FILES_CONFIG=spec/config/sensitive_files..json
 ```
 
 ## Neo4j
@@ -159,7 +159,7 @@ tools\stop_neo4j.ps1
 | --- | --- |
 | `main/run_e2e.py` | 命令行入口，支持 `--case` 和直接 `--log` 运行。 |
 | `main/data_leak_detector/datasets.py` | 发现 `spec/data` 真实样本输入。 |
-| `main/data_leak_detector/sensitivity.py` | 可配置地提取初始敏感源文件。 |
+| `main/data_leak_detector/sensitivity.py` | 加载唯一的初始敏感源配置。 |
 | `main/data_leak_detector/groundtruth.py` | 按 `groundtruth.json` 和可配置口径生成最终标注结论。 |
 | `main/data_leak_detector/pipeline.py` | 编排分析流程和可选图谱写入。 |
 | `main/data_leak_detector/policy.py` | 加载 `spec/config/policy.json`，提供统一文本归一化和策略判断接口。 |

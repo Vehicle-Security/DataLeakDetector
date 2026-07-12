@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from pathlib import Path
 from typing import Any
 import re
 
-from .io import parse_timestamp_ms, read_text
-from .sensitivity import extract_sensitive_sources
+from .io import parse_timestamp_ms
+from .sensitivity import load_sensitive_files_config
 
 GROUNDTRUTH_FILENAMES = ("groundtruth.json", "groundtrutn.json")
 
@@ -62,6 +61,7 @@ def discover_data_case(
     *,
     case_root: str | Path | None = None,
     inherit_ancestor_groundtruth: bool = False,
+    sensitive_files_config: str | Path | None = None,
 ) -> DataCase:
     """Resolve a NAS-style sample directory into pipeline input files."""
 
@@ -89,10 +89,8 @@ def discover_data_case(
     else:
         groundtruth_status = "missing"
 
-    sensitive = set(extract_sensitive_sources(groundtruth_file))
-    recording_start_ms = _recording_start_ms(case_dir, None) if inherited_groundtruth else 0
-    if not recording_start_ms:
-        recording_start_ms = _recording_start_ms(case_dir, groundtruth_file)
+    sensitive = load_sensitive_files_config(sensitive_files_config)
+    recording_start_ms = _recording_start_ms(case_dir)
 
     return DataCase(
         case_id=case_relative_path,
@@ -100,7 +98,7 @@ def discover_data_case(
         log_file=log_file,
         video_file=video_file,
         groundtruth_file=groundtruth_file,
-        sensitive_files=tuple(sorted(item for item in sensitive if item)),
+        sensitive_files=sensitive,
         recording_start_ms=recording_start_ms,
         case_relative_path=case_relative_path,
         case_name=case_dir.name,
@@ -177,17 +175,7 @@ def _video_from_index(case_dir: Path, candidates: list[Path]) -> Path | None:
     return None
 
 
-def _recording_start_ms(case_dir: Path, groundtruth_file: Path | None) -> int:
-    if groundtruth_file is not None:
-        try:
-            payload = json.loads(read_text(groundtruth_file))
-            timestamp = payload.get("recording_start_time") if isinstance(payload, dict) else ""
-            parsed = parse_timestamp_ms(timestamp)
-            if parsed:
-                return parsed
-        except (OSError, ValueError, TypeError):
-            pass
-
+def _recording_start_ms(case_dir: Path) -> int:
     index_file = case_dir / "INDEX.md"
     if index_file.exists():
         text = index_file.read_text(encoding="utf-8", errors="ignore")
