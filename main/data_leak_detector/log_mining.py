@@ -233,30 +233,56 @@ def build_analysis_windows(
 ) -> list[AnalysisWindow]:
     windows: list[AnalysisWindow] = []
     sensitive = tuple(normalize_path(item).lower() for item in sensitive_files)
-    app_index = _ActiveAppIndex.from_logs(logs)
-    time_index = _LogTimeIndex.from_logs(logs)
-    for event in logs:
-        if not _may_need_analysis_window(event, sensitive):
-            continue
+    candidate_events = [event for event in logs if _may_need_analysis_window(event, sensitive)]
+    event_view = _compact_event_view(logs, candidate_events)
+    app_index = _ActiveAppIndex.from_logs(event_view)
+    foreground_range_index = _ForegroundRangeIndex.from_logs(event_view)
+    time_index = _LogTimeIndex.from_logs(event_view)
+    sensitive_context_index = _SensitiveContextIndex.from_logs(candidate_events, event_view, sensitive)
+    for event in candidate_events:
         window = build_analysis_window_for_event(
             event,
-            logs,
+            event_view,
             sensitive,
             config,
             active_apps=(),
             time_index=time_index,
+            sensitive_context_index=sensitive_context_index,
             normalized_sensitive=True,
         )
         if window is not None:
             windows.append(window)
-    activity_windows = build_sensitive_activity_windows(logs, sensitive, config)
+    activity_windows = build_sensitive_activity_windows(event_view, sensitive, config)
     windows.extend(activity_windows)
     if activity_windows:
         windows = [window for window in windows if window.priority != "medium"]
     segmented = _filter_visual_context_windows(_merge_windows_by_case_segment(windows, config), config)
-    segmented = _add_sink_followup_anchors(segmented, logs)
+    segmented = _add_sink_followup_anchors(segmented, event_view)
     segmented = _thin_dense_window_anchors(segmented, config)
-    return _attach_active_apps_to_windows(segmented, app_index, logs)
+    return _attach_active_apps_to_windows(segmented, app_index, foreground_range_index)
+
+
+def _compact_event_view(logs: list[LogEvent], candidate_events: list[LogEvent]) -> list[LogEvent]:
+    """Keep only events that can influence analysis-window construction.
+
+    The raw log remains the authority for discovering candidates. Once that
+    conservative single-pass scan has kept uploads/sends, file selections,
+    clipboard/capture actions, sensitive-source hits, foreground transitions,
+    and derivation candidates, later context lookups should not repeatedly
+    stringify unrelated opened/closed/modified filesystem noise.
+    """
+
+    if len(candidate_events) == len(logs):
+        return logs
+
+    candidate_ids = {id(event) for event in candidate_events}
+    return [event for event in logs if id(event) in candidate_ids or _is_compact_context_event(event)]
+
+
+def _is_compact_context_event(event: LogEvent) -> bool:
+    if event.video_time_ms < 0:
+        return False
+    return _is_foreground_transition(event)
 
 
 def _add_sink_followup_anchors(windows: list[AnalysisWindow], logs: list[LogEvent]) -> list[AnalysisWindow]:
@@ -393,6 +419,7 @@ def build_analysis_window_for_event(
     active_apps: tuple[str, ...] | None = None,
     active_app_index: "_ActiveAppIndex | None" = None,
     time_index: "_LogTimeIndex | None" = None,
+    sensitive_context_index: "_SensitiveContextIndex | None" = None,
     normalized_sensitive: bool = False,
 ) -> AnalysisWindow | None:
     """Convert one suspicious log event into a video analysis window."""
@@ -403,12 +430,19 @@ def build_analysis_window_for_event(
     combined_text = f"{text} {context_text}".strip()
     file_text = normalize_path(event.file_path).lower()
     sensitive_hit = _matches_sensitive_source(file_text, combined_text, sensitive) or looks_sensitive(file_text)
+    open_context_hit = (
+        sensitive_context_index.has_open_context(event.video_time_ms)
+        if sensitive_context_index is not None
+        else _has_sensitive_open_context(logs, event.video_time_ms, sensitive, time_index=time_index)
+    )
+    recent_signal_hit = (
+        sensitive_context_index.has_recent_signal(event.video_time_ms)
+        if sensitive_context_index is not None
+        else _has_recent_sensitive_signal(logs, event.video_time_ms, sensitive, time_index=time_index)
+    )
     sensitive_context_hit = sensitive_hit or (
         (_is_clipboard_or_capture_event(event, combined_text) or _is_derivation_candidate_event(event, combined_text))
-        and (
-            _has_sensitive_open_context(logs, event.video_time_ms, sensitive, time_index=time_index)
-            or _has_recent_sensitive_signal(logs, event.video_time_ms, sensitive, time_index=time_index)
-        )
+        and (open_context_hit or recent_signal_hit)
     )
     transfer_hit = contains_any(combined_text, TRANSFER_TOKENS)
     sink_hit = contains_any(combined_text, SINK_TOKENS) or _is_cloud_drive_context(combined_text)
@@ -480,6 +514,39 @@ class _ActiveAppIndex:
 
 
 @dataclass(frozen=True)
+class _ForegroundRangeIndex:
+    ranges: tuple[tuple[int, int], ...]
+
+    @classmethod
+    def from_logs(cls, logs: list[LogEvent]) -> "_ForegroundRangeIndex":
+        transitions = sorted(
+            (event for event in logs if event.video_time_ms >= 0 and _is_foreground_transition(event)),
+            key=lambda event: event.video_time_ms,
+        )
+        ranges: list[tuple[int, int]] = []
+        active_start: int | None = None
+        for event in transitions:
+            if active_start is not None:
+                ranges.append((active_start, event.video_time_ms - 1))
+                active_start = None
+            if _is_visible_foreground_app_event(event):
+                active_start = event.video_time_ms
+        if active_start is not None:
+            session_end_ms = max((event.video_time_ms for event in logs if event.video_time_ms >= 0), default=active_start)
+            ranges.append((active_start, session_end_ms))
+        return cls(ranges=tuple(ranges))
+
+    def between(self, start_ms: int, end_ms: int) -> tuple[tuple[int, int], ...]:
+        if end_ms < start_ms:
+            return ()
+        return tuple(
+            (max(range_start, start_ms), min(range_end, end_ms))
+            for range_start, range_end in self.ranges
+            if range_end >= start_ms and range_start <= end_ms
+        )
+
+
+@dataclass(frozen=True)
 class _LogTimeIndex:
     times: tuple[int, ...]
     events: tuple[LogEvent, ...]
@@ -495,10 +562,103 @@ class _LogTimeIndex:
         return self.events[start:end]
 
 
+@dataclass(frozen=True)
+class _SensitiveContextIndex:
+    interval_starts: tuple[int, ...]
+    interval_ends: tuple[int, ...]
+    signal_times: tuple[int, ...]
+
+    @classmethod
+    def from_logs(
+        cls,
+        candidate_events: list[LogEvent],
+        all_logs: list[LogEvent],
+        sensitive_files: tuple[str, ...],
+    ) -> "_SensitiveContextIndex":
+        ordered = sorted(
+            (event for event in candidate_events if event.video_time_ms >= 0),
+            key=lambda event: event.video_time_ms,
+        )
+        session_end_ms = max((event.video_time_ms for event in all_logs if event.video_time_ms >= 0), default=-1)
+        close_times: dict[str, list[int]] = {}
+        for event in ordered:
+            if not _is_sensitive_close_event(event) or not event.file_path:
+                continue
+            for key in _file_match_keys(event.file_path):
+                close_times.setdefault(key, []).append(event.video_time_ms)
+
+        intervals: list[tuple[int, int]] = []
+        signal_times: list[int] = []
+        for event in ordered:
+            file_text = normalize_path(event.file_path).lower()
+            if _matched_sensitive_files(event, sensitive_files) or looks_sensitive(file_text):
+                signal_times.append(event.video_time_ms)
+            if not _is_open_context_event(event) or not _event_has_sensitive_context_signal(event, sensitive_files):
+                continue
+            explicit_end = parse_timestamp_ms(event.raw.get("end_time"))
+            if explicit_end and event.timestamp_ms:
+                end_ms = event.video_time_ms + max(explicit_end - event.timestamp_ms, 0)
+                intervals.append((event.video_time_ms, end_ms))
+                continue
+            if event.event_type.lower() not in {"file_open", "opened", "open", "read"} or not event.file_path:
+                continue
+            next_close = _next_close_ms(close_times, event.file_path, event.video_time_ms)
+            intervals.append((event.video_time_ms, next_close if next_close is not None else session_end_ms))
+
+        merged = _merge_time_intervals(intervals)
+        return cls(
+            interval_starts=tuple(start for start, _ in merged),
+            interval_ends=tuple(end for _, end in merged),
+            signal_times=tuple(sorted(set(signal_times))),
+        )
+
+    def has_open_context(self, center_ms: int) -> bool:
+        if center_ms < 0 or not self.interval_starts:
+            return False
+        index = bisect_right(self.interval_starts, center_ms) - 1
+        return index >= 0 and center_ms <= self.interval_ends[index]
+
+    def has_recent_signal(self, center_ms: int, radius_ms: int = 30_000) -> bool:
+        if center_ms < 0 or not self.signal_times:
+            return False
+        index = bisect_left(self.signal_times, max(0, center_ms - radius_ms))
+        return index < len(self.signal_times) and self.signal_times[index] <= center_ms
+
+
+def _file_match_keys(file_path: str) -> tuple[str, ...]:
+    normalized = normalize_path(file_path).lower()
+    if not normalized:
+        return ()
+    filename = normalized.rsplit("/", 1)[-1]
+    return tuple(dict.fromkeys((normalized, filename)))
+
+
+def _next_close_ms(close_times: dict[str, list[int]], file_path: str, after_ms: int) -> int | None:
+    matches: list[int] = []
+    for key in _file_match_keys(file_path):
+        times = close_times.get(key, [])
+        index = bisect_right(times, after_ms)
+        if index < len(times):
+            matches.append(times[index])
+    return min(matches) if matches else None
+
+
+def _merge_time_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    merged: list[list[int]] = []
+    for start_ms, end_ms in sorted(intervals):
+        if end_ms < start_ms:
+            continue
+        if not merged or start_ms > merged[-1][1] + 1:
+            merged.append([start_ms, end_ms])
+        else:
+            merged[-1][1] = max(merged[-1][1], end_ms)
+    return [(start_ms, end_ms) for start_ms, end_ms in merged]
+
+
 def _attach_active_apps_to_windows(
     windows: list[AnalysisWindow],
     app_index: _ActiveAppIndex,
-    logs: list[LogEvent],
+    foreground_range_index: _ForegroundRangeIndex,
 ) -> list[AnalysisWindow]:
     if not windows:
         return windows
@@ -515,7 +675,7 @@ def _attach_active_apps_to_windows(
             anchor_ms=window.anchor_ms,
             action_anchor_ms=window.action_anchor_ms,
             active_apps=app_index.between(window.start_ms, window.end_ms),
-            active_ranges=_foreground_app_ranges(logs, window.start_ms, window.end_ms),
+            active_ranges=foreground_range_index.between(window.start_ms, window.end_ms),
         )
         for window in windows
     ]
@@ -716,20 +876,40 @@ def _event_search_text(event: LogEvent) -> str:
 
 def _matched_sensitive_files(event: LogEvent, sensitive_files: tuple[str, ...]) -> tuple[str, ...]:
     file_text = normalize_path(event.file_path).lower()
-    direct_matches = tuple(
-        sensitive_file
-        for sensitive_file in sensitive_files
-        if _matches_sensitive_source(file_text, file_text, (sensitive_file,))
-    )
+    direct_matches = _sensitive_matches_for_path(file_text, sensitive_files)
     if direct_matches or not _event_may_embed_sensitive_path(event):
         return direct_matches
 
-    text = _event_search_text(event)
+    search_text = _normalize_sensitive_search_text(_event_search_text(event))
     return tuple(
         sensitive_file
-        for sensitive_file in sensitive_files
-        if _matches_sensitive_source(file_text, text, (sensitive_file,))
+        for sensitive_file, full_path, filename, stem in _sensitive_reference_index(sensitive_files)
+        if full_path in search_text
+        or (filename and filename in search_text)
+        or (len(stem) >= 4 and stem in search_text)
     )
+
+
+@lru_cache(maxsize=65_536)
+def _sensitive_matches_for_path(file_text: str, sensitive_files: tuple[str, ...]) -> tuple[str, ...]:
+    """Match repeated log paths once instead of once per event and phase."""
+
+    normalized = normalize_path(file_text).lower()
+    if not normalized:
+        return ()
+    matches: list[str] = []
+    for sensitive_file in sensitive_files:
+        if not sensitive_file:
+            continue
+        filename = sensitive_file.rsplit("/", 1)[-1]
+        stem = filename.rsplit(".", 1)[0]
+        if (
+            sensitive_file in normalized
+            or (filename and filename in normalized)
+            or (len(stem) >= 4 and stem in normalized)
+        ):
+            matches.append(sensitive_file)
+    return tuple(matches)
 
 
 def _may_need_analysis_window(event: LogEvent, sensitive_files: tuple[str, ...]) -> bool:
@@ -759,6 +939,8 @@ def _may_need_analysis_window(event: LogEvent, sensitive_files: tuple[str, ...])
         "upload",
         "uploaded",
         "upload_complete",
+        "send",
+        "sent",
         "print_to_pdf",
         "save_as",
         "export",
@@ -770,7 +952,7 @@ def _may_need_analysis_window(event: LogEvent, sensitive_files: tuple[str, ...])
 
     extra = event.raw.get("extra") if isinstance(event.raw.get("extra"), dict) else {}
     raw_operation = str(event.raw.get("operation") or extra.get("raw_operation") or "").lower()
-    return any(token in raw_operation for token in ("copy", "paste", "clipboard", "screenshot", "screen_capture", "export", "print", "save_as", "compress", "base64", "encode", "decode"))
+    return any(token in raw_operation for token in ("copy", "paste", "clipboard", "screenshot", "screen_capture", "export", "print", "save_as", "send", "compress", "base64", "encode", "decode"))
 
 
 def _event_may_embed_sensitive_path(event: LogEvent) -> bool:
@@ -950,20 +1132,44 @@ def _flatten_search_parts(value: Any) -> list[str]:
 
 
 def _matches_sensitive_source(file_text: str, text: str, sensitive_files: tuple[str, ...]) -> bool:
-    if any(item and item in file_text for item in sensitive_files):
+    normalized_file = normalize_path(file_text).lower()
+    references = _sensitive_reference_index(sensitive_files)
+    if any(full_path and full_path in normalized_file for _, full_path, _, _ in references):
         return True
 
-    search_text = normalize_path(text).lower()
-    for item in sensitive_files:
-        if not item:
-            continue
-        filename = item.rsplit("/", 1)[-1]
-        stem = filename.rsplit(".", 1)[0]
+    search_text = _normalize_sensitive_search_text(text)
+    for _, full_path, filename, stem in references:
+        if full_path and full_path in search_text:
+            return True
         if filename and filename in search_text:
             return True
         if len(stem) >= 4 and stem in search_text:
             return True
     return False
+
+
+@lru_cache(maxsize=128)
+def _sensitive_reference_index(
+    sensitive_files: tuple[str, ...],
+) -> tuple[tuple[str, str, str, str], ...]:
+    references: list[tuple[str, str, str, str]] = []
+    for sensitive_file in sensitive_files:
+        normalized = normalize_path(sensitive_file).lower()
+        if not normalized:
+            continue
+        filename = normalized.rsplit("/", 1)[-1]
+        stem = filename.rsplit(".", 1)[0]
+        references.append((sensitive_file, normalized, filename, stem))
+    return tuple(references)
+
+
+def _normalize_sensitive_search_text(text: str) -> str:
+    """Normalize event prose without treating a large JSON blob as a path."""
+
+    value = str(text or "")
+    if len(value) <= 2_048:
+        return normalize_path(value).lower()
+    return value.lower().replace("\\", "/")
 
 
 def _window_priority(
@@ -990,8 +1196,8 @@ def _window_priority(
     if event_type in {"app_switch", "window_changed", "window_closed"} and not _is_visible_foreground_app_event(event):
         return "none"
 
-    strong_event_types = {"file_selected", "file_upload", "upload", "uploaded", "upload_complete"}
-    strong_raw_ops = {"file_selected", "file_upload", "upload", "send_click"}
+    strong_event_types = {"file_selected", "file_upload", "upload", "uploaded", "upload_complete", "send", "sent"}
+    strong_raw_ops = {"file_selected", "file_upload", "upload", "send", "send_click"}
     if event_type in strong_event_types or raw_operation in strong_raw_ops:
         return "strong"
     if _has_structured_file_upload_signal(event):
@@ -1490,9 +1696,9 @@ def _window_action_label(event: LogEvent, text: str, sensitive_context_hit: bool
     raw_operation = str(event.raw.get("operation") or extra.get("raw_operation") or "").lower()
     process_name = (event.process_name or "").lower()
     direct_text = _event_search_text(event)
-    if event_type in {"file_selected", "file_upload", "upload", "uploaded", "upload_complete"}:
+    if event_type in {"file_selected", "file_upload", "upload", "uploaded", "upload_complete", "send", "sent"}:
         return "upload"
-    if raw_operation in {"file_selected", "file_upload", "upload", "send_click"}:
+    if raw_operation in {"file_selected", "file_upload", "upload", "send", "send_click"}:
         return "upload"
     if _has_structured_file_upload_signal(event):
         return "upload"

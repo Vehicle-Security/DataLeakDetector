@@ -47,7 +47,7 @@ from data_leak_detector.frame_analyzer.frames import (
 )
 from data_leak_detector.frame_analyzer.parser import ParsedVisionEvent, parse_vlm_response, parse_vlm_response_detailed, vision_events_to_observations
 from data_leak_detector.frame_analyzer.vlm_client import VlmRequestFrame, VlmResponse, _prompt, build_vlm_frame_grids, choose_keyframes_for_vlm, prepare_vlm_frame_images
-from data_leak_detector.log_mining import build_analysis_windows, mine_analysis_windows
+from data_leak_detector.log_mining import _compact_event_view, _may_need_analysis_window, build_analysis_windows, mine_analysis_windows
 from data_leak_detector.neo4j.importer import fingerprint_records, records_to_graph_events
 from data_leak_detector.groundtruth import evaluate_groundtruth
 from data_leak_detector.io import normalize_logs, normalize_path, same_file
@@ -804,6 +804,61 @@ def test_default_log_miner_keeps_in_memory_window_contract() -> None:
     assert result.windows[0].priority == "strong"
     assert result.windows[0].start_ms == 55_000
     assert result.metadata["neo4j_enabled"] is False
+
+
+def test_compact_event_view_keeps_action_evidence_without_filesystem_noise() -> None:
+    sensitive = ("c:/users/alice/documents/secret.docx",)
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "opened",
+            "file_path": "C:/Users/alice/Documents/secret.docx",
+            "extra": {"relative_timestamp": 0.0},
+        },
+        *[
+            {
+                "timestamp": f"2026-01-01T00:00:{index % 60:02d}",
+                "event_type": "modified" if index % 2 else "opened",
+                "file_path": f"C:/Users/alice/AppData/Local/Temp/noise-{index}.tmp",
+                "extra": {"relative_timestamp": 1.0 + index / 1000},
+            }
+            for index in range(200)
+        ],
+        {
+            "timestamp": "2026-01-01T00:00:03",
+            "event_type": "file_selected",
+            "file_path": "C:/Users/alice/Documents/secret.docx",
+            "process_info": {"process_name": "chrome.exe"},
+            "window_info": {"window_title": "Open"},
+            "extra": {"relative_timestamp": 3.0, "raw_operation": "file_selected"},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:04",
+            "event_type": "clipboard_text",
+            "content_preview": "secret excerpt",
+            "extra": {"relative_timestamp": 4.0},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:05",
+            "event_type": "send",
+            "process_info": {"process_name": "wechat.exe"},
+            "window_info": {"window_title": "Send file"},
+            "extra": {"relative_timestamp": 5.0},
+        },
+    ]
+    logs = normalize_logs(records)
+    candidates = [event for event in logs if _may_need_analysis_window(event, sensitive)]
+
+    compact = _compact_event_view(logs, candidates)
+    compact_types = [event.event_type for event in compact]
+    compact_paths = {normalize_path(event.file_path).lower() for event in compact}
+
+    assert len(compact) < len(logs)
+    assert "file_selected" in compact_types
+    assert "clipboard_text" in compact_types
+    assert "send" in compact_types
+    assert "c:/users/alice/documents/secret.docx" in compact_paths
+    assert not any("noise-" in path for path in compact_paths)
 
 
 def test_neo4j_log_miner_graph_event_payload_is_case_scoped() -> None:
