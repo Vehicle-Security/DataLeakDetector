@@ -230,12 +230,11 @@ def _focus_actionable_keyframes(
         for window in windows
     )
     if not has_reportable_action:
-        return _focus_unresolved_suspicious_context(actionable_input, windows)
+        return _focus_unresolved_suspicious_context(actionable_input, candidates, windows)
 
     keyframes = _drop_unactionable_strong_frames(keyframes, windows)
     keyframes = _focus_strong_action_anchors(keyframes, windows)
     keyframes = _drop_unactionable_activity_frames(keyframes, windows)
-    keyframes = _cap_strong_action_frames(keyframes, windows)
     keyframes = _compact_activity_frames_covered_by_strong_actions(keyframes, windows)
     keyframes = _focus_file_dialog_flows(keyframes, candidates, windows)
     if keyframes:
@@ -246,36 +245,69 @@ def _focus_actionable_keyframes(
 
 def _focus_unresolved_suspicious_context(
     keyframes: list[KeyFrame],
+    candidates: list[_FrameCandidate],
     windows: list[AnalysisWindow],
 ) -> list[KeyFrame]:
     """Retain sparse VLM context when logs identify risk but no exact action."""
 
-    strong_frames = [
-        frame
-        for frame in keyframes
-        if _is_strong_window_id(frame.window_id, windows)
-    ]
-    if not any(window.priority == "activity" for window in windows):
-        return []
-    activity_frames = [
-        frame
-        for frame in keyframes
-        if _is_activity_window_id(frame.window_id, windows)
-        and any(
-            _windows_overlap(windows[_window_index(frame.window_id)], window)
-            for window in windows
-            if window.priority == "strong"
+    has_activity = any(window.priority == "activity" for window in windows)
+    risk_indices = [
+        index
+        for index, window in enumerate(windows)
+        if (
+            window.priority == "strong"
+            and (has_activity or _is_reportable_action_window(window))
+        )
+        or (
+            window.priority in {"medium", "weak"}
+            and (_is_reportable_action_window(window) or _is_tim_embedded_messaging_window(window))
         )
     ]
-    selected = (
-        [
-            *_pick_temporal_frames(strong_frames, limit=4),
-            *_pick_temporal_frames(activity_frames, limit=2),
-        ]
-        if strong_frames
-        else _pick_temporal_frames(activity_frames, limit=4)
-    )
-    selected_ids = {frame.frame_id for frame in selected}
+    if not risk_indices:
+        return []
+    risk_windows = [windows[index] for index in risk_indices]
+    related_indices = {
+        *risk_indices,
+        *(
+            index
+            for index, window in enumerate(windows)
+            if window.priority == "activity"
+            and any(_windows_overlap(window, risk) for risk in risk_windows)
+        ),
+    }
+    related_ids = {f"window_{index}" for index in related_indices}
+    related_frames = [frame for frame in keyframes if frame.window_id in related_ids]
+    if not related_frames:
+        return []
+
+    try:
+        import cv2
+    except ImportError:
+        return sorted(related_frames, key=lambda frame: frame.timestamp_ms)
+
+    candidate_by_id = {candidate.frame.frame_id: candidate for candidate in candidates}
+    selected_ids: set[str] = set()
+    for index in risk_indices:
+        window = windows[index]
+        if _is_tim_embedded_messaging_window(window):
+            selected_ids.update(
+                frame.frame_id
+                for frame in _tim_embedded_evidence(related_frames, f"window_{index}")
+            )
+            continue
+        if not window.active_ranges:
+            selected_ids.update(frame.frame_id for frame in related_frames)
+            continue
+        for active_range in window.active_ranges:
+            phase_frames = [
+                frame
+                for frame in related_frames
+                if active_range[0] <= frame.timestamp_ms <= active_range[1]
+            ]
+            selected_ids.update(
+                frame.frame_id
+                for frame in _visual_phase_representatives(cv2, phase_frames, candidate_by_id)
+            )
     return sorted(
         (frame for frame in keyframes if frame.frame_id in selected_ids),
         key=lambda frame: frame.timestamp_ms,
@@ -401,7 +433,11 @@ def _drop_unactionable_activity_frames(
         frame
         for frame in keyframes
         if not _is_activity_window_id(frame.window_id, windows)
-        or any(_windows_overlap(windows[_window_index(frame.window_id)], action) for action in actionable_windows)
+        or any(
+            _windows_overlap(windows[_window_index(frame.window_id)], action)
+            and "sink_followup" not in action.reason.lower()
+            for action in actionable_windows
+        )
     ]
 
 
@@ -463,6 +499,30 @@ def _is_reportable_action_window(window: AnalysisWindow) -> bool:
         "removable",
     )
     return any(marker in reason for marker in action_markers)
+
+
+def _is_tim_embedded_messaging_window(window: AnalysisWindow) -> bool:
+    """TIM file sends inside Androws may expose only foreground-switch telemetry."""
+
+    context = " ".join((window.reason, *window.active_apps)).lower()
+    return "androws" in context or "tencent,tim" in context
+
+
+def _tim_embedded_evidence(frames: list[KeyFrame], window_id: str) -> list[KeyFrame]:
+    """Keep TIM's final embedded action and result, not its long emulator setup flow."""
+
+    window_frames = sorted(
+        (frame for frame in frames if frame.window_id == window_id),
+        key=lambda frame: frame.timestamp_ms,
+    )
+    if not window_frames:
+        return []
+    activity_gaps = [frame for frame in window_frames if "activity_gap" in frame.reason.lower()]
+    if not activity_gaps:
+        return [window_frames[-1]]
+    action = activity_gaps[-1]
+    following = [frame for frame in window_frames if frame.timestamp_ms > action.timestamp_ms]
+    return [action, following[0]] if following else [action]
 
 
 def _is_activity_window_id(window_id: str | None, windows: list[AnalysisWindow]) -> bool:

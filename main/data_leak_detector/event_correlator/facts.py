@@ -42,7 +42,7 @@ def build_datalog_facts(
             )
 
         open_key = (proc, event.original_file)
-        if open_key not in opened:
+        if event.original_file and open_key not in opened:
             facts.append(DatalogFact("OpenFile", (f"{event.event_id}:open", proc, event.original_file, 0)))
             opened.add(open_key)
 

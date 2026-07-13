@@ -173,11 +173,15 @@ FrameObservation(
 
 ### 输入
 
-来自 case metadata / 配置 / groundtruth 评估文件的敏感源：
+检测运行时只使用 `spec/config/sensitive_files..json` 中维护的原始敏感源：
 
 ```text
 C:/Users/46521/Desktop/数据采集测试/公司合作合同.docx
 ```
+
+日志用于核实和补充这个配置：当日志能明确证明某个完整路径是原始敏感源时，
+将它人工写入 JSON 后再参与检测。groundtruth 只核对行为，不提供敏感源。
+复制、重命名、压缩、转换、截图及内容摘录等派生文件只进入谱系，不写入该 JSON。
 
 ### 机械规则
 

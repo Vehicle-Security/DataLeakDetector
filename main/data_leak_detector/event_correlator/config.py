@@ -9,12 +9,12 @@ from dataclasses import dataclass
 class EventCorrelatorConfig:
     """Small knobs for evidence binding.
 
-    Initial sensitive sources come from the sensitive-files configuration.
-    Derived files are inferred through lineage and reasoning, not inserted into
-    the initial source set.
+    Initial sensitive sources come from the sensitive-files configuration,
+    which may be maintained from verified log evidence. Groundtruth never
+    supplies sources. Derived files are inferred through lineage and reasoning,
+    not inserted into the initial source set.
     """
 
     upload_confidence: float = 0.86
     transfer_confidence: float = 0.72
-    infer_sensitive_from_logs: bool = False
     non_vlm_enabled: bool = True

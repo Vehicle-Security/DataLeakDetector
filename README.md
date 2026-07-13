@@ -16,7 +16,7 @@ spec/data 样本目录
   -> JSON 报告
 ```
 
-初始敏感文件只来自 `spec/config/sensitive_files..json`（可通过 `--sensitive-files-config` 替换）。
+检测运行时的初始敏感文件只来自 `spec/config/sensitive_files..json`（可通过 `--sensitive-files-config` 替换）。日志可用于人工确认新的原始敏感源；确认后直接维护进该 JSON。groundtruth 不提供敏感源。
 敏感文件被打开、转换、复制、上传后产生的文件都视为衍生文件，由血缘分析和推理
 得出，不写入初始敏感文件表。
 日志会从初始源递归构建有证据的派生文件闭包，并将该闭包用于日志挖掘和 VLM 上下文；
@@ -127,7 +127,7 @@ DLD_SINK_TOKENS=slack,github issue
 `groundtruth.json` 里的操作文本。以后如果数据集把“泄密”“正常”“未知风险”的
 标注方式换掉，优先改这个文件。
 
-`spec/config/sensitive_files..json` 是唯一的初始敏感源配置。此文件仅列出原始敏感文件，
+`spec/config/sensitive_files..json` 是运行时唯一的初始敏感源配置。此文件仅列出由日志确认的原始敏感文件，
 不要加入转换、复制、截图或上传产生的派生文件；这些路径只在谱系和推理阶段关联。
 
 ```text

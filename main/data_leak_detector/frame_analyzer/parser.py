@@ -127,9 +127,10 @@ def _extract_json(text: str) -> Any:
 def _normalize_event(item: dict[str, Any]) -> ParsedVisionEvent:
     start_ms, end_ms = _parse_time_range(str(item.get("time_range") or item.get("time") or ""))
     timestamp_ms = _parse_timestamp_ms_field(item.get("timestamp_ms") or item.get("frame_timestamp_ms"))
-    if not start_ms and timestamp_ms:
+    if timestamp_ms:
         start_ms = timestamp_ms
-    if not end_ms and start_ms:
+        end_ms = start_ms
+    elif not end_ms and start_ms:
         end_ms = start_ms
     original = _first_text(item, "original_filename", "original_file", "file_name", "filename", "resource")
     modified = _first_text(item, "modified_filename", "modified_file", "target_file", "derived_file")

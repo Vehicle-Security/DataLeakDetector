@@ -50,14 +50,14 @@ from data_leak_detector.frame_analyzer.vlm_client import VlmRequestFrame, VlmRes
 from data_leak_detector.log_mining import build_analysis_windows, mine_analysis_windows
 from data_leak_detector.neo4j.importer import fingerprint_records, records_to_graph_events
 from data_leak_detector.groundtruth import evaluate_groundtruth
-from data_leak_detector.io import normalize_logs, same_file
-from run_e2e import _reusable_precompute_baseline
+from data_leak_detector.io import normalize_logs, normalize_path, same_file
+from run_e2e import _release_direct_defaults, _reusable_precompute_baseline
 from data_leak_detector.io import load_json_records
 from data_leak_detector.leak_reasoner import DatalogEngine
 from data_leak_detector.policy import contains_any, load_policy_config
 from data_leak_detector.policy import classify_sink
 from data_leak_detector.sensitivity import load_sensitive_files_config
-from data_leak_detector.pipeline import _build_report_id
+from data_leak_detector.pipeline import _build_report_id, _load_pipeline_records
 
 
 def _records() -> list[dict]:
@@ -149,6 +149,49 @@ def test_reusable_precompute_baseline_excludes_nested_session_cache(tmp_path: Pa
     nested.write_text('{"precompute_mode":"direct_keyframes_only"}', encoding="utf-8")
 
     assert _reusable_precompute_baseline(parent) == direct
+
+
+def test_release_keeps_deterministic_log_evidence_enabled() -> None:
+    args = SimpleNamespace(
+        max_vlm_frames=None,
+        release_debug_artifacts=True,
+        neo4j_log_miner=False,
+    )
+
+    release_args = _release_direct_defaults({}, args)
+
+    assert release_args["vision_enabled"] is True
+    assert release_args["non_vlm_enabled"] is True
+
+
+def test_event_correlator_skips_file_system_noise_but_keeps_upload_action() -> None:
+    sensitive = "C:/Users/alice/Desktop/customer_contract.docx"
+    records = [
+        {
+            "timestamp": f"2026-01-01T00:00:{index:02d}",
+            "event_type": "opened" if index % 2 == 0 else "closed",
+            "file_path": sensitive,
+            "process_info": {"process_name": "chrome.exe"},
+        }
+        for index in range(20)
+    ]
+    records.append(
+        {
+            "timestamp": "2026-01-01T00:01:00",
+            "event_type": "file_upload",
+            "file_path": sensitive,
+            "process_info": {"process_name": "chrome.exe"},
+            "extra": {"category": "upload"},
+        }
+    )
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": [], "sensitive_files": [sensitive], "non_vlm_enabled": True}
+    )
+
+    assert len(bundle["correlated_events"]) == 1
+    assert len(bundle["upload_candidates"]) == 1
+    assert [item["relation"] for item in bundle["datalog_facts"]].count("LeakFile") == 1
 
 
 def test_same_file_ignores_whitespace_before_extension() -> None:
@@ -695,6 +738,46 @@ def test_workspace_file_selection_keeps_upload_followup_anchors() -> None:
     assert windows[0].end_ms == 30_644
 
 
+def test_sensitive_clipboard_to_ai_sink_keeps_post_switch_evidence_anchors() -> None:
+    sensitive = "C:/Users/alice/Desktop/strategy.docx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:10",
+                "event_type": "opened",
+                "file_path": sensitive,
+                "process_info": {"process_name": "WINWORD.EXE"},
+                "extra": {"relative_timestamp": 10.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:30",
+                "event_type": "clipboard_text",
+                "content_preview": "sensitive strategy excerpt",
+                "process_info": {"process_name": "WINWORD.EXE"},
+                "extra": {"source": "clipboard_monitor", "relative_timestamp": 30.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:39",
+                "event_type": "app_switch",
+                "app_name": "Doubao",
+                "process_info": {"process_name": "Doubao.exe"},
+                "window_info": {"window_title": "Doubao AI chat"},
+                "extra": {
+                    "source": "window_monitor",
+                    "category": "AI",
+                    "risk_level": "high",
+                    "relative_timestamp": 39.0,
+                },
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [sensitive], VisionConfig())
+    strong = next(window for window in windows if window.priority == "strong")
+
+    assert strong.action_anchor_ms == (44_000, 53_000)
+
+
 def test_default_log_miner_keeps_in_memory_window_contract() -> None:
     records = [
         {
@@ -1132,6 +1215,13 @@ def test_global_dedupe_keeps_latest_near_duplicate_activity_gap_frame() -> None:
     assert duplicates[0].frame.frame_id == "early"
 
 
+def test_normalize_path_repairs_gbk_text_decoded_as_latin1() -> None:
+    garbled_name = "公司合同".encode("gb18030").decode("latin1")
+
+    assert normalize_path(f"C:/Users/alice/Desktop/{garbled_name}.docx") == "C:/Users/alice/Desktop/公司合同.docx"
+    assert same_file(f"C:/Users/alice/Desktop/{garbled_name}.docx", "C:/Users/alice/Desktop/公司合同.docx")
+
+
 def test_file_dialog_flow_keeps_stable_result_after_selection() -> None:
     pytest.importorskip("cv2")
     np = pytest.importorskip("numpy")
@@ -1294,12 +1384,101 @@ def test_unresolved_sensitive_sink_context_keeps_sparse_visual_evidence() -> Non
     focused = _focus_actionable_keyframes(frames, [], windows)
 
     assert [frame.frame_id for frame in focused] == [
-        "sink_0",
-        "source_0",
-        "sink_2",
-        "sink_3",
-        "source_3",
-        "sink_5",
+        "sink_0", "source_0", "sink_1", "source_1", "sink_2",
+        "source_2", "sink_3", "source_3", "sink_4", "sink_5",
+    ]
+
+
+def test_unresolved_medium_clipboard_window_keeps_visual_risk_phases() -> None:
+    frames = [
+        KeyFrame("compose", 2_000, "compose.jpg", 0.2, "medium:anchor", window_id="window_0"),
+        KeyFrame("attached", 5_000, "attached.jpg", 0.4, "medium:activity_gap", window_id="window_0"),
+    ]
+    windows = [
+        AnalysisWindow(0, 8_000, "medium:clipboard_text:browser", priority="medium"),
+    ]
+
+    focused = _focus_actionable_keyframes(frames, [], windows)
+
+    assert [frame.frame_id for frame in focused] == ["compose", "attached"]
+
+
+def test_structured_recent_folder_upload_builds_reportable_strong_window() -> None:
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-03-10T09:27:04.380",
+                "event_type": "opened",
+                "file_path": "C:/Users/alice/Desktop/customer-data.zip",
+                "process_info": {"process_name": "chrome.exe"},
+                "window_info": {"window_title": "Blog upload - Chrome"},
+                "upload_detection": {
+                    "is_upload": True,
+                    "upload_type": "File Access",
+                    "original_file": "C:/Users/alice/Desktop/customer-data.zip",
+                },
+                "extra": {"source": "recent_folder_monitor", "relative_timestamp": 33.38},
+            }
+        ]
+    )
+
+    windows = build_analysis_windows(logs, ["C:/unrelated/secret.docx"], VisionConfig())
+
+    assert len(windows) == 1
+    assert windows[0].priority == "strong"
+    assert windows[0].action_anchor_ms == (33_380,)
+    assert windows[0].reason.endswith(":upload")
+
+
+def test_unresolved_tim_window_keeps_embedded_send_phases() -> None:
+    frames = [
+        KeyFrame("before", 5_000, "before.jpg", 0.2, "medium:anchor", window_id="window_0"),
+        KeyFrame("action", 12_000, "action.jpg", 0.4, "medium:activity_gap", window_id="window_0"),
+        KeyFrame("sent", 15_000, "sent.jpg", 0.4, "medium:anchor", window_id="window_0"),
+    ]
+    windows = [
+        AnalysisWindow(
+            0,
+            20_000,
+            "medium:app_switch:window_monitor",
+            priority="medium",
+            active_apps=("Androws",),
+        ),
+    ]
+
+    focused = _focus_actionable_keyframes(frames, [], windows)
+
+    assert [frame.frame_id for frame in focused] == ["action", "sent"]
+
+
+def test_pipeline_records_add_only_tim_upload_keyevents(tmp_path: Path) -> None:
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    logs_file = logs_dir / "logs.json"
+    keyevents_file = logs_dir / "keyevents.json"
+    logs_file.write_text(json.dumps([{"timestamp": "t0", "event_type": "app_switch"}]), encoding="utf-8")
+    keyevents_file.write_text(
+        json.dumps(
+            [
+                {
+                    "timestamp": "t1",
+                    "event_type": "file_upload",
+                    "file_path": "C:/secret.docx",
+                    "app_name": "TIM",
+                    "process_info": {"process_name": "Androws.exe"},
+                },
+                {"timestamp": "t2", "event_type": "file_upload", "app_name": "Chrome"},
+                {"timestamp": "t3", "event_type": "app_switch", "app_name": "TIM"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    records = _load_pipeline_records(logs_file)
+
+    assert [(item["timestamp"], item["event_type"]) for item in records] == [
+        ("t0", "app_switch"),
+        ("t1", "file_upload"),
     ]
 
 
@@ -1763,8 +1942,9 @@ def test_event_correlator_resolves_extensionless_upload_selection() -> None:
 
     assert bundle["upload_candidates"]
     assert bundle["upload_candidates"][0]["risk_level"] == "selected_or_attached"
-    assert any(fact["relation"] == "SuspiciousBehavior" for fact in bundle["datalog_facts"])
-    assert not engine.query_leak()
+    leaks = engine.query_leak()
+    assert leaks
+    assert leaks[0].leaked_file == original
 
 
 def test_event_correlator_confirms_file_upload_events() -> None:
@@ -1951,6 +2131,31 @@ def test_visual_upload_candidate_uses_sensitive_file_when_context_resource_diffe
     assert bundle["upload_candidates"][0]["current_file"] == original
 
 
+def test_unbound_visual_direct_leak_becomes_suspicious_behavior() -> None:
+    observations = [
+        {
+            "observation_id": "vlm_0",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Outlook",
+            "operation_type": "external_sink_interaction",
+            "resource": "unknown",
+            "related_resources": [],
+            "description": "direct_leak: email_send. Send confirmation is visible.",
+            "confidence": 0.9,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": []}
+    )
+
+    assert bundle["upload_candidates"] == []
+    suspicious = [fact for fact in bundle["datalog_facts"] if fact["relation"] == "SuspiciousBehavior"]
+    assert len(suspicious) == 1
+
+
 def test_vlm_removable_media_event_becomes_external_sink() -> None:
     response = json.dumps(
         {
@@ -2126,6 +2331,30 @@ def test_vlm_parser_preserves_evidence_frames_and_relative_timestamp() -> None:
     assert result.events[0].evidence_frame_ids == ("frame_0_0", "frame_0_1")
     assert result.events[0].sink_type == "ai_chat"
     assert result.dropped_events[0]["reason"] == "not_relevant"
+
+
+def test_vlm_parser_prefers_frame_timestamp_over_absolute_time_range() -> None:
+    result = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "evidence_frame_ids": ["frame_0_0"],
+                        "timestamp_ms": 16_143,
+                        "time_range": "2026-04-20 20:11:16 - 2026-04-20 20:11:26",
+                        "app_name": "ChatGPT",
+                        "behavior_category": "direct_leak",
+                        "operation_type": "file_upload",
+                        "sink_type": "ai_chat",
+                        "description": "A file is attached to an AI prompt.",
+                    }
+                ]
+            }
+        )
+    )
+
+    assert result.events[0].start_ms == 16_143
+    assert result.events[0].end_ms == 16_143
 
 
 def test_vlm_content_transform_observation_is_not_external_sink() -> None:
@@ -2631,6 +2860,18 @@ def test_direct_keyframe_vlm_selection_retains_activity_gap_evidence() -> None:
     assert [item.frame.frame_id for item in selected] == ["anchor_start", "activity_gap"]
 
 
+def test_direct_keyframe_vlm_selection_keeps_terminal_result_after_activity_gap() -> None:
+    frames = [
+        KeyFrame("action", 10_000, "action.jpg", 0.9, "strong:activity_gap", window_id="window_0"),
+        KeyFrame("dialog", 11_000, "dialog.jpg", 0.2, "strong:anchor", window_id="window_0"),
+        KeyFrame("attached", 20_000, "attached.jpg", 0.2, "strong:anchor", window_id="window_0"),
+    ]
+
+    selected = choose_keyframes_for_vlm(frames, max_frames=8)
+
+    assert [item.frame.frame_id for item in selected] == ["action", "attached"]
+
+
 def test_direct_keyframe_vlm_selection_compacts_activity_gap_window() -> None:
     frames = [
         KeyFrame("early_gap", 3_000, "early.jpg", 0.9, "medium:activity_gap", window_id="window_0"),
@@ -2641,7 +2882,7 @@ def test_direct_keyframe_vlm_selection_compacts_activity_gap_window() -> None:
 
     selected = choose_keyframes_for_vlm(frames, max_frames=12)
 
-    assert [item.frame.frame_id for item in selected] == ["early_gap", "context", "action"]
+    assert [item.frame.frame_id for item in selected] == ["early_gap", "context", "action", "post_action"]
 
 
 def test_direct_keyframe_negative_budget_sends_all_keyframes() -> None:

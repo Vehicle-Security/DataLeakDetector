@@ -237,7 +237,7 @@ def load_policy_config(path: str | Path | None = None) -> PolicyConfig:
     )
 
 
-CONFIRMED_RISK_LEVELS = {"content_exposed", "completed"}
+CONFIRMED_RISK_LEVELS = {"selected_or_attached", "in_progress", "content_exposed", "completed"}
 RISK_LEVELS = {"selected_or_attached", "in_progress", "content_exposed", "completed"}
 
 

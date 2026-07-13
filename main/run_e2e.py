@@ -154,7 +154,7 @@ def _release_direct_defaults(common_args: dict, args: argparse.Namespace) -> dic
     release_args = dict(common_args)
     release_args["vision_enabled"] = True
     release_args["max_vlm_frames"] = -1 if args.max_vlm_frames is None else args.max_vlm_frames
-    release_args["non_vlm_enabled"] = False
+    release_args["non_vlm_enabled"] = True
     release_args["vision_debug_artifacts"] = bool(args.release_debug_artifacts)
     release_args["inherit_ancestor_groundtruth"] = True
     if not args.neo4j_log_miner:
@@ -426,7 +426,7 @@ def _run_release(
             name: {
                 "precomputed_baseline_file": path,
                 "detail_output_dir": str(Path(path).parent),
-                "non_vlm_enabled": False,
+                "non_vlm_enabled": True,
                 "vision_debug_artifacts": bool(common_args.get("vision_debug_artifacts")),
             }
             for name, path in vision_precompute.items()

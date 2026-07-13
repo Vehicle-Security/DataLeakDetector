@@ -47,31 +47,39 @@ function Invoke-PythonLogged {
     [string]$LogPath
   )
 
+  $stdoutPath = Resolve-LogPath $LogPath
+  $stderrPath = Resolve-LogPath "$LogPath.stderr.log"
   $psi = New-Object System.Diagnostics.ProcessStartInfo
   $psi.FileName = "python"
+  $psi.WorkingDirectory = (Get-Location).Path
   $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
   $psi.RedirectStandardOutput = $true
   $psi.RedirectStandardError = $true
-  $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-  $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
   $psi.Arguments = Join-CommandArguments $Arguments
 
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $psi
-  [void]$process.Start()
-  $stdout = $process.StandardOutput.ReadToEnd()
-  $stderr = $process.StandardError.ReadToEnd()
-  $process.WaitForExit()
-
-  $logText = $stdout
-  if ($stderr) {
-    if ($logText -and -not $logText.EndsWith("`n")) {
-      $logText += "`n"
-    }
-    $logText += $stderr
+  $stdoutStream = [System.IO.File]::Open($stdoutPath, "Create", "Write", "ReadWrite")
+  $stderrStream = [System.IO.File]::Open($stderrPath, "Create", "Write", "ReadWrite")
+  try {
+    [void]$process.Start()
+    $stdoutTask = $process.StandardOutput.BaseStream.CopyToAsync($stdoutStream)
+    $stderrTask = $process.StandardError.BaseStream.CopyToAsync($stderrStream)
+    $process.WaitForExit()
+    [void]$stdoutTask.GetAwaiter().GetResult()
+    [void]$stderrTask.GetAwaiter().GetResult()
+    $script:LastPythonExitCode = $process.ExitCode
+  } finally {
+    $stdoutStream.Dispose()
+    $stderrStream.Dispose()
+    $process.Dispose()
   }
-  [System.IO.File]::WriteAllText((Resolve-LogPath $LogPath), $logText, [System.Text.UTF8Encoding]::new($false))
-  $script:LastPythonExitCode = $process.ExitCode
+
+  $stderr = [System.IO.File]::ReadAllText($stderrPath, [System.Text.Encoding]::UTF8)
+  if ($stderr) {
+    [System.IO.File]::AppendAllText($stdoutPath, $stderr, [System.Text.UTF8Encoding]::new($false))
+  }
 }
 
 function Start-PythonLogged {
@@ -123,17 +131,36 @@ if ($VlmGridLayout -notmatch '^\d+x\d+$') {
 
 $env:DLD_VLM_RETRY_ATTEMPTS = "$VlmRetryAttempts"
 $env:DLD_VLM_RETRY_BACKOFF_SECONDS = "$VlmRetryBackoffSeconds"
-$env:DLD_VLM_USE_CODING_PLAN = if ($UseCodingPlan) { "1" } else { "0" }
+if ($UseCodingPlan) {
+  $env:DLD_VLM_USE_CODING_PLAN = "1"
+}
 $env:PYTHONUNBUFFERED = "1"
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
 
 $precomputeLog = Join-Path $RunDir "precompute.log"
 $vlmLogPrefix = Join-Path $RunDir "vlm"
+$vlmPreflightLog = Join-Path $RunDir "vlm_preflight.log"
 
 Write-Host "Run directory: $RunDir"
 Write-Host "Case root: $CaseRoot"
 Write-Host "VLM grid layout: $VlmGridLayout"
-Write-Host "Coding plan enabled: $($UseCodingPlan.IsPresent)"
+Write-Host "Coding endpoint override: $(if ($UseCodingPlan) { 'enabled' } else { 'use .env/default' })"
+
+$vlmPreflightCode = @"
+from data_leak_detector.frame_analyzer.config import VisionConfig
+c = VisionConfig.from_env()
+endpoints = c.effective_vlm_endpoints()
+if c.vlm_dry_run:
+    raise SystemExit('VLM preflight failed: DLD_VLM_DRY_RUN is enabled')
+if not endpoints:
+    raise SystemExit('VLM preflight failed: no enabled endpoint/API key pair')
+print(f'VLM preflight passed: model={c.vlm_model} endpoints={len(endpoints)} workers={c.vlm_workers}')
+"@
+Write-Host "Checking VLM configuration before precompute..."
+Invoke-PythonLogged -Arguments @("-c", $vlmPreflightCode) -LogPath $vlmPreflightLog
+if ($script:LastPythonExitCode -ne 0) {
+  throw "VLM preflight failed. See $vlmPreflightLog"
+}
 
 $precomputeArgs = @(
   "main/run_e2e.py",

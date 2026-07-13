@@ -50,7 +50,7 @@ def run_pipeline(
     baseline = _load_precomputed_baseline(precomputed_baseline_file)
     if baseline and vision_precompute_file is None:
         vision_precompute_file = str(baseline.get("vision_precompute_file") or "") or None
-    records = list(baseline.get("records", [])) if baseline else load_json_records(log_path)
+    records = list(baseline.get("records", [])) if baseline else _load_pipeline_records(log_path)
     logs = [] if baseline else normalize_logs(records, session_start_ms=session_start_ms)
     initial_sensitive_files = _dedupe_paths(list(load_sensitive_files_config(sensitive_files_config)))
     analysis_sensitive_files, derived_sensitive_context = _analysis_sensitive_context(
@@ -79,7 +79,11 @@ def run_pipeline(
         neo4j_log_miner=effective_neo4j_log_miner,
         reuse_import=reuse_neo4j_import,
     ) if not baseline else None
-    vlm_sensitive_files = _vlm_file_context(logs, analysis_sensitive_files)
+    context_logs = logs or normalize_logs(
+        [item for item in records if isinstance(item, dict)],
+        session_start_ms=session_start_ms,
+    )
+    vlm_sensitive_files = _vlm_file_context(context_logs, analysis_sensitive_files)
 
     frame_bundle = analyze_video_behavior(
         video_path or "",
@@ -458,6 +462,55 @@ def _build_report_id(log_path: Path, record_count: int, case_name: str | None) -
     if not prefix:
         prefix = f"dld_{_slugify(log_path.stem)}"
     return f"{prefix}_{_slugify(log_path.stem)}_{record_count}"
+
+
+def _load_pipeline_records(log_path: Path) -> list[dict[str, Any]]:
+    """Include TIM's explicit upload signal recorded outside the noisy main log."""
+
+    records = load_json_records(log_path)
+    if log_path.name.lower() != "logs.json":
+        return records
+    keyevents_path = log_path.with_name("keyevents.json")
+    if not keyevents_path.exists():
+        return records
+
+    known = {_record_identity(item) for item in records}
+    for item in load_json_records(keyevents_path):
+        if not _is_tim_upload_keyevent(item):
+            continue
+        identity = _record_identity(item)
+        if identity in known:
+            continue
+        records.append(item)
+        known.add(identity)
+    return records
+
+
+def _is_tim_upload_keyevent(record: dict[str, Any]) -> bool:
+    event_type = str(record.get("event_type") or record.get("type") or "").lower()
+    if event_type not in {"file_upload", "upload", "uploaded", "upload_complete"}:
+        return False
+    process = record.get("process_info") if isinstance(record.get("process_info"), dict) else {}
+    window = record.get("window_info") if isinstance(record.get("window_info"), dict) else {}
+    context = " ".join(
+        str(value or "").lower()
+        for value in (
+            record.get("app_name"),
+            record.get("process_name"),
+            process.get("process_name"),
+            record.get("window_title"),
+            window.get("window_title"),
+        )
+    )
+    return "tim" in context or "androws" in context
+
+
+def _record_identity(record: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(record.get("timestamp") or record.get("time") or ""),
+        str(record.get("event_type") or record.get("type") or "").lower(),
+        normalize_path(record.get("file_path") or record.get("path") or "").lower(),
+    )
 
 
 def _slugify(value: str) -> str:

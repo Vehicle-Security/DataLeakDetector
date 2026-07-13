@@ -16,10 +16,10 @@ DEFAULT_SENSITIVE_FILES_CONFIG_PATH = REPO_ROOT / "spec" / "config" / "sensitive
 def load_sensitive_files_config(path: str | Path | None = None) -> tuple[str, ...]:
     """Load the only initial sensitive-source set used by detection.
 
-    The configuration contains original sensitive files only. Copies,
-    conversions, screenshots, and other descendants are established later by
-    lineage reasoning and are never sent to log mining, VLM, or Datalog as
-    initial source context.
+    Log review may establish additional original sources, which must first be
+    persisted in this configuration. Groundtruth never contributes sources.
+    Copies, conversions, screenshots, and other descendants are established by
+    lineage reasoning and are never persisted as initial sources.
     """
 
     configured_path = path or os.getenv("DLD_SENSITIVE_FILES_CONFIG") or DEFAULT_SENSITIVE_FILES_CONFIG_PATH

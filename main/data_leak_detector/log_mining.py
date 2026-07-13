@@ -253,8 +253,74 @@ def build_analysis_windows(
     windows.extend(activity_windows)
     if activity_windows:
         windows = [window for window in windows if window.priority != "medium"]
-    segmented = _thin_dense_window_anchors(_filter_visual_context_windows(_merge_windows_by_case_segment(windows, config), config), config)
+    segmented = _filter_visual_context_windows(_merge_windows_by_case_segment(windows, config), config)
+    segmented = _add_sink_followup_anchors(segmented, logs)
+    segmented = _thin_dense_window_anchors(segmented, config)
     return _attach_active_apps_to_windows(segmented, app_index, logs)
+
+
+def _add_sink_followup_anchors(windows: list[AnalysisWindow], logs: list[LogEvent]) -> list[AnalysisWindow]:
+    """Sample paste/send states after sensitive clipboard activity enters a sink app."""
+
+    result: list[AnalysisWindow] = []
+    foreground = [
+        event
+        for event in logs
+        if event.video_time_ms >= 0
+        and event.event_type.lower() in {"app_switch", "window_changed"}
+        and _is_sink_app_process(event.process_name or "")
+    ]
+    for window in windows:
+        if window.priority != "strong" or "clipboard" not in window.reason.lower() or not window.action_anchor_ms:
+            result.append(window)
+            continue
+        clipboard_events = [
+            event
+            for event in logs
+            if event.event_type.lower() in {"clipboard_text", "clipboard_image"}
+            and window.start_ms <= event.video_time_ms <= window.end_ms
+        ]
+        if not clipboard_events:
+            result.append(window)
+            continue
+        clipboard_sink_pairs = [
+            (clipboard, sink)
+            for clipboard in clipboard_events
+            for sink in [
+                next(
+                    (
+                        event
+                        for event in foreground
+                        if clipboard.video_time_ms < event.video_time_ms <= window.end_ms
+                    ),
+                    None,
+                )
+            ]
+            if sink is not None
+        ]
+        if not clipboard_sink_pairs:
+            result.append(window)
+            continue
+        clipboard, sink_switch = max(clipboard_sink_pairs, key=lambda pair: pair[0].video_time_ms)
+        action_ms = clipboard.video_time_ms
+        followups = tuple(sink_switch.video_time_ms + offset for offset in (5_000, 14_000))
+        anchors = tuple(sorted({*window.anchor_ms, *followups}))
+        result.append(
+            AnalysisWindow(
+                start_ms=window.start_ms,
+                end_ms=max(window.end_ms, followups[-1]),
+                reason=f"{window.reason}+strong:sink_followup",
+                priority=window.priority,
+                step_ms=window.step_ms,
+                max_keyframes=max(window.max_keyframes, len(anchors)),
+                diff_threshold=window.diff_threshold,
+                anchor_ms=anchors,
+                action_anchor_ms=followups,
+                active_apps=window.active_apps,
+                active_ranges=window.active_ranges,
+            )
+        )
+    return result
 
 
 def build_sensitive_activity_windows(
@@ -928,6 +994,8 @@ def _window_priority(
     strong_raw_ops = {"file_selected", "file_upload", "upload", "send_click"}
     if event_type in strong_event_types or raw_operation in strong_raw_ops:
         return "strong"
+    if _has_structured_file_upload_signal(event):
+        return "strong"
     if process_name == "fsquirt.exe":
         return "strong"
     if sensitive_hit and removable_context and event_type in {
@@ -1005,7 +1073,8 @@ def _event_anchors(
     if _looks_like_print_or_save_dialog(window_title):
         return (event.video_time_ms,)
     if event.event_type.lower() in {"app_switch", "window_changed", "window_closed"} and _is_sink_app_process(process_name):
-        return (event.video_time_ms,)
+        offsets = (0, 3_000, 8_000) if sensitive_context_hit else (0,)
+        return tuple(event.video_time_ms + offset for offset in offsets)
     if event_type in {"app_switch", "window_changed", "window_closed"} and _is_sink_context(process_name, text) and _looks_like_upload_progress(text):
         return (event.video_time_ms,)
     if _is_clipboard_or_capture_event(event, text) and sensitive_context_hit:
@@ -1017,6 +1086,8 @@ def _event_anchors(
     if sensitive_hit and _looks_like_screenshot_path(event.file_path):
         return (event.video_time_ms,)
     if event_type in {"file_selected", "file_upload", "upload", "uploaded", "upload_complete"}:
+        return (event.video_time_ms,)
+    if _has_structured_file_upload_signal(event):
         return (event.video_time_ms,)
     return ()
 
@@ -1226,6 +1297,9 @@ def _is_sink_app_process(process_name: str) -> bool:
         "dingtalk.exe",
         "feishu.exe",
         "lark.exe",
+        "doubao.exe",
+        "cherrystudio.exe",
+        "cherry studio.exe",
         "baidunetdisk.exe",
         "baidunetdiskunite.exe",
     }
@@ -1420,6 +1494,8 @@ def _window_action_label(event: LogEvent, text: str, sensitive_context_hit: bool
         return "upload"
     if raw_operation in {"file_selected", "file_upload", "upload", "send_click"}:
         return "upload"
+    if _has_structured_file_upload_signal(event):
+        return "upload"
     if _looks_like_file_selection_dialog(event.window_title) and _is_sink_context(process_name, direct_text):
         return "file_selected"
     if _looks_like_upload_progress(direct_text):
@@ -1431,6 +1507,21 @@ def _window_action_label(event: LogEvent, text: str, sensitive_context_hit: bool
     if _is_removable_media_context(f"{direct_text} {event.window_title}") and sensitive_context_hit:
         return "removable_transfer"
     return ""
+
+
+def _has_structured_file_upload_signal(event: LogEvent) -> bool:
+    """Recognize file-dialog selections emitted as ordinary file-open events."""
+
+    upload = event.raw.get("upload_detection") if isinstance(event.raw.get("upload_detection"), dict) else {}
+    extra = event.raw.get("extra") if isinstance(event.raw.get("extra"), dict) else {}
+    is_upload = upload.get("is_upload") is True or str(upload.get("is_upload") or "").lower() == "true"
+    source = str(extra.get("source") or "").lower()
+    return (
+        is_upload
+        and event.event_type.lower() in {"opened", "file_selected", "file_upload", "upload"}
+        and source in {"recent_folder_monitor", "file_dialog_monitor"}
+        and bool(normalize_path(event.file_path))
+    )
 
 
 def _has_direct_derivation_signal(event: LogEvent, text: str) -> bool:

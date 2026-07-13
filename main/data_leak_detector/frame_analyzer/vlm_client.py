@@ -189,11 +189,18 @@ def _focus_activity_gap_evidence(
             for candidate in window_candidates
             if "anchor" in candidate[2].frame.reason.lower() and candidate[1] <= action[1]
         ]
+        following_anchors = [
+            candidate
+            for candidate in window_candidates
+            if "anchor" in candidate[2].frame.reason.lower() and candidate[1] > action[1]
+        ]
         if preceding_anchors:
             focused.append(max(preceding_anchors, key=lambda candidate: candidate[1]))
         if preceding_gap:
             focused.append(max(preceding_gap, key=lambda candidate: candidate[1]))
         focused.append(action)
+        if following_anchors:
+            focused.append(max(following_anchors, key=lambda candidate: candidate[1]))
     return focused
 
 

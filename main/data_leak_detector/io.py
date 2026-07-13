@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -140,9 +141,31 @@ def flatten_text(value: Any) -> str:
 
 
 def normalize_path(value: object) -> str:
-    text = str(value or "").strip().strip('"').replace("\\", "/")
+    text = _repair_mojibake(str(value or "")).strip().strip('"').replace("\\", "/")
     text = re.sub(r"^([A-Za-z]:)/+", r"\1/", text)
     return re.sub(r"/{2,}", "/", text)
+
+
+@lru_cache(maxsize=16_384)
+def _repair_mojibake(text: str) -> str:
+    """Recover common Windows collector encoding mistakes conservatively."""
+
+    if not text or text.isascii():
+        return text
+    original_cjk = _cjk_count(text)
+    candidates = [text]
+    for source_encoding in ("latin1", "cp1252"):
+        for target_encoding in ("utf-8", "gb18030"):
+            try:
+                candidates.append(text.encode(source_encoding).decode(target_encoding))
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                continue
+    best = max(candidates, key=lambda item: (_cjk_count(item), -item.count("\ufffd"), -len(item)))
+    return best if _cjk_count(best) >= original_cjk + 2 else text
+
+
+def _cjk_count(text: str) -> int:
+    return sum("\u3400" <= char <= "\u9fff" for char in text)
 
 
 def basename(value: object) -> str:

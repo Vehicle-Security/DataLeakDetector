@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from ..io import looks_sensitive, normalize_logs, normalize_path, same_file
+from ..io import normalize_logs, normalize_path, same_file
 from ..models import CorrelatedEvent
 from ..policy import SINK_TOKENS, TRANSFER_TOKENS, contains_any
 from .candidates import build_upload_candidates
@@ -34,7 +35,7 @@ class EventCorrelator:
         observations = normalize_observations(payload.get("frame_segments") or [])
         if not config.non_vlm_enabled:
             observations = [item for item in observations if item.source == "vlm"]
-        sensitive_files = self._collect_sensitive_files(logs, payload.get("sensitive_files") or [], config=config)
+        sensitive_files = self._collect_sensitive_files(payload.get("sensitive_files") or [])
         # Log lineage is binding context for VLM evidence as well as deterministic
         # log evidence, so it must remain available in VLM-only runs.
         lineage = self._build_lineage(logs, sensitive_files)
@@ -73,26 +74,14 @@ class EventCorrelator:
                 derived.append(normalize_path(file_path))
         return _dedupe_paths(derived)
 
-    def _collect_sensitive_files(self, logs, explicit: list[Any], *, config: EventCorrelatorConfig | None = None) -> list[str]:
-        config = config or self.config
+    def _collect_sensitive_files(self, explicit: list[Any]) -> list[str]:
+        """Normalize the maintained source set; never discover sources at runtime."""
+
         sensitive: list[str] = []
         for item in explicit:
             path = normalize_path(item)
             if path and not any(same_file(path, existing) for existing in sensitive):
                 sensitive.append(path)
-
-        if not config.infer_sensitive_from_logs:
-            return sensitive
-
-        source_events = {"file_open", "open", "opened", "read", "file_read", "access", "file_access"}
-        for event in logs:
-            text = _event_search_text(event)
-            candidate = original_file_from_metadata(event.raw) or event.file_path
-            is_source_event = event.event_type in source_events
-            has_explicit_original = bool(original_file_from_metadata(event.raw))
-            if candidate and (has_explicit_original or is_source_event) and (looks_sensitive(candidate) or looks_sensitive(text)):
-                if not any(same_file(candidate, existing) for existing in sensitive):
-                    sensitive.append(normalize_path(candidate))
         return sensitive
 
     def _build_lineage(self, logs, sensitive_files: list[str]) -> Lineage:
@@ -144,9 +133,13 @@ class EventCorrelator:
         config = config or self.config
         correlated: list[CorrelatedEvent] = []
         observation_time_mode = self._observation_time_mode(observations)
+        original_cache: dict[str, str] = {}
 
         for log in sorted(logs, key=lambda item: item.timestamp_ms):
-            original = self._resolve_original(log.file_path, sensitive_files, lineage)
+            path_key = normalize_path(log.file_path).lower()
+            if path_key not in original_cache:
+                original_cache[path_key] = self._resolve_original(log.file_path, sensitive_files, lineage)
+            original = original_cache[path_key]
             observation = self._best_observation_for_log(
                 log,
                 observations,
@@ -159,6 +152,8 @@ class EventCorrelator:
             if not original and observation:
                 original = self._resolve_observation_original(observation, sensitive_files, lineage)
             if not config.non_vlm_enabled and observation is None:
+                continue
+            if config.non_vlm_enabled and observation is None and not _is_standalone_log_evidence(log):
                 continue
             if not original:
                 continue
@@ -291,14 +286,12 @@ class EventCorrelator:
     def _resolve_original(self, file_path: str, sensitive_files: list[str], lineage: Lineage) -> str:
         if not file_path:
             return ""
-        for sensitive in sensitive_files:
-            if same_file(file_path, sensitive) or _matches_sensitive_file_reference(file_path, sensitive):
-                return sensitive
+        lookup = _sensitive_lookup(tuple(sensitive_files))
+        sensitive = _lookup_sensitive_source(file_path, lookup, allow_stem_reference=True)
+        if sensitive:
+            return sensitive
         root = lineage.root(file_path)
-        for sensitive in sensitive_files:
-            if same_file(root, sensitive):
-                return sensitive
-        return ""
+        return _lookup_sensitive_source(root, lookup, allow_stem_reference=False)
 
     def _resolve_observation_original(self, observation, sensitive_files: list[str], lineage: Lineage) -> str:
         for candidate in [observation.resource, *observation.related_resources]:
@@ -340,12 +333,12 @@ class EventCorrelator:
             if observation.source == "log_anchored":
                 continue
             original = self._resolve_observation_original(observation, sensitive_files, lineage)
-            if not original:
-                continue
             text = f"{observation.description} {observation.operation_type} {observation.resource} {' '.join(observation.related_resources)}"
             if not (contains_any(text, SINK_TOKENS) or _is_transfer_observation(observation)):
                 continue
-            behavior = behavior_category(text)
+            if not original and not _is_unbound_visual_risk(observation, text):
+                continue
+            behavior = behavior_category(text) if original else "unknown_risk"
             current_file = self._visual_current_file(observation, original, sensitive_files)
             visual_events.append(
                 CorrelatedEvent(
@@ -376,18 +369,24 @@ class EventCorrelator:
         return current_file
 
     def _analysis_windows(self, logs, sensitive_files: list[str]) -> list[dict[str, Any]]:
-        windows: list[dict[str, Any]] = []
-        for sensitive in sensitive_files:
-            times = [event.timestamp_ms for event in logs if event.timestamp_ms and same_file(event.file_path, sensitive)]
-            if times:
-                windows.append(
-                    {
-                        "sensitive_file": sensitive,
-                        "start_ms": min(times),
-                        "end_ms": max(times),
-                    }
-                )
-        return windows
+        ranges: dict[str, list[int]] = {}
+        resolved_cache: dict[str, str] = {}
+        for event in logs:
+            if not event.timestamp_ms or not event.file_path:
+                continue
+            path_key = normalize_path(event.file_path).lower()
+            if path_key not in resolved_cache:
+                resolved_cache[path_key] = self._resolve_original(event.file_path, sensitive_files, Lineage())
+            sensitive = resolved_cache[path_key]
+            if not sensitive:
+                continue
+            bounds = ranges.setdefault(sensitive, [event.timestamp_ms, event.timestamp_ms])
+            bounds[0] = min(bounds[0], event.timestamp_ms)
+            bounds[1] = max(bounds[1], event.timestamp_ms)
+        return [
+            {"sensitive_file": sensitive, "start_ms": bounds[0], "end_ms": bounds[1]}
+            for sensitive, bounds in ranges.items()
+        ]
 
 
 def _event_search_text(event) -> str:
@@ -473,6 +472,42 @@ def _is_sink_log(log) -> bool:
     raw_operation = str(log.raw.get("operation") or extra.get("raw_operation") or "")
     category = str(extra.get("category") or "")
     return raw_operation in {"file_selected", "file_upload", "upload", "send_click"} or contains_any(category, ("文件上传", "直接外发"))
+
+
+def _is_standalone_log_evidence(log) -> bool:
+    """Keep deterministic facts focused on actions instead of file-system noise."""
+
+    event_type = log.event_type.lower()
+    if _is_sink_log(log) or event_type in {
+        "copy",
+        "copied",
+        "file_copied",
+        "move",
+        "moved",
+        "file_moved",
+        "rename",
+        "renamed",
+        "file_renamed",
+        "paste",
+        "clipboard_write",
+        "clipboard_read",
+        "clipboard_text",
+        "clipboard_image",
+        "export",
+        "print",
+        "compress",
+        "archive",
+        "screenshot",
+        "screen_record",
+        "screen_share",
+    }:
+        return True
+    if original_file_from_metadata(log.raw):
+        return True
+    if event_type not in {"created", "modified", "file_created", "file_modified"}:
+        return False
+    text = _event_search_text(log)
+    return contains_any(text, TRANSFER_TOKENS + SINK_TOKENS) or _is_removable_media_context(text)
 
 
 def _is_removable_media_transfer(log, observation, text: str) -> bool:
@@ -606,6 +641,14 @@ def _matches_sensitive_file_reference(file_path: str, sensitive_file: str) -> bo
     return len(ref_name) >= 4 and ref_name == sensitive_stem
 
 
+def _is_unbound_visual_risk(observation, text: str) -> bool:
+    normalized = text.lower()
+    return (
+        observation.operation_type in {"external_sink_interaction", "file_or_content_transfer"}
+        and any(marker in normalized for marker in ("direct_leak", "hidden_transfer", "unknown_risk"))
+    )
+
+
 def _is_visual_derived_candidate(file_path: str, original: str) -> bool:
     normalized = normalize_path(file_path).strip().strip("\"'")
     lowered = normalized.lower()
@@ -698,5 +741,54 @@ def _dedupe_paths(paths: list[str]) -> list[str]:
         seen.add(key)
         result.append(normalized)
     return result
+
+
+@lru_cache(maxsize=128)
+def _sensitive_lookup(sensitive_files: tuple[str, ...]) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    exact: dict[str, str] = {}
+    basenames: dict[str, str] = {}
+    stems: dict[str, str] = {}
+    for sensitive in sensitive_files:
+        normalized = normalize_path(sensitive)
+        lowered = normalized.lower()
+        if not lowered or _is_placeholder_sensitive_ref(lowered):
+            continue
+        exact.setdefault(lowered, sensitive)
+        name = Path(lowered).name
+        path = Path(name)
+        if path.suffix and len(path.stem) >= 2:
+            basename_key = re.sub(r"\s+(\.[^.]+)$", r"\1", name)
+            basenames.setdefault(basename_key, sensitive)
+        if path.stem:
+            stems.setdefault(path.stem, sensitive)
+    return exact, basenames, stems
+
+
+def _lookup_sensitive_source(
+    file_path: str,
+    lookup: tuple[dict[str, str], dict[str, str], dict[str, str]],
+    *,
+    allow_stem_reference: bool,
+) -> str:
+    normalized = normalize_path(file_path).lower()
+    if not normalized or _is_placeholder_sensitive_ref(normalized):
+        return ""
+    exact, basenames, stems = lookup
+    matched = exact.get(normalized)
+    if matched:
+        return matched
+    name = Path(normalized).name
+    path = Path(name)
+    if path.suffix and len(path.stem) >= 2:
+        basename_key = re.sub(r"\s+(\.[^.]+)$", r"\1", name)
+        return basenames.get(basename_key, "")
+    if allow_stem_reference and len(name) >= 4:
+        return stems.get(name, "")
+    return ""
+
+
+def _is_placeholder_sensitive_ref(value: str) -> bool:
+    normalized = value.strip().strip("\"'").lower()
+    return normalized in {"n/a", "na", "none", "null", "unknown", "-"} or normalized.startswith("n/a ")
 
 
