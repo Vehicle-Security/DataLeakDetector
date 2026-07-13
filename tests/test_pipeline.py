@@ -40,6 +40,8 @@ from data_leak_detector.frame_analyzer.frames import (
     _ffmpeg_cuda_frame_command,
     _focus_actionable_keyframes,
     _focus_file_dialog_flows,
+    _focus_semantic_action_phases,
+    _frame_entropy,
     _hamming,
     _probe_timestamps,
     _should_keep_frame,
@@ -236,7 +238,21 @@ def test_same_file_ignores_whitespace_before_extension() -> None:
     )
 
 
-def test_analysis_windows_use_video_relative_timestamps_from_real_logs() -> None:
+def test_dataset_prefers_keyevents_over_raw_logs(tmp_path: Path) -> None:
+    case_dir = tmp_path / "case"
+    logs_dir = case_dir / "logs"
+    video_dir = case_dir / "video"
+    logs_dir.mkdir(parents=True)
+    video_dir.mkdir()
+    (logs_dir / "logs.json").write_text('[{"event_type":"modified"}]', encoding="utf-8")
+    (logs_dir / "keyevents.json").write_text('[{"event_type":"clipboard_operation"}]', encoding="utf-8")
+
+    case = discover_data_case(case_dir)
+
+    assert case.log_file == (logs_dir / "keyevents.json").resolve()
+
+
+def test_high_risk_app_switch_does_not_create_behavior_window() -> None:
     logs = normalize_logs(
         [
             {
@@ -261,10 +277,7 @@ def test_analysis_windows_use_video_relative_timestamps_from_real_logs() -> None
         VisionConfig(frame_window_before_ms=30_000, frame_window_after_ms=120_000, include_weak_windows=True),
     )
 
-    assert windows[0].start_ms == 12_500
-    assert windows[0].end_ms == 162_500
-    assert windows[0].priority == "weak"
-    assert windows[0].step_ms == 2_000
+    assert windows == []
 
 
 def test_analysis_windows_sample_strong_upload_events_more_densely() -> None:
@@ -289,7 +302,7 @@ def test_analysis_windows_sample_strong_upload_events_more_densely() -> None:
 
     assert windows[0].priority == "strong"
     assert windows[0].start_ms == 55_000
-    assert windows[0].end_ms == 75_000
+    assert windows[0].end_ms == 90_000
     assert windows[0].step_ms == 250
     assert windows[0].max_keyframes == VisionConfig().max_keyframes_per_strong_window
 
@@ -327,11 +340,35 @@ def test_analysis_windows_keep_derived_transfer_anchor_when_upload_exists() -> N
 
     windows = build_analysis_windows(logs, [original, derived], VisionConfig())
 
-    assert any(window.priority == "activity" and 30_000 in window.anchor_ms for window in windows)
+    assert any(window.priority == "strong" and 30_000 in window.anchor_ms for window in windows)
     assert any(window.priority == "strong" and 60_000 in window.anchor_ms for window in windows)
 
 
-def test_sensitive_activity_window_runs_until_explicit_close_and_filters_system_apps() -> None:
+def test_unrelated_browser_document_access_is_not_transfer_evidence() -> None:
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:30",
+                "event_type": "opened",
+                "file_path": "C:/Users/alice/Downloads/public-paper.pdf",
+                "app_name": "Edge",
+                "process_info": {"process_name": "msedge.exe"},
+                "extra": {"raw_operation": "browser_file_access", "relative_timestamp": 30.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:05:00",
+                "event_type": "app_switch",
+                "app_name": "Edge",
+                "window_info": {"window_title": "Video site"},
+                "extra": {"relative_timestamp": 300.0},
+            },
+        ]
+    )
+
+    assert build_analysis_windows(logs, ["C:/Users/alice/Desktop/secret.docx"], VisionConfig()) == []
+
+
+def test_sensitive_file_editing_does_not_create_production_window() -> None:
     sensitive = "C:/Users/alice/Documents/strategy.docx"
     logs = normalize_logs(
         [
@@ -365,16 +402,10 @@ def test_sensitive_activity_window_runs_until_explicit_close_and_filters_system_
     )
 
     windows = build_analysis_windows(logs, [sensitive], VisionConfig())
-    activity = next(window for window in windows if window.priority == "activity")
-
-    assert activity.start_ms == 0
-    assert activity.end_ms == 1_380_000
-    assert "ChatGPT" in activity.active_apps
-    assert "System" not in activity.active_apps
-    assert activity.active_ranges == ((660_000, 1_380_000),)
+    assert windows == []
 
 
-def test_sensitive_activity_window_excludes_blank_shell_desktop_interval() -> None:
+def test_sensitive_editing_and_blank_shell_do_not_create_window() -> None:
     sensitive = "C:/Users/alice/Documents/strategy.docx"
     logs = normalize_logs(
         [
@@ -407,12 +438,10 @@ def test_sensitive_activity_window_excludes_blank_shell_desktop_interval() -> No
         ]
     )
 
-    activity = next(window for window in build_analysis_windows(logs, [sensitive], VisionConfig()) if window.priority == "activity")
-
-    assert activity.active_ranges == ((2_000, 4_999),)
+    assert build_analysis_windows(logs, [sensitive], VisionConfig()) == []
 
 
-def test_sensitive_activity_window_excludes_internal_monitor_window() -> None:
+def test_sensitive_editing_and_monitor_switch_do_not_create_window() -> None:
     sensitive = "C:/Users/alice/Documents/strategy.docx"
     logs = normalize_logs(
         [
@@ -445,12 +474,10 @@ def test_sensitive_activity_window_excludes_internal_monitor_window() -> None:
         ]
     )
 
-    activity = next(window for window in build_analysis_windows(logs, [sensitive], VisionConfig()) if window.priority == "activity")
-
-    assert activity.active_ranges == ((2_000, 7_999),)
+    assert build_analysis_windows(logs, [sensitive], VisionConfig()) == []
 
 
-def test_sensitive_activity_window_excludes_untitled_wallpaper_overlay() -> None:
+def test_sensitive_editing_and_wallpaper_switch_do_not_create_window() -> None:
     sensitive = "C:/Users/alice/Documents/strategy.docx"
     logs = normalize_logs(
         [
@@ -483,9 +510,7 @@ def test_sensitive_activity_window_excludes_untitled_wallpaper_overlay() -> None
         ]
     )
 
-    activity = next(window for window in build_analysis_windows(logs, [sensitive], VisionConfig()) if window.priority == "activity")
-
-    assert activity.active_ranges == ((2_000, 7_999),)
+    assert build_analysis_windows(logs, [sensitive], VisionConfig()) == []
 
 
 def test_browser_cache_rename_is_not_promoted_to_sensitive_derivation() -> None:
@@ -511,10 +536,10 @@ def test_browser_cache_rename_is_not_promoted_to_sensitive_derivation() -> None:
 
     windows = build_analysis_windows(logs, [sensitive], VisionConfig())
 
-    assert [window.priority for window in windows] == ["activity"]
+    assert windows == []
 
 
-def test_unclosed_sensitive_activity_window_reaches_last_recorded_video_time() -> None:
+def test_unclosed_sensitive_editing_does_not_create_window() -> None:
     sensitive = "C:/Users/alice/Documents/strategy.docx"
     logs = normalize_logs(
         [
@@ -533,12 +558,10 @@ def test_unclosed_sensitive_activity_window_reaches_last_recorded_video_time() -
         ]
     )
 
-    activity = next(window for window in build_analysis_windows(logs, [sensitive], VisionConfig()) if window.priority == "activity")
-
-    assert activity.end_ms == 1_860_000
+    assert build_analysis_windows(logs, [sensitive], VisionConfig()) == []
 
 
-def test_derivation_action_without_known_sensitive_file_gets_vlm_window() -> None:
+def test_unanchored_translation_does_not_create_a_visual_window() -> None:
     logs = normalize_logs(
         [
             {
@@ -554,11 +577,10 @@ def test_derivation_action_without_known_sensitive_file_gets_vlm_window() -> Non
 
     windows = build_analysis_windows(logs, [], VisionConfig())
 
-    assert windows[0].priority == "medium"
-    assert windows[0].anchor_ms == (30_000,)
+    assert windows == []
 
 
-def test_clipboard_copy_is_strong_only_while_sensitive_file_is_open() -> None:
+def test_isolated_clipboard_copy_does_not_create_visual_window() -> None:
     sensitive = "C:/Users/alice/Desktop/secret.docx"
     logs = normalize_logs(
         [
@@ -589,8 +611,7 @@ def test_clipboard_copy_is_strong_only_while_sensitive_file_is_open() -> None:
 
     windows = build_analysis_windows(logs, [sensitive], VisionConfig(include_unanchored_medium_windows=True))
 
-    assert any(window.priority == "strong" and 30_000 in window.anchor_ms for window in windows)
-    assert not any(window.priority == "strong" and 90_000 in window.anchor_ms for window in windows)
+    assert windows == []
 
 
 def test_screenshot_file_anchor_requires_active_sensitive_context() -> None:
@@ -657,7 +678,47 @@ def test_screenshot_tool_cache_file_does_not_become_capture_anchor() -> None:
     assert not any(window.priority == "strong" and 10_000 in window.anchor_ms for window in windows)
 
 
-def test_sink_file_selection_dialog_foreground_logs_become_strong_anchors() -> None:
+def test_sink_file_dialog_screenshot_is_file_selection_not_capture() -> None:
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:10",
+                "event_type": "modified",
+                "file_path": "C:/Users/alice/Pictures/Screenshots/screenshot.png",
+                "app_name": "QQ",
+                "process_info": {"process_name": "QQ.exe"},
+                "window_info": {"window_title": "请选择"},
+                "extra": {"source": "watchdog_fs_monitor", "relative_timestamp": 10.0},
+            }
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [], VisionConfig())
+
+    assert len(windows) == 1
+    assert windows[0].action_phases == ((10_000, "file_selected"),)
+    assert windows[0].end_ms == 40_000
+
+
+def test_browser_modifying_old_screenshot_is_not_new_capture() -> None:
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:10",
+                "event_type": "modified",
+                "file_path": "C:/Users/alice/Pictures/Screenshots/old.png",
+                "app_name": "Edge",
+                "process_info": {"process_name": "msedge.exe"},
+                "window_info": {"window_title": "AI chat"},
+                "extra": {"source": "watchdog_fs_monitor", "relative_timestamp": 10.0},
+            }
+        ]
+    )
+
+    assert build_analysis_windows(logs, [], VisionConfig()) == []
+
+
+def test_sink_cache_write_does_not_impersonate_a_file_selection_event() -> None:
     logs = normalize_logs(
         [
             {
@@ -673,12 +734,10 @@ def test_sink_file_selection_dialog_foreground_logs_become_strong_anchors() -> N
 
     windows = build_analysis_windows(logs, ["C:/Users/alice/Desktop/secret.docx"], VisionConfig())
 
-    assert windows[0].priority == "strong"
-    assert windows[0].start_ms == 29_280
-    assert 34_280 in windows[0].anchor_ms
+    assert windows == []
 
 
-def test_dense_sink_file_selection_dialog_anchors_are_thinned() -> None:
+def test_dense_sink_cache_writes_do_not_create_visual_windows() -> None:
     logs = normalize_logs(
         [
             {
@@ -695,12 +754,10 @@ def test_dense_sink_file_selection_dialog_anchors_are_thinned() -> None:
 
     windows = build_analysis_windows(logs, ["C:/Users/alice/Desktop/secret.docx"], VisionConfig())
 
-    assert windows[0].priority == "strong"
-    assert windows[0].anchor_ms == (13_570, 17_000, 24_000)
-    assert windows[0].max_keyframes == VisionConfig().max_keyframes_per_strong_window
+    assert windows == []
 
 
-def test_cloud_drive_file_selection_dialog_becomes_strong_anchor() -> None:
+def test_external_file_dialog_switch_is_not_an_action_anchor() -> None:
     logs = normalize_logs(
         [
             {
@@ -717,11 +774,10 @@ def test_cloud_drive_file_selection_dialog_becomes_strong_anchor() -> None:
 
     windows = build_analysis_windows(logs, [], VisionConfig())
 
-    assert windows[0].priority == "strong"
-    assert windows[0].anchor_ms == (17_525, 20_525)
+    assert windows == []
 
 
-def test_browser_cloud_drive_file_selection_uses_nearby_context() -> None:
+def test_browser_file_dialog_switch_is_not_an_action_anchor() -> None:
     logs = normalize_logs(
         [
             {
@@ -747,11 +803,10 @@ def test_browser_cloud_drive_file_selection_uses_nearby_context() -> None:
 
     windows = build_analysis_windows(logs, [], VisionConfig())
 
-    assert windows[0].priority == "strong"
-    assert windows[0].anchor_ms == (18_925, 21_925)
+    assert windows == []
 
 
-def test_workspace_file_selection_keeps_upload_followup_anchors() -> None:
+def test_workspace_open_dialog_switch_is_not_an_action_anchor() -> None:
     logs = normalize_logs(
         [
             {
@@ -768,12 +823,10 @@ def test_workspace_file_selection_keeps_upload_followup_anchors() -> None:
 
     windows = build_analysis_windows(logs, [], VisionConfig())
 
-    assert windows[0].priority == "strong"
-    assert windows[0].anchor_ms == (10_644, 13_644, 18_644, 26_644, 30_644)
-    assert windows[0].end_ms == 30_644
+    assert windows == []
 
 
-def test_sensitive_clipboard_to_ai_sink_keeps_post_switch_evidence_anchors() -> None:
+def test_clipboard_without_resource_or_transfer_signal_does_not_scope_outbound_context() -> None:
     sensitive = "C:/Users/alice/Desktop/strategy.docx"
     logs = normalize_logs(
         [
@@ -808,9 +861,53 @@ def test_sensitive_clipboard_to_ai_sink_keeps_post_switch_evidence_anchors() -> 
     )
 
     windows = build_analysis_windows(logs, [sensitive], VisionConfig())
-    strong = next(window for window in windows if window.priority == "strong")
+    anchors = {anchor for window in windows if window.priority == "strong" for anchor in window.action_anchor_ms}
 
-    assert strong.action_anchor_ms == (44_000, 53_000)
+    assert anchors == set()
+    assert not any(39_000 in window.anchor_ms for window in windows)
+
+
+def test_outbound_context_keeps_only_last_business_state_anchor() -> None:
+    sensitive = "D:/work/员工薪资明细表.xlsx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:30",
+                "event_type": "created",
+                "file_path": "D:/work/员工薪资明细表/高管薪资.xlsx",
+                "extra": {"raw_operation": "created", "relative_timestamp": 30.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:52",
+                "event_type": "app_switch",
+                "app_name": "Edge",
+                "window_info": {"window_title": "网易邮箱 - 搜索"},
+                "extra": {"relative_timestamp": 52.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:17",
+                "event_type": "app_switch",
+                "app_name": "Edge",
+                "window_info": {"window_title": "网易邮箱6.0"},
+                "extra": {"relative_timestamp": 77.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:46",
+                "event_type": "app_switch",
+                "app_name": "Edge",
+                "window_info": {"window_title": "写邮件 - 网易邮箱"},
+                "extra": {"relative_timestamp": 106.0},
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [sensitive], VisionConfig())
+    outbound = next(window for window in windows if window.reason == "strong:outbound_context")
+
+    assert outbound.anchor_ms == (106_000,)
+    assert outbound.action_anchor_ms == (106_000,)
+    assert outbound.action_phases == ((106_000, "outbound_context"),)
+    assert {131_000, 134_000, 136_000}.issubset(_probe_timestamps(outbound, VisionConfig()))
 
 
 def test_default_log_miner_keeps_in_memory_window_contract() -> None:
@@ -964,9 +1061,9 @@ def test_bluetooth_transfer_window_keeps_separate_strong_budget() -> None:
         VisionConfig(include_unanchored_medium_windows=True),
     )
 
-    assert [window.priority for window in windows] == ["strong", "activity"]
+    assert [window.priority for window in windows] == ["strong"]
     assert windows[0].start_ms == 55_000
-    assert windows[0].end_ms == 75_000
+    assert windows[0].end_ms == 90_000
     assert windows[0].max_keyframes == VisionConfig().max_keyframes_per_strong_window
     assert 60_000 in windows[0].anchor_ms
 
@@ -988,10 +1085,11 @@ def test_bluetooth_sensitive_file_access_becomes_keyframe_anchor() -> None:
     windows = build_analysis_windows(logs, ["C:/Users/alice/Desktop/secret.docx"], VisionConfig())
 
     assert windows[0].priority == "strong"
-    assert windows[0].anchor_ms == (0, 3_000, 8_000)
+    assert windows[0].anchor_ms == (0,)
+    assert windows[0].action_anchor_ms == (0,)
 
 
-def test_sensitive_activity_window_replaces_dense_generic_medium_windows() -> None:
+def test_dense_sensitive_file_events_do_not_create_visual_windows() -> None:
     records = [
         {
             "timestamp": "2026-01-01T12:00:00",
@@ -1008,12 +1106,7 @@ def test_sensitive_activity_window_replaces_dense_generic_medium_windows() -> No
         ["C:/Users/alice/Desktop/customer_salary.xlsx"],
         VisionConfig(case_segment_ms=300_000, include_unanchored_medium_windows=True),
     )
-    activity = [window for window in windows if window.priority == "activity"]
-
-    assert len(activity) == 1
-    assert activity[0].start_ms == 0
-    assert activity[0].end_ms == 1_200_000
-    assert not [window for window in windows if window.priority == "medium"]
+    assert windows == []
 
 
 def test_merged_window_budget_keeps_all_log_anchors() -> None:
@@ -1045,7 +1138,33 @@ def test_weak_analysis_windows_are_opt_in() -> None:
     )
 
     assert build_analysis_windows(logs, [], VisionConfig()) == []
-    assert build_analysis_windows(logs, [], VisionConfig(include_weak_windows=True))[0].priority == "weak"
+    assert build_analysis_windows(logs, [], VisionConfig(include_weak_windows=True)) == []
+
+
+def test_created_document_under_sensitive_source_folder_is_derivation() -> None:
+    sensitive = "D:/work/员工薪资明细表.xlsx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "modified",
+                "file_path": sensitive,
+                "process_info": {"process_name": "et.exe"},
+                "extra": {"relative_timestamp": 0.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:30",
+                "event_type": "created",
+                "file_path": "D:/work/员工薪资明细表/高管薪资.xlsx",
+                "process_info": {"process_name": "et.exe"},
+                "extra": {"raw_operation": "created", "relative_timestamp": 30.0},
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [sensitive], VisionConfig())
+
+    assert any(window.priority == "strong" and 30_000 in window.action_anchor_ms for window in windows)
 
 
 
@@ -1116,15 +1235,12 @@ def test_risk_window_does_not_keep_unrelated_app_switch_context() -> None:
     assert windows[0].anchor_ms == (60_000,)
 
 
-def test_long_windows_have_temporal_coverage_targets() -> None:
+def test_unanchored_windows_use_three_temporal_coverage_targets() -> None:
     window = AnalysisWindow(0, 156_000, "medium", priority="medium", step_ms=1_000, max_keyframes=18)
 
     coverage = _coverage_timestamps(window)
 
-    assert len(coverage) == 12
-    assert coverage[0] == 0
-    assert coverage[-1] == 156_000
-    assert any(25_000 <= timestamp <= 40_000 for timestamp in coverage)
+    assert coverage == (0, 78_000, 156_000)
 
 
 def test_sensitive_activity_windows_do_not_force_uniform_coverage_frames() -> None:
@@ -1137,10 +1253,162 @@ def test_anchored_strong_window_prioritizes_risk_anchors_over_coverage() -> None
     window = AnalysisWindow(0, 60_000, "upload", priority="strong", step_ms=250, anchor_ms=(10_000, 40_000))
 
     assert _coverage_timestamps(window) == ()
-    assert _probe_timestamps(window, VisionConfig()) == [10_000, 40_000, 9_750, 10_250, 39_750, 40_250]
+    assert _probe_timestamps(window, VisionConfig()) == [9_750, 10_000, 10_250, 39_750, 40_000, 40_250]
 
 
-def test_sensitive_activity_window_probes_relative_positions_between_file_activity_anchors() -> None:
+def test_paste_action_probes_result_state() -> None:
+    window = AnalysisWindow(
+        5_000,
+        40_000,
+        "strong:file_selected:file_dialog_monitor",
+        priority="strong",
+        step_ms=250,
+        max_keyframes=8,
+        anchor_ms=(10_000,),
+        action_anchor_ms=(10_000,),
+        requires_post_action_state=True,
+    )
+
+    probes = _probe_timestamps(window, VisionConfig())
+
+    assert {8_000, 10_000, 12_000, 15_000, 20_000}.issubset(probes)
+    assert 40_000 not in probes
+
+
+def test_capture_action_probes_box_selection_before_file_creation() -> None:
+    window = AnalysisWindow(
+        2_000,
+        25_000,
+        "strong:file_operation:capture",
+        priority="strong",
+        step_ms=250,
+        max_keyframes=8,
+        anchor_ms=(10_000,),
+        action_anchor_ms=(10_000,),
+        action_phases=((10_000, "capture"),),
+    )
+
+    probes = _probe_timestamps(window, VisionConfig())
+
+    assert {5_000, 7_000, 9_000, 10_000}.issubset(probes)
+    assert 2_000 not in probes
+
+
+def test_capture_start_and_file_creation_keep_both_derivation_phases() -> None:
+    sensitive = "C:/Users/alice/Desktop/secret.docx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "file_open",
+                "file_path": sensitive,
+                "end_time": "2026-01-01T12:01:00",
+                "extra": {"relative_timestamp": 0.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:10",
+                "event_type": "app_switch",
+                "app_name": "SnippingTool",
+                "process_info": {"process_name": "SnippingTool.exe"},
+                "window_info": {"window_title": "截图工具"},
+                "extra": {"relative_timestamp": 10.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:20",
+                "event_type": "created",
+                "file_path": "C:/Users/alice/Pictures/Screenshots/screenshot.png",
+                "process_info": {"process_name": "SnippingTool.exe"},
+                "extra": {"raw_operation": "created", "relative_timestamp": 20.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:15",
+                "event_type": "clipboard_image",
+                "extra": {"raw_operation": "clipboard_image", "relative_timestamp": 15.0},
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [sensitive], VisionConfig())
+
+    assert len(windows) == 1
+    assert windows[0].action_phases == ((10_000, "capture_start"), (20_000, "capture"))
+    probes = _probe_timestamps(windows[0], VisionConfig())
+    assert {10_000, 12_000, 15_000, 18_000, 20_000}.issubset(probes)
+
+
+def test_screen_share_start_probes_stable_shared_state() -> None:
+    sensitive = "C:/Users/alice/Desktop/secret.txt"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "file_open",
+                "file_path": sensitive,
+                "end_time": "2026-01-01T12:02:00",
+                "extra": {"relative_timestamp": 0.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:04",
+                "event_type": "screen_share_start",
+                "app_name": "wemeetapp",
+                "process_info": {"process_name": "wemeetapp.exe"},
+                "extra": {"raw_operation": "screen_share_start", "relative_timestamp": 64.0},
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [sensitive], VisionConfig())
+
+    assert len(windows) == 1
+    assert windows[0].action_phases == ((64_000, "screen_share"),)
+    assert windows[0].end_ms == 94_000
+    assert {62_000, 64_000, 66_000, 69_000, 74_000, 79_000}.issubset(
+        _probe_timestamps(windows[0], VisionConfig())
+    )
+
+
+def test_capture_phase_prefers_high_contrast_selection_overlay() -> None:
+    np = pytest.importorskip("numpy")
+    normal = np.full((90, 160), 240, dtype=np.uint8)
+    selection = np.indices((90, 160)).sum(axis=0).astype(np.uint8) % 2 * 220
+    candidates = [
+        _FrameCandidate(KeyFrame("selection", 9_000, "selection.jpg", 0.3, "strong:action_state"), "strong", selection, (0, 64)),
+        _FrameCandidate(KeyFrame("normal", 9_750, "normal.jpg", 0.3, "strong:visual_change"), "strong", normal, (0, 64)),
+    ]
+    window = AnalysisWindow(
+        5_000,
+        20_000,
+        "strong:capture",
+        priority="strong",
+        action_anchor_ms=(10_000,),
+        action_phases=((10_000, "capture"),),
+    )
+
+    focused = _focus_semantic_action_phases(candidates, window)
+
+    assert [item.frame.frame_id for item in focused] == ["selection"]
+
+
+def test_file_selection_probes_attachment_and_send_states() -> None:
+    window = AnalysisWindow(
+        5_000,
+        40_000,
+        "strong:file_selected:file_dialog_monitor",
+        priority="strong",
+        step_ms=250,
+        max_keyframes=8,
+        anchor_ms=(10_000,),
+        action_anchor_ms=(10_000,),
+        action_phases=((10_000, "file_selected"),),
+    )
+
+    probes = _probe_timestamps(window, VisionConfig())
+
+    assert {8_000, 10_000, 12_000, 15_000}.issubset(probes)
+    assert 20_000 not in probes
+
+
+def test_sensitive_activity_window_only_probes_source_anchor_context() -> None:
     window = AnalysisWindow(
         0,
         3_600_000,
@@ -1152,8 +1420,7 @@ def test_sensitive_activity_window_probes_relative_positions_between_file_activi
 
     probes = _probe_timestamps(window, VisionConfig())
 
-    assert {2_430_000, 2_815_000, 90_000, 3_500_000}.issubset(probes)
-    assert {119_000, 120_000, 121_000, 3_199_000, 3_200_000, 3_201_000}.issubset(probes)
+    assert probes == [119_000, 120_000, 121_000, 3_199_000, 3_200_000, 3_201_000]
 
 
 def test_merged_non_activity_window_with_active_ranges_does_not_use_activity_probes() -> None:
@@ -1169,7 +1436,7 @@ def test_merged_non_activity_window_with_active_ranges_does_not_use_activity_pro
 
     probes = _probe_timestamps(window, VisionConfig())
 
-    assert probes == [10_000, 50_000, 9_750, 10_250, 49_750, 50_250]
+    assert probes == [9_750, 10_000, 10_250, 49_750, 50_000, 50_250]
 
 
 def test_ffmpeg_cuda_frame_command_uses_nvdec_decoder() -> None:
@@ -1187,7 +1454,7 @@ def test_window_coverage_clamps_to_video_duration() -> None:
     coverage = _coverage_timestamps(clamped)
 
     assert clamped.end_ms == 40_000
-    assert any(30_000 <= timestamp <= 34_000 for timestamp in coverage)
+    assert coverage == (0, 20_000, 40_000)
 
 
 
@@ -1196,7 +1463,7 @@ def test_frame_hash_distance_can_detect_near_duplicates() -> None:
     assert _hamming((0b101010, 64), (0b101011, 64)) == 1
 
 
-def test_keyframe_filter_has_no_time_based_force_keep() -> None:
+def test_keyframe_filter_does_not_reject_changed_frame_by_hash_alone() -> None:
     config = VisionConfig(frame_diff_threshold=0.08, frame_hash_distance_threshold=3, frame_min_keep_gap_ms=0)
 
     keep_duplicate_after_long_gap = _should_keep_frame(
@@ -1248,10 +1515,56 @@ def test_keyframe_filter_has_no_time_based_force_keep() -> None:
         config=config,
     )
 
-    assert keep_duplicate_after_long_gap is False
+    assert keep_duplicate_after_long_gap is True
     assert keep_different_frame is True
-    assert keep_duplicate_log_anchor is True
+    assert keep_duplicate_log_anchor is False
     assert keep_changed_log_anchor is True
+
+
+def test_entropy_change_can_keep_low_pixel_delta_frame() -> None:
+    config = VisionConfig(frame_diff_threshold=0.08, frame_entropy_change_threshold=0.04)
+
+    keep = _should_keep_frame(
+        timestamp_ms=1_000,
+        score=0.05,
+        diff_threshold=config.frame_diff_threshold,
+        force_keep=False,
+        exact_duplicate=False,
+        frame_hash=(0, 64),
+        retained_hashes=[(0, 64)],
+        previous_small=object(),
+        last_kept_ms=0,
+        config=config,
+        entropy_delta=0.05,
+    )
+
+    assert keep is True
+
+
+def test_frame_entropy_measures_information_distribution() -> None:
+    cv2 = pytest.importorskip("cv2")
+    np = pytest.importorskip("numpy")
+    uniform = np.zeros((90, 160), dtype=np.uint8)
+    checkerboard = np.indices((90, 160)).sum(axis=0).astype(np.uint8) % 2 * 255
+
+    assert _frame_entropy(cv2, uniform) == 0.0
+    assert _frame_entropy(cv2, checkerboard) == pytest.approx(1.0, abs=0.01)
+
+
+def test_near_duplicate_requires_two_independent_similarity_signals() -> None:
+    np = pytest.importorskip("numpy")
+    gray_a = np.zeros((90, 160), dtype=np.uint8)
+    gray_b = np.full((90, 160), 4, dtype=np.uint8)
+    frame_hash = (0, 64)
+    candidates = [
+        _FrameCandidate(KeyFrame("a", 1_000, "a.jpg", 0.0, "medium:coverage"), "medium", gray_a, frame_hash, 0.0),
+        _FrameCandidate(KeyFrame("b", 2_000, "b.jpg", 0.0, "medium:coverage"), "medium", gray_b, frame_hash, 1.0),
+    ]
+
+    retained, duplicates = _dedupe_keyframes_globally(candidates, VisionConfig())
+
+    assert [frame.frame_id for frame in retained] == ["a", "b"]
+    assert duplicates == []
 
 
 def test_global_dedupe_removes_near_duplicate_coverage_frames() -> None:
@@ -1288,7 +1601,38 @@ def test_global_dedupe_keeps_near_duplicate_visual_change_frames() -> None:
     assert duplicates == []
 
 
-def test_global_dedupe_keeps_latest_near_duplicate_activity_gap_frame() -> None:
+def test_global_dedupe_keeps_exact_visual_states_from_distant_actions() -> None:
+    np = pytest.importorskip("numpy")
+    gray = np.full((90, 160), 128, dtype=np.uint8)
+    frame_hash = ((1 << 64) - 1, 64)
+    candidates = [
+        _FrameCandidate(KeyFrame("copy", 1_000, "copy.jpg", 0.0, "strong:visual_change"), "strong", gray, frame_hash),
+        _FrameCandidate(KeyFrame("send", 31_000, "send.jpg", 0.0, "strong:visual_change"), "strong", gray, frame_hash),
+    ]
+
+    kept, duplicates = _dedupe_keyframes_globally(candidates, VisionConfig())
+
+    assert [item.frame_id for item in kept] == ["copy", "send"]
+    assert duplicates == []
+
+
+def test_global_dedupe_keeps_planned_action_states_one_second_apart() -> None:
+    np = pytest.importorskip("numpy")
+    gray_a = np.full((90, 160), 128, dtype=np.uint8)
+    gray_b = np.full((90, 160), 129, dtype=np.uint8)
+    frame_hash = ((1 << 64) - 1, 64)
+    candidates = [
+        _FrameCandidate(KeyFrame("attachment", 10_000, "attachment.jpg", 0.1, "strong:action_state:outbound_context"), "strong", gray_a, frame_hash),
+        _FrameCandidate(KeyFrame("success", 12_000, "success.jpg", 0.2, "strong:action_state:outbound_context"), "strong", gray_b, frame_hash),
+    ]
+
+    kept, duplicates = _dedupe_keyframes_globally(candidates, VisionConfig())
+
+    assert [item.frame_id for item in kept] == ["attachment", "success"]
+    assert duplicates == []
+
+
+def test_global_dedupe_keeps_earliest_equivalent_action_state() -> None:
     pytest.importorskip("cv2")
     np = pytest.importorskip("numpy")
     gray_a = np.full((90, 160), 128, dtype=np.uint8)
@@ -1301,8 +1645,8 @@ def test_global_dedupe_keeps_latest_near_duplicate_activity_gap_frame() -> None:
 
     kept, duplicates = _dedupe_keyframes_globally(candidates, VisionConfig())
 
-    assert [item.frame_id for item in kept] == ["late"]
-    assert duplicates[0].frame.frame_id == "early"
+    assert [item.frame_id for item in kept] == ["early"]
+    assert duplicates[0].frame.frame_id == "late"
 
 
 def test_normalize_path_repairs_gbk_text_decoded_as_latin1() -> None:
@@ -1312,7 +1656,7 @@ def test_normalize_path_repairs_gbk_text_decoded_as_latin1() -> None:
     assert same_file(f"C:/Users/alice/Desktop/{garbled_name}.docx", "C:/Users/alice/Desktop/公司合同.docx")
 
 
-def test_file_dialog_flow_keeps_stable_result_after_selection() -> None:
+def test_file_dialog_compatibility_boundary_does_not_filter_frames() -> None:
     pytest.importorskip("cv2")
     np = pytest.importorskip("numpy")
 
@@ -1361,10 +1705,12 @@ def test_file_dialog_flow_keeps_stable_result_after_selection() -> None:
 
     focused = _focus_file_dialog_flows([item.frame for item in candidates], candidates, windows)
 
-    assert [frame.frame_id for frame in focused] == ["dialog_final", "result_final", "saved"]
+    assert [frame.frame_id for frame in focused] == [
+        "dialog_initial", "dialog_final", "loading", "result_start", "result_final", "saved"
+    ]
 
 
-def test_file_dialog_flow_keeps_available_opening_and_result_evidence() -> None:
+def test_file_dialog_compatibility_boundary_preserves_available_evidence() -> None:
     pytest.importorskip("cv2")
     np = pytest.importorskip("numpy")
     dialog = np.zeros((90, 160), dtype=np.uint8)
@@ -1395,10 +1741,10 @@ def test_file_dialog_flow_keeps_available_opening_and_result_evidence() -> None:
 
     focused = _focus_file_dialog_flows(frames, candidates, windows)
 
-    assert [frame.frame_id for frame in focused] == ["dialog_open", "result_final"]
+    assert [frame.frame_id for frame in focused] == ["dialog_open", "result_start", "result_final"]
 
 
-def test_strong_action_window_keeps_compact_activity_followup_evidence() -> None:
+def test_actionable_compatibility_boundary_does_not_apply_a_second_filter() -> None:
     frames = [
         KeyFrame("reading", 1_000, "reading.jpg", 0.1, "activity:anchor", window_id="window_1"),
         KeyFrame("uploading", 1_500, "uploading.jpg", 0.4, "activity:activity_gap", window_id="window_1"),
@@ -1412,10 +1758,10 @@ def test_strong_action_window_keeps_compact_activity_followup_evidence() -> None
 
     focused = _focus_actionable_keyframes(frames, [], windows)
 
-    assert [frame.frame_id for frame in focused] == ["uploading", "save_pdf", "confirmation"]
+    assert [frame.frame_id for frame in focused] == ["reading", "uploading", "save_pdf", "confirmation"]
 
 
-def test_strong_action_window_keeps_nearest_sensitive_source_context() -> None:
+def test_actionable_compatibility_boundary_preserves_temporal_context() -> None:
     frames = [
         KeyFrame("source_early", 1_000, "early.jpg", 0.1, "activity:anchor", window_id="window_1"),
         KeyFrame("source_near", 4_000, "near.jpg", 0.2, "activity:anchor", window_id="window_1"),
@@ -1436,10 +1782,10 @@ def test_strong_action_window_keeps_nearest_sensitive_source_context() -> None:
 
     focused = _focus_actionable_keyframes(frames, [], windows)
 
-    assert [frame.frame_id for frame in focused] == ["source_near", "copy", "result"]
+    assert [frame.frame_id for frame in focused] == ["source_early", "source_near", "copy", "result"]
 
 
-def test_sensitive_file_reading_does_not_emit_activity_only_frames() -> None:
+def test_actionable_compatibility_boundary_only_orders_existing_frames() -> None:
     frames = [
         KeyFrame("opened", 1_000, "opened.jpg", 0.1, "activity:anchor", window_id="window_0"),
         KeyFrame("closed", 9_000, "closed.jpg", 0.2, "activity:anchor", window_id="window_0"),
@@ -1448,10 +1794,10 @@ def test_sensitive_file_reading_does_not_emit_activity_only_frames() -> None:
         AnalysisWindow(0, 10_000, "sensitive_activity:secret.docx", priority="activity", anchor_ms=(1_000, 9_000)),
     ]
 
-    assert _focus_actionable_keyframes(frames, [], windows) == []
+    assert _focus_actionable_keyframes(frames, [], windows) == frames
 
 
-def test_external_app_activity_window_keeps_sparse_visual_fallback() -> None:
+def test_actionable_compatibility_boundary_preserves_external_context() -> None:
     frames = [
         KeyFrame(f"frame_{index}", index * 1_000, f"frame_{index}.jpg", 0.2, "activity:anchor", window_id="window_0")
         for index in range(5)
@@ -1468,14 +1814,14 @@ def test_external_app_activity_window_keeps_sparse_visual_fallback() -> None:
 
     focused = _focus_actionable_keyframes(frames, [], windows)
 
-    assert [frame.frame_id for frame in focused] == ["frame_0", "frame_1", "frame_3", "frame_4"]
+    assert [frame.frame_id for frame in focused] == ["frame_0", "frame_1", "frame_2", "frame_3", "frame_4"]
 
 
-def test_generic_strong_app_switch_does_not_emit_a_desktop_frame() -> None:
+def test_actionable_compatibility_boundary_does_not_reclassify_pixels() -> None:
     frame = KeyFrame("desktop", 1_000, "desktop.jpg", 1.0, "strong:anchor", window_id="window_0")
     windows = [AnalysisWindow(0, 2_000, "strong:app_switch:window_monitor", priority="strong")]
 
-    assert _focus_actionable_keyframes([frame], [], windows) == []
+    assert _focus_actionable_keyframes([frame], [], windows) == [frame]
 
 
 def test_unresolved_sensitive_sink_context_keeps_sparse_visual_evidence() -> None:
@@ -1540,7 +1886,7 @@ def test_structured_recent_folder_upload_builds_reportable_strong_window() -> No
     assert windows[0].reason.endswith(":upload")
 
 
-def test_unresolved_tim_window_keeps_embedded_send_phases() -> None:
+def test_medium_window_compatibility_boundary_does_not_use_app_special_cases() -> None:
     frames = [
         KeyFrame("before", 5_000, "before.jpg", 0.2, "medium:anchor", window_id="window_0"),
         KeyFrame("action", 12_000, "action.jpg", 0.4, "medium:activity_gap", window_id="window_0"),
@@ -1558,10 +1904,10 @@ def test_unresolved_tim_window_keeps_embedded_send_phases() -> None:
 
     focused = _focus_actionable_keyframes(frames, [], windows)
 
-    assert [frame.frame_id for frame in focused] == ["action", "sent"]
+    assert [frame.frame_id for frame in focused] == ["before", "action", "sent"]
 
 
-def test_pipeline_records_add_only_tim_upload_keyevents(tmp_path: Path) -> None:
+def test_pipeline_records_prefer_all_keyevents_over_raw_logs(tmp_path: Path) -> None:
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir()
     logs_file = logs_dir / "logs.json"
@@ -1587,8 +1933,9 @@ def test_pipeline_records_add_only_tim_upload_keyevents(tmp_path: Path) -> None:
     records = _load_pipeline_records(logs_file)
 
     assert [(item["timestamp"], item["event_type"]) for item in records] == [
-        ("t0", "app_switch"),
         ("t1", "file_upload"),
+        ("t2", "file_upload"),
+        ("t3", "app_switch"),
     ]
 
 
@@ -1622,7 +1969,7 @@ def test_single_action_frame_adds_available_deduplicated_result_state() -> None:
     assert [frame.frame_id for frame in focused] == ["rename", "audit"]
 
 
-def test_strong_derivation_keeps_only_its_compact_action_phase() -> None:
+def test_strong_derivation_is_not_filtered_after_raw_selection() -> None:
     frames = [
         KeyFrame("before", 1_000, "before.jpg", 0.1, "strong:anchor", window_id="window_0"),
         KeyFrame("export", 5_000, "export.jpg", 0.2, "strong:anchor", window_id="window_0"),
@@ -1641,7 +1988,7 @@ def test_strong_derivation_keeps_only_its_compact_action_phase() -> None:
 
     focused = _focus_actionable_keyframes(frames, [], windows)
 
-    assert [frame.frame_id for frame in focused] == ["export", "result"]
+    assert [frame.frame_id for frame in focused] == ["before", "export", "result", "after"]
 
 
 def test_strong_action_flow_keeps_small_complete_temporal_sequence() -> None:
@@ -1658,7 +2005,7 @@ def test_strong_action_flow_keeps_small_complete_temporal_sequence() -> None:
     assert [frame.frame_id for frame in focused] == ["frame_0", "frame_1", "frame_2", "frame_3", "frame_4"]
 
 
-def test_clipboard_text_keeps_pre_action_context_not_a_post_action_desktop() -> None:
+def test_clipboard_frames_are_not_reclassified_after_raw_selection() -> None:
     frames = [
         KeyFrame("selected_text", 9_000, "word.jpg", 0.2, "strong:anchor", window_id="window_0"),
         KeyFrame("desktop", 10_000, "desktop.jpg", 0.3, "strong:anchor", window_id="window_0"),
@@ -1669,7 +2016,7 @@ def test_clipboard_text_keeps_pre_action_context_not_a_post_action_desktop() -> 
 
     focused = _focus_actionable_keyframes(frames, [], windows)
 
-    assert [frame.frame_id for frame in focused] == ["selected_text"]
+    assert [frame.frame_id for frame in focused] == ["selected_text", "desktop"]
 
 
 def test_global_dedupe_prefers_file_dialog_selection_over_activity_context() -> None:
@@ -1736,11 +2083,11 @@ def test_derivation_candidate_is_strong_when_sensitive_activity_exists() -> None
 
     windows = build_analysis_windows(logs, [sensitive], VisionConfig())
 
-    assert [window.priority for window in windows] == ["strong", "activity"]
+    assert [window.priority for window in windows] == ["strong"]
     assert windows[0].anchor_ms == (10_000,)
 
 
-def test_clipboard_capture_uses_recent_sensitive_signal_when_open_event_is_missing() -> None:
+def test_clipboard_with_downstream_paste_uses_recent_sensitive_signal() -> None:
     sensitive = "C:/Users/alice/Documents/strategy.docx"
     logs = normalize_logs(
         [
@@ -1757,14 +2104,20 @@ def test_clipboard_capture_uses_recent_sensitive_signal_when_open_event_is_missi
                 "content_preview": "A copied sensitive paragraph",
                 "extra": {"relative_timestamp": 10.0, "raw_operation": "clipboard_text"},
             },
+            {
+                "timestamp": "2026-01-01T12:00:20",
+                "event_type": "clipboard_operation",
+                "app_name": "Edge",
+                "extra": {"relative_timestamp": 20.0, "raw_operation": "clipboard_paste"},
+            },
         ]
     )
 
     windows = build_analysis_windows(logs, [sensitive], VisionConfig())
     action = next(window for window in windows if window.priority == "strong")
 
-    assert action.action_anchor_ms == (10_000,)
-    assert "clipboard" in action.reason
+    assert action.action_anchor_ms == (10_000, 20_000)
+    assert action.action_phases == ((10_000, "clipboard"), (20_000, "paste"))
 
 
 def test_global_dedupe_keeps_distant_anchor_frames_with_small_visual_changes() -> None:
@@ -1957,10 +2310,8 @@ def test_removable_media_temp_copy_derives_from_unique_sensitive_stem() -> None:
 
     assert bundle["file_lineage"]["direct_file_mappings"][derived] == original
     strong = next(window for window in windows if window.priority == "strong")
-    activity = next(window for window in windows if window.priority == "activity")
-    assert strong.anchor_ms == (46_000, 49_000, 54_000)
-    assert activity.start_ms == activity.end_ms == 46_000
-    assert activity.max_keyframes == VisionConfig().max_keyframes_per_window
+    assert strong.anchor_ms == (46_000,)
+    assert strong.action_anchor_ms == (46_000,)
 
 
 def test_recent_sensitive_process_context_does_not_create_unrelated_lineage_edges() -> None:
@@ -2958,7 +3309,7 @@ def test_direct_keyframe_global_budget_spreads_dense_window_anchors() -> None:
     assert [item.frame.timestamp_ms for item in selected] == [30_771, 34_280, 36_795]
 
 
-def test_direct_keyframe_vlm_selection_retains_activity_gap_evidence() -> None:
+def test_explicit_vlm_budget_spreads_frames_without_semantic_scoring() -> None:
     frames = [
         KeyFrame("anchor_start", 0, "start.jpg", 0.2, "medium:anchor", window_id="window_0"),
         KeyFrame("activity_gap", 49_211, "gap.jpg", 0.9, "medium:activity_gap", window_id="window_0"),
@@ -2967,10 +3318,10 @@ def test_direct_keyframe_vlm_selection_retains_activity_gap_evidence() -> None:
 
     selected = choose_keyframes_for_vlm(frames, max_frames=2)
 
-    assert [item.frame.frame_id for item in selected] == ["anchor_start", "activity_gap"]
+    assert [item.frame.frame_id for item in selected] == ["anchor_start", "anchor_end"]
 
 
-def test_direct_keyframe_vlm_selection_keeps_terminal_result_after_activity_gap() -> None:
+def test_vlm_selection_does_not_filter_when_under_explicit_budget() -> None:
     frames = [
         KeyFrame("action", 10_000, "action.jpg", 0.9, "strong:activity_gap", window_id="window_0"),
         KeyFrame("dialog", 11_000, "dialog.jpg", 0.2, "strong:anchor", window_id="window_0"),
@@ -2979,7 +3330,7 @@ def test_direct_keyframe_vlm_selection_keeps_terminal_result_after_activity_gap(
 
     selected = choose_keyframes_for_vlm(frames, max_frames=8)
 
-    assert [item.frame.frame_id for item in selected] == ["action", "attached"]
+    assert [item.frame.frame_id for item in selected] == ["action", "dialog", "attached"]
 
 
 def test_direct_keyframe_vlm_selection_compacts_activity_gap_window() -> None:

@@ -33,6 +33,8 @@ class VisionConfig:
     frame_exact_duplicate_threshold: float = 0.001
     frame_near_duplicate_threshold: float = 0.01
     frame_hash_distance_threshold: int = 12
+    frame_entropy_change_threshold: float = 0.04
+    frame_entropy_duplicate_threshold: float = 0.015
     frame_min_keep_gap_ms: int = 0
     frame_probe_multiplier: int = 6
     frame_sequential_gap_ms: int = 5_000
@@ -85,6 +87,8 @@ class VisionConfig:
             frame_exact_duplicate_threshold=_env_float("DLD_FRAME_EXACT_DUPLICATE_THRESHOLD", 0.001),
             frame_near_duplicate_threshold=_env_float("DLD_FRAME_NEAR_DUPLICATE_THRESHOLD", 0.01),
             frame_hash_distance_threshold=_env_int("DLD_FRAME_HASH_DISTANCE_THRESHOLD", 12),
+            frame_entropy_change_threshold=_env_float("DLD_FRAME_ENTROPY_CHANGE_THRESHOLD", 0.04),
+            frame_entropy_duplicate_threshold=_env_float("DLD_FRAME_ENTROPY_DUPLICATE_THRESHOLD", 0.015),
             frame_min_keep_gap_ms=_env_int("DLD_FRAME_MIN_KEEP_GAP_MS", 0),
             frame_probe_multiplier=max(1, _env_int("DLD_FRAME_PROBE_MULTIPLIER", 6)),
             frame_sequential_gap_ms=max(0, _env_int("DLD_FRAME_SEQUENTIAL_GAP_MS", 5_000)),
@@ -141,6 +145,8 @@ class VisionConfig:
             frame_exact_duplicate_threshold=self.frame_exact_duplicate_threshold,
             frame_near_duplicate_threshold=self.frame_near_duplicate_threshold,
             frame_hash_distance_threshold=self.frame_hash_distance_threshold,
+            frame_entropy_change_threshold=self.frame_entropy_change_threshold,
+            frame_entropy_duplicate_threshold=self.frame_entropy_duplicate_threshold,
             frame_min_keep_gap_ms=self.frame_min_keep_gap_ms,
             frame_probe_multiplier=self.frame_probe_multiplier,
             frame_sequential_gap_ms=self.frame_sequential_gap_ms,

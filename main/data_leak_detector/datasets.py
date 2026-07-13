@@ -130,9 +130,9 @@ def data_case_id(path: str | Path, case_root: str | Path | None = None) -> str:
 
 def _choose_log_file(case_dir: Path) -> Path:
     candidates = [
-        case_dir / "logs" / "logs.json",
         case_dir / "logs" / "keyevents.json",
         case_dir / "keyevents.json",
+        case_dir / "logs" / "logs.json",
         case_dir / "logs.json",
     ]
     for candidate in candidates:

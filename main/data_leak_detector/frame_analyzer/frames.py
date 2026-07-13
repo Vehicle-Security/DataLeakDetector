@@ -1,25 +1,27 @@
-"""Non-uniform keyframe selection for long screen recordings.
-
-This module only deals with video windows and pixels. The decision of which log
-events deserve a window lives in `data_leak_detector.log_mining`.
-"""
+"""Evidence-oriented keyframe selection for log-anchored video windows."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
+import math
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
-from pathlib import Path
 
 from .apps import identify_frontend_app
 from .config import VisionConfig
 
 
-_STRUCTURE_PHASE_THRESHOLD = 0.04
-_STABLE_PHASE_MIN_MS = 1_000
+_ACTION_OFFSETS_MS = (-2_000, 0)
+_DERIVATION_OFFSETS_MS = (-2_000, 0, 2_000, 5_000)
+_FILE_SELECTION_OFFSETS_MS = (-2_000, 0, 2_000, 5_000)
+_OUTBOUND_OFFSETS_MS = (-2_000, 0, 2_000, 5_000, 10_000, 15_000)
+_OUTBOUND_CONTEXT_OFFSETS_MS = (0, 5_000, 15_000, 25_000, 28_000, 30_000)
+_CAPTURE_START_OFFSETS_MS = (-1_000, 0, 1_000, 2_000, 3_000, 5_000, 8_000)
+_CAPTURE_OFFSETS_MS = (-15_000, -13_000, -11_000, -9_000, -7_000, -5_000, -3_000, -1_000, 0)
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,8 @@ class AnalysisWindow:
     diff_threshold: float = 0.08
     anchor_ms: tuple[int, ...] = ()
     action_anchor_ms: tuple[int, ...] = ()
+    action_phases: tuple[tuple[int, str], ...] = ()
+    requires_post_action_state: bool = False
     active_apps: tuple[str, ...] = ()
     active_ranges: tuple[tuple[int, int], ...] = ()
 
@@ -64,13 +68,42 @@ class KeyFrameSelection:
     warnings: list[str]
 
 
-def merge_analysis_windows(windows: list[AnalysisWindow]) -> list[AnalysisWindow]:
-    """Merge overlapping windows with the same priority."""
+@dataclass(frozen=True)
+class _FrameCandidate:
+    frame: KeyFrame
+    priority: str
+    gray: object
+    frame_hash: tuple[int, int]
+    entropy: float = 0.0
 
-    merged: list[AnalysisWindow] = []
+
+def merge_analysis_windows(windows: list[AnalysisWindow]) -> list[AnalysisWindow]:
+    """Merge overlapping windows only when they represent the same priority."""
+
+    merged = []
     for priority in ("strong", "activity", "medium", "weak"):
-        same_priority = [window for window in windows if window.priority == priority]
-        merged.extend(_merge_same_priority_windows(same_priority))
+        current: list[AnalysisWindow] = []
+        for window in sorted((item for item in windows if item.priority == priority), key=lambda item: item.start_ms):
+            if not current or window.start_ms > current[-1].end_ms:
+                current.append(window)
+                continue
+            previous = current[-1]
+            current[-1] = AnalysisWindow(
+                previous.start_ms,
+                max(previous.end_ms, window.end_ms),
+                f"{previous.reason}+{window.reason}",
+                priority=priority,
+                step_ms=min(previous.step_ms, window.step_ms),
+                max_keyframes=max(previous.max_keyframes, window.max_keyframes, len({*previous.anchor_ms, *window.anchor_ms})),
+                diff_threshold=min(previous.diff_threshold, window.diff_threshold),
+                anchor_ms=tuple(sorted({*previous.anchor_ms, *window.anchor_ms})),
+                action_anchor_ms=tuple(sorted({*previous.action_anchor_ms, *window.action_anchor_ms})),
+                action_phases=tuple(sorted({*previous.action_phases, *window.action_phases})),
+                requires_post_action_state=previous.requires_post_action_state or window.requires_post_action_state,
+                active_apps=tuple(dict.fromkeys((*previous.active_apps, *window.active_apps))),
+                active_ranges=_merge_active_ranges(previous.active_ranges, window.active_ranges),
+            )
+        merged.extend(current)
     return sorted(merged, key=lambda item: (_priority_sort_key(item.priority), item.start_ms, item.end_ms))
 
 
@@ -79,8 +112,6 @@ def select_keyframes(
     windows: list[AnalysisWindow],
     config: VisionConfig,
 ) -> tuple[list[KeyFrame], list[str]]:
-    """Select keyframes by visual change instead of uniform sampling."""
-
     selection = select_keyframes_detailed(video_path, windows, config)
     return selection.keyframes, selection.warnings
 
@@ -90,8 +121,6 @@ def select_keyframes_detailed(
     windows: list[AnalysisWindow],
     config: VisionConfig,
 ) -> KeyFrameSelection:
-    """Select keyframes and preserve pre-global-dedup debug frames."""
-
     if not str(video_path or "").strip():
         return KeyFrameSelection([], [], [], [])
     path = Path(video_path)
@@ -99,737 +128,328 @@ def select_keyframes_detailed(
         return KeyFrameSelection([], [], [], [f"video_not_found: {path}"])
     if not path.is_file():
         return KeyFrameSelection([], [], [], [f"video_not_file: {path}"])
-
     try:
         import cv2
     except ImportError:
-        return KeyFrameSelection([], [], [], ["opencv_not_installed: install data-leak-detector[vision] to enable keyframe extraction"])
+        return KeyFrameSelection([], [], [], ["opencv_not_installed: install data-leak-detector[vision]"])
 
     capture = cv2.VideoCapture(str(path))
     if not capture.isOpened():
         return KeyFrameSelection([], [], [], [f"video_open_failed: {path}"])
-
     fps = capture.get(cv2.CAP_PROP_FPS) or 0.0
+    frame_count = capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0
     if fps <= 0:
         capture.release()
         return KeyFrameSelection([], [], [], ["video_fps_unavailable"])
-    frame_count = capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0
     duration_ms = int(round(frame_count * 1000.0 / fps)) if frame_count > 0 else 0
-
     temp_dir = Path(tempfile.mkdtemp(prefix="dld_frames_"))
     candidates: list[_FrameCandidate] = []
     warnings: list[str] = []
-    cuda_decoder = _cuda_decoder_for_video(path)
 
     try:
-        for window_index, window in enumerate(windows):
-            retained_for_window = 0
-            previous_small = None
-            retained_hashes: list[tuple[int, int]] = []
-            retained_small_frames = []
-            last_kept_ms = -10**9
-            probe_window = _clamp_window_to_duration(window, duration_ms)
-            timestamps = _probe_timestamps(probe_window, config)
-            candidate_limit = window.max_keyframes
-            if probe_window.active_ranges:
-                candidate_limit = max(candidate_limit, window.max_keyframes * config.frame_probe_multiplier)
-            coverage_ms = _coverage_timestamps(probe_window)
-            frames_by_timestamp = _read_frames_for_timestamps(
+        for window_index, original_window in enumerate(windows):
+            if original_window.priority == "activity":
+                contextual = _activity_context_window(original_window, windows)
+                if contextual is None:
+                    continue
+                original_window = contextual
+            window = _clamp_window_to_duration(original_window, duration_ms)
+            timestamps = _probe_timestamps(window, config)
+            frames = _read_frames_for_timestamps(cv2, capture, timestamps, fps, config)
+            window_candidates = _select_window_candidates(
                 cv2,
-                capture,
-                path,
-                timestamps,
-                fps,
+                frames,
+                window,
+                window_index,
+                temp_dir,
                 config,
-                cuda_decoder=cuda_decoder,
             )
-            for timestamp in timestamps:
-                if retained_for_window >= candidate_limit:
-                    break
-                if probe_window.active_ranges and not _timestamp_in_ranges(timestamp, probe_window.active_ranges):
-                    continue
-                frame = frames_by_timestamp.get(timestamp)
-                if frame is None:
-                    continue
-
-                small = cv2.resize(frame, (160, 90))
-                gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-                score = 1.0 if previous_small is None else _frame_delta(cv2, previous_small, gray)
-                frame_hash = _average_hash(cv2, gray)
-                force_anchor = _is_near_anchor(timestamp, window.anchor_ms, window.step_ms)
-                activity_window = probe_window.priority == "activity"
-                # Activity windows locate potentially relevant work around a
-                # sensitive file. They are not evidence by themselves: only
-                # their explicit event anchors may bypass visual filtering.
-                force_activity_context = activity_window and force_anchor
-                force_activity_gap = False
-                force_coverage = _is_near_anchor(timestamp, coverage_ms, window.step_ms)
-                force_keep = force_anchor or force_activity_context or force_activity_gap or force_coverage
-                exact_duplicate = _is_exact_duplicate(cv2, gray, retained_small_frames, config.frame_exact_duplicate_threshold)
-                keep = _should_keep_frame(
-                    timestamp_ms=timestamp,
-                    score=score,
-                    diff_threshold=window.diff_threshold,
-                    force_keep=force_keep,
-                    exact_duplicate=exact_duplicate,
-                    frame_hash=frame_hash,
-                    retained_hashes=retained_hashes,
-                    previous_small=previous_small,
-                    last_kept_ms=last_kept_ms,
-                    config=config,
-                )
-                if keep:
-                    frame_id = f"frame_{window_index}_{retained_for_window}"
-                    image_path = temp_dir / f"{frame_id}_{timestamp}.jpg"
-                    cv2.imwrite(str(image_path), frame)
-                    if force_anchor or force_activity_context:
-                        reason = f"{window.priority}:anchor"
-                    elif force_coverage:
-                        reason = f"{window.priority}:coverage"
-                    elif probe_window.active_ranges:
-                        reason = f"{window.priority}:activity_gap"
-                    elif previous_small is None:
-                        reason = f"{window.priority}:window_start"
-                    else:
-                        reason = f"{window.priority}:visual_change"
-                    keyframe = KeyFrame(frame_id, timestamp, str(image_path), round(float(score), 4), reason, window_id=f"window_{window_index}")
-                    candidates.append(_FrameCandidate(frame=keyframe, priority=window.priority, gray=gray, frame_hash=frame_hash))
-                    previous_small = gray
-                    retained_hashes.append(frame_hash)
-                    retained_small_frames.append(gray)
-                    last_kept_ms = timestamp
-                    retained_for_window += 1
+            candidates.extend(window_candidates)
     finally:
         capture.release()
 
     raw_keyframes = [candidate.frame for candidate in candidates]
     keyframes, duplicates = _dedupe_keyframes_globally(candidates, config, windows=windows)
-    keyframes = _focus_actionable_keyframes(keyframes, candidates, windows)
     if not keyframes and windows:
         warnings.append("no_keyframes_selected")
-    return KeyFrameSelection(keyframes=keyframes, raw_keyframes=raw_keyframes, duplicates=duplicates, warnings=warnings)
+    return KeyFrameSelection(keyframes, raw_keyframes, duplicates, warnings)
 
 
-@dataclass(frozen=True)
-class _FrameCandidate:
-    frame: KeyFrame
-    priority: str
-    gray: object
-    frame_hash: tuple[int, int]
-
-
-def _focus_actionable_keyframes(
-    keyframes: list[KeyFrame],
-    candidates: list[_FrameCandidate],
+def _activity_context_window(
+    activity: AnalysisWindow,
     windows: list[AnalysisWindow],
-) -> list[KeyFrame]:
-    """Keep action evidence while removing activity-only duplicate context."""
-
-    actionable_input = list(keyframes)
-    has_reportable_action = any(
-        window.priority == "strong" and _is_reportable_action_window(window)
-        for window in windows
-    )
-    if not has_reportable_action:
-        return _focus_unresolved_suspicious_context(actionable_input, candidates, windows)
-
-    keyframes = _drop_unactionable_strong_frames(keyframes, windows)
-    keyframes = _focus_strong_action_anchors(keyframes, windows)
-    keyframes = _drop_unactionable_activity_frames(keyframes, windows)
-    keyframes = _compact_activity_frames_covered_by_strong_actions(keyframes, windows)
-    keyframes = _focus_file_dialog_flows(keyframes, candidates, windows)
-    if keyframes:
-        return _ensure_minimum_action_evidence(keyframes, actionable_input, windows)
-    fallback = _fallback_action_frame(actionable_input, windows)
-    return [fallback] if fallback is not None else []
-
-
-def _focus_unresolved_suspicious_context(
-    keyframes: list[KeyFrame],
-    candidates: list[_FrameCandidate],
-    windows: list[AnalysisWindow],
-) -> list[KeyFrame]:
-    """Retain sparse VLM context when logs identify risk but no exact action."""
-
-    has_activity = any(window.priority == "activity" for window in windows)
-    risk_indices = [
-        index
-        for index, window in enumerate(windows)
-        if (
-            window.priority == "strong"
-            and (has_activity or _is_reportable_action_window(window))
-        )
-        or (
-            window.priority in {"medium", "weak"}
-            and (_is_reportable_action_window(window) or _is_tim_embedded_messaging_window(window))
-        )
-    ]
-    if not risk_indices:
-        external_activity_ids = {
-            f"window_{index}"
-            for index, window in enumerate(windows)
-            if window.priority == "activity" and _has_external_activity_app(window)
-        }
-        external_activity_frames = [
-            frame
-            for frame in keyframes
-            if frame.window_id in external_activity_ids
-        ]
-        return _pick_temporal_frames(external_activity_frames, limit=4)
-    risk_windows = [windows[index] for index in risk_indices]
-    related_indices = {
-        *risk_indices,
-        *(
-            index
-            for index, window in enumerate(windows)
-            if window.priority == "activity"
-            and any(_windows_overlap(window, risk) for risk in risk_windows)
-        ),
-    }
-    related_ids = {f"window_{index}" for index in related_indices}
-    related_frames = [frame for frame in keyframes if frame.window_id in related_ids]
-    if not related_frames:
-        return []
-
-    try:
-        import cv2
-    except ImportError:
-        return sorted(related_frames, key=lambda frame: frame.timestamp_ms)
-
-    candidate_by_id = {candidate.frame.frame_id: candidate for candidate in candidates}
-    selected_ids: set[str] = set()
-    for index in risk_indices:
-        window = windows[index]
-        if _is_tim_embedded_messaging_window(window):
-            selected_ids.update(
-                frame.frame_id
-                for frame in _tim_embedded_evidence(related_frames, f"window_{index}")
-            )
-            continue
-        if not window.active_ranges:
-            selected_ids.update(frame.frame_id for frame in related_frames)
-            continue
-        for active_range in window.active_ranges:
-            phase_frames = [
-                frame
-                for frame in related_frames
-                if active_range[0] <= frame.timestamp_ms <= active_range[1]
-            ]
-            selected_ids.update(
-                frame.frame_id
-                for frame in _visual_phase_representatives(cv2, phase_frames, candidate_by_id)
-            )
-    return sorted(
-        (frame for frame in keyframes if frame.frame_id in selected_ids),
-        key=lambda frame: frame.timestamp_ms,
-    )
-
-
-def _pick_temporal_frames(frames: list[KeyFrame], *, limit: int) -> list[KeyFrame]:
-    ordered = sorted(frames, key=lambda frame: frame.timestamp_ms)
-    if len(ordered) <= limit:
-        return ordered
-    last_index = len(ordered) - 1
-    return [ordered[round(slot * last_index / max(1, limit - 1))] for slot in range(limit)]
-
-
-def _ensure_minimum_action_evidence(
-    focused: list[KeyFrame],
-    available: list[KeyFrame],
-    windows: list[AnalysisWindow],
-) -> list[KeyFrame]:
-    """Keep a second deduplicated state when an action flow has one."""
-
-    if len(focused) >= 2:
-        return focused
-    focused_ids = {frame.frame_id for frame in focused}
-    candidates = [
-        frame
-        for frame in available
-        if frame.frame_id not in focused_ids
-        and (
-            _is_activity_window_id(frame.window_id, windows)
-            or (
-                _is_strong_window_id(frame.window_id, windows)
-                and _is_reportable_action_window(windows[_window_index(frame.window_id)])
-                and "clipboard" not in windows[_window_index(frame.window_id)].reason.lower()
-            )
-        )
-    ]
-    if not candidates:
-        return focused
-    reference_ms = focused[0].timestamp_ms if focused else 0
-    complement = max(candidates, key=lambda frame: (abs(frame.timestamp_ms - reference_ms), frame.timestamp_ms))
-    return sorted([*focused, complement], key=lambda frame: frame.timestamp_ms)
-
-
-def _drop_unactionable_strong_frames(
-    keyframes: list[KeyFrame],
-    windows: list[AnalysisWindow],
-) -> list[KeyFrame]:
-    """Ignore generic app switches promoted only as broad visual context."""
-
-    return [
-        frame
-        for frame in keyframes
-        if not _is_strong_window_id(frame.window_id, windows)
-        or _is_reportable_action_window(windows[_window_index(frame.window_id)])
-    ]
-
-
-def _focus_strong_action_anchors(
-    keyframes: list[KeyFrame],
-    windows: list[AnalysisWindow],
-) -> list[KeyFrame]:
-    """Keep a concise before/action/result sequence for explicit actions."""
-
-    selected_ids: set[str] = set()
-    managed_window_ids: set[str] = set()
-    for index, window in enumerate(windows):
-        if window.priority != "strong" or _is_file_dialog_window(window) or not window.action_anchor_ms:
-            continue
-        window_id = f"window_{index}"
-        managed_window_ids.add(window_id)
-        window_frames = sorted(
-            (frame for frame in keyframes if frame.window_id == window_id),
-            key=lambda frame: frame.timestamp_ms,
-        )
-        if not window_frames:
-            continue
-
-        clipboard_action = "clipboard" in window.reason.lower()
-        for anchor in window.action_anchor_ms:
-            before = [frame for frame in window_frames if anchor - 2_000 <= frame.timestamp_ms <= anchor]
-            after = [frame for frame in window_frames if anchor <= frame.timestamp_ms <= anchor + 2_500]
-            strict_before = [frame for frame in before if frame.timestamp_ms < anchor]
-            strict_after = [frame for frame in after if frame.timestamp_ms > anchor]
-            if clipboard_action and strict_before:
-                selected_ids.add(strict_before[-1].frame_id)
-            elif before:
-                selected_ids.add(before[-1].frame_id)
-            if after and not (clipboard_action and strict_before):
-                selected_ids.add((strict_after or after)[0].frame_id)
-
-    return [
-        frame
-        for frame in keyframes
-        if frame.window_id not in managed_window_ids or frame.frame_id in selected_ids
-    ]
-
-
-def _drop_unactionable_activity_frames(
-    keyframes: list[KeyFrame],
-    windows: list[AnalysisWindow],
-) -> list[KeyFrame]:
-    """Do not turn ordinary sensitive-file reading into visual evidence.
-
-    Activity windows supply the before/after context for a concrete external
-    transfer or derivation.  On their own, an open document or a file close is
-    not evidence of either outcome and would otherwise consume VLM budget.
-    """
-
-    actionable_windows = [
-        window
-        for window in windows
-        if window.priority == "strong" and _is_reportable_action_window(window)
-    ]
-    if not actionable_windows:
-        return [
-            frame
-            for frame in keyframes
-            if not _is_activity_window_id(frame.window_id, windows)
-        ]
-
-    return [
-        frame
-        for frame in keyframes
-        if not _is_activity_window_id(frame.window_id, windows)
-        or any(
-            _windows_overlap(windows[_window_index(frame.window_id)], action)
-            and "sink_followup" not in action.reason.lower()
-            for action in actionable_windows
-        )
-    ]
-
-
-def _cap_strong_action_frames(
-    keyframes: list[KeyFrame],
-    windows: list[AnalysisWindow],
-) -> list[KeyFrame]:
-    """Limit one non-dialog action flow without losing its terminal state."""
-
-    selected_ids: set[str] = set()
-    capped_window_ids: set[str] = set()
-    for index, window in enumerate(windows):
-        if window.priority != "strong" or _is_file_dialog_window(window) or not window.action_anchor_ms:
-            continue
-        window_id = f"window_{index}"
-        capped_window_ids.add(window_id)
-        window_frames = sorted(
-            (frame for frame in keyframes if frame.window_id == window_id),
-            key=lambda frame: frame.timestamp_ms,
-        )
-        if len(window_frames) <= 6:
-            selected_ids.update(frame.frame_id for frame in window_frames)
-            continue
-        last_index = len(window_frames) - 1
-        selected_ids.update(
-            window_frames[round(slot * last_index / 5)].frame_id
-            for slot in range(6)
-        )
-    return [
-        frame
-        for frame in keyframes
-        if frame.window_id not in capped_window_ids or frame.frame_id in selected_ids
-    ]
-
-
-def _is_reportable_action_window(window: AnalysisWindow) -> bool:
-    reason = window.reason.lower()
-    action_markers = (
-        "file_selected",
-        "file_upload",
-        "upload",
-        "uploaded",
-        "send_click",
-        "fsquirt",
-        "clipboard",
-        "copy",
-        "paste",
-        "screenshot",
-        "screen_capture",
-        "screen_record",
-        "capture",
-        "derivation",
-        "print",
-        "save_as",
-        "export",
-        "compress",
-        "base64",
-        "translate",
-        "removable",
-    )
-    return any(marker in reason for marker in action_markers)
-
-
-def _is_tim_embedded_messaging_window(window: AnalysisWindow) -> bool:
-    """TIM file sends inside Androws may expose only foreground-switch telemetry."""
-
-    context = " ".join((window.reason, *window.active_apps)).lower()
-    return "androws" in context or "tencent,tim" in context
-
-
-def _has_external_activity_app(window: AnalysisWindow) -> bool:
-    return any(
-        identify_frontend_app(app_name=app).risk_hint.startswith("external_capable")
-        for app in window.active_apps
-    )
-
-
-def _tim_embedded_evidence(frames: list[KeyFrame], window_id: str) -> list[KeyFrame]:
-    """Keep TIM's final embedded action and result, not its long emulator setup flow."""
-
-    window_frames = sorted(
-        (frame for frame in frames if frame.window_id == window_id),
-        key=lambda frame: frame.timestamp_ms,
-    )
-    if not window_frames:
-        return []
-    activity_gaps = [frame for frame in window_frames if "activity_gap" in frame.reason.lower()]
-    if not activity_gaps:
-        return [window_frames[-1]]
-    action = activity_gaps[-1]
-    following = [frame for frame in window_frames if frame.timestamp_ms > action.timestamp_ms]
-    return [action, following[0]] if following else [action]
-
-
-def _is_activity_window_id(window_id: str | None, windows: list[AnalysisWindow]) -> bool:
-    if window_id is None or not window_id.startswith("window_"):
-        return False
-    index = _window_index(window_id)
-    return index is not None and index < len(windows) and windows[index].priority == "activity"
-
-
-def _is_strong_window_id(window_id: str | None, windows: list[AnalysisWindow]) -> bool:
-    if window_id is None or not window_id.startswith("window_"):
-        return False
-    index = _window_index(window_id)
-    return index is not None and index < len(windows) and windows[index].priority == "strong"
-
-
-def _window_index(window_id: str) -> int | None:
-    try:
-        return int(window_id.removeprefix("window_"))
-    except ValueError:
-        return None
-
-
-def _compact_activity_frames_covered_by_strong_actions(
-    keyframes: list[KeyFrame],
-    windows: list[AnalysisWindow],
-) -> list[KeyFrame]:
-    """Keep compact post-action evidence instead of dropping activity wholesale."""
-
-    actionable_strong_windows = [
+) -> AnalysisWindow | None:
+    actions = [
         window
         for window in windows
         if window.priority == "strong"
-        and not _is_file_dialog_window(window)
-        and _is_reportable_action_window(window)
+        and window.end_ms >= activity.start_ms
+        and window.start_ms <= activity.end_ms
+        and window.action_anchor_ms
     ]
-    if not actionable_strong_windows:
-        return keyframes
-
-    activity_window_ids = {
-        f"window_{index}"
-        for index, window in enumerate(windows)
-        if window.priority == "activity"
-        and any(_windows_overlap(window, strong_window) for strong_window in actionable_strong_windows)
-    }
-    selected_activity_ids: set[str] = set()
-    for window_id in activity_window_ids:
-        activity_frames = sorted(
-            (frame for frame in keyframes if frame.window_id == window_id),
-            key=lambda frame: frame.timestamp_ms,
-        )
-        activity_window = windows[_window_index(window_id)]
-        overlapping_actions = [
-            action
-            for action in actionable_strong_windows
-            if _windows_overlap(activity_window, action)
-        ]
-        action_anchors = sorted(
-            anchor
-            for action in overlapping_actions
-            for anchor in (action.action_anchor_ms or action.anchor_ms)
-        )
-        if action_anchors:
-            source_context = [
-                frame
-                for frame in activity_frames
-                if frame.timestamp_ms <= action_anchors[0]
-            ]
-            if source_context:
-                selected_activity_ids.add(source_context[-1].frame_id)
-
-        anchors = [frame for frame in activity_frames if "anchor" in frame.reason.lower()]
-        final_anchor = anchors[-1] if anchors else (activity_frames[-1] if activity_frames else None)
-        if final_anchor is None:
-            continue
-        selected_activity_ids.add(final_anchor.frame_id)
-
-        preceding_changes = [
-            frame
-            for frame in activity_frames
-            if frame.timestamp_ms < final_anchor.timestamp_ms and "anchor" not in frame.reason.lower()
-        ]
-        if preceding_changes:
-            selected_activity_ids.add(preceding_changes[-1].frame_id)
-
-    return [
-        frame
-        for frame in keyframes
-        if frame.window_id not in activity_window_ids or frame.frame_id in selected_activity_ids
-    ]
-
-
-def _focus_file_dialog_flows(
-    keyframes: list[KeyFrame],
-    candidates: list[_FrameCandidate],
-    windows: list[AnalysisWindow],
-) -> list[KeyFrame]:
-    """Keep visually distinct phases across a file-selection workflow."""
-
-    dialog_indices = [index for index, window in enumerate(windows) if _is_file_dialog_window(window)]
-    if not dialog_indices or not keyframes:
-        return keyframes
-
-    try:
-        import cv2
-    except ImportError:
-        return keyframes
-
-    candidate_by_id = {candidate.frame.frame_id: candidate for candidate in candidates}
-    selected_ids: set[str] = set()
-    managed_window_ids: set[str] = set()
-
-    for dialog_index in dialog_indices:
-        dialog_window = windows[dialog_index]
-        if not dialog_window.active_ranges:
-            continue
-
-        related_indices = [
-            index
-            for index, window in enumerate(windows)
-            if index == dialog_index
-            or (window.priority == "activity" and _windows_overlap(window, dialog_window))
-        ]
-        related_window_ids = {f"window_{index}" for index in related_indices}
-        related_frames = [
-            frame
-            for frame in keyframes
-            if frame.window_id in related_window_ids
-        ]
-        if not related_frames:
-            continue
-        managed_window_ids.update(related_window_ids)
-        for active_range in dialog_window.active_ranges:
-            phase_frames = [
-                frame
-                for frame in related_frames
-                if active_range[0] <= frame.timestamp_ms <= active_range[1]
-            ]
-            selected_ids.update(
-                frame.frame_id
-                for frame in _visual_phase_representatives(cv2, phase_frames, candidate_by_id)
-            )
-
-    if not managed_window_ids:
-        return keyframes
-    return [
-        frame
-        for frame in keyframes
-        if frame.window_id not in managed_window_ids or frame.frame_id in selected_ids
-    ]
-
-
-def _visual_phase_representatives(
-    cv2,
-    frames: list[KeyFrame],
-    candidate_by_id: dict[str, _FrameCandidate],
-) -> list[KeyFrame]:
-    """Keep the final frame of every visually distinct foreground phase."""
-
-    ordered = sorted(frames, key=lambda frame: frame.timestamp_ms)
-    if len(ordered) <= 1:
-        return ordered
-    phases: list[list[KeyFrame]] = [[ordered[0]]]
-    for frame in ordered[1:]:
-        previous = phases[-1][-1]
-        previous_candidate = candidate_by_id.get(previous.frame_id)
-        current_candidate = candidate_by_id.get(frame.frame_id)
-        if previous_candidate is None or current_candidate is None:
-            phases.append([frame])
-            continue
-        delta = _structure_delta(cv2, previous_candidate.gray, current_candidate.gray)
-        if delta >= _STRUCTURE_PHASE_THRESHOLD:
-            phases.append([frame])
-        else:
-            phases[-1].append(frame)
-    stable_indices = {
-        index
-        for index, phase in enumerate(phases)
-        if len(phase) >= 2 or phase[-1].timestamp_ms - phase[0].timestamp_ms >= _STABLE_PHASE_MIN_MS
-    }
-    return [
-        phase[-1]
-        for index, phase in enumerate(phases)
-        if len(phase) > 1
-        or index == len(phases) - 1
-        or not any(later > index for later in stable_indices)
-    ]
-
-
-def _fallback_action_frame(
-    keyframes: list[KeyFrame],
-    windows: list[AnalysisWindow],
-) -> KeyFrame | None:
-    """Never erase every visual candidate from a reportable action window."""
-
-    candidates: list[tuple[int, int, KeyFrame]] = []
-    for frame in keyframes:
-        index = _window_index(frame.window_id or "")
-        if index is None or index >= len(windows):
-            continue
-        window = windows[index]
-        if window.priority != "strong" or not _is_reportable_action_window(window):
-            continue
-        anchors = window.action_anchor_ms or window.anchor_ms
-        distance = min((abs(frame.timestamp_ms - anchor) for anchor in anchors), default=0)
-        candidates.append((distance, -frame.timestamp_ms, frame))
-    return min(candidates, key=lambda item: (item[0], item[1]))[2] if candidates else None
-
-
-def _is_file_dialog_window(window: AnalysisWindow) -> bool:
-    reason = window.reason.lower()
-    return window.priority == "strong" and ("file_selected" in reason or "file_dialog" in reason)
-
-
-def _file_dialog_phase_ranges(
-    window: AnalysisWindow,
-) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
-    ranges = list(window.active_ranges)
-    if not ranges:
-        return None, None
-
-    anchored_indices = [
-        index
-        for index, active_range in enumerate(ranges)
-        if any(active_range[0] <= anchor <= active_range[1] for anchor in window.anchor_ms)
-    ]
-    if not anchored_indices:
-        return None, None
-    dialog_index = anchored_indices[0]
-    dialog_range = ranges[dialog_index]
-    result_range = ranges[dialog_index + 1] if dialog_index + 1 < len(ranges) else None
-    return dialog_range, result_range
-
-
-def _stable_result_phase_final(
-    cv2,
-    frames: list[KeyFrame],
-    candidate_by_id: dict[str, _FrameCandidate],
-) -> KeyFrame | None:
-    ordered = [frame for frame in sorted(frames, key=lambda frame: frame.timestamp_ms) if frame.frame_id in candidate_by_id]
-    if not ordered:
+    if not actions:
         return None
+    anchors = activity.anchor_ms
+    if actions and anchors:
+        first_action = min(anchor for window in actions for anchor in window.action_anchor_ms)
+        before = [anchor for anchor in anchors if anchor <= first_action]
+        chosen = before[-1] if before else min(anchors, key=lambda anchor: abs(anchor - first_action))
+        anchors = (chosen,)
+    return AnalysisWindow(
+        activity.start_ms,
+        activity.end_ms,
+        activity.reason,
+        priority=activity.priority,
+        step_ms=activity.step_ms,
+        max_keyframes=min(activity.max_keyframes, 3),
+        diff_threshold=activity.diff_threshold,
+        anchor_ms=anchors,
+        active_apps=activity.active_apps,
+        active_ranges=activity.active_ranges,
+    )
 
-    phases: list[list[KeyFrame]] = [[ordered[0]]]
-    for frame in ordered[1:]:
-        previous = phases[-1][-1]
-        delta = _structure_delta(cv2, candidate_by_id[previous.frame_id].gray, candidate_by_id[frame.frame_id].gray)
-        if delta >= _STRUCTURE_PHASE_THRESHOLD:
-            phases.append([frame])
+
+def _select_window_candidates(
+    cv2,
+    frames: dict[int, object],
+    window: AnalysisWindow,
+    window_index: int,
+    temp_dir: Path,
+    config: VisionConfig,
+) -> list[_FrameCandidate]:
+    if not frames:
+        return []
+    anchors = set(window.anchor_ms)
+    retained: list[_FrameCandidate] = []
+    previous_gray = None
+    retained_grays = []
+    retained_hashes: list[tuple[int, int]] = []
+    previous_entropy = None
+    last_kept_ms = -10**9
+    for timestamp, frame in sorted(frames.items()):
+        if window.active_ranges and window.priority == "activity" and not _timestamp_in_ranges(timestamp, window.active_ranges):
+            continue
+        small = cv2.resize(frame, (160, 90))
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        pixel_delta = 1.0 if previous_gray is None else _frame_delta(cv2, previous_gray, gray)
+        entropy = _frame_entropy(cv2, gray)
+        entropy_delta = 1.0 if previous_entropy is None else abs(entropy - previous_entropy) / 8.0
+        score = max(pixel_delta, entropy_delta)
+        frame_hash = _average_hash(cv2, gray)
+        force_anchor = _near_any(timestamp, anchors, max(window.step_ms // 2, 125))
+        action_state = _action_state_at(timestamp, window, max(window.step_ms // 2, 125))
+        force_state = bool(action_state)
+        exact_duplicate = _is_exact_duplicate(cv2, gray, retained_grays, config.frame_exact_duplicate_threshold)
+        keep = _should_keep_frame(
+            timestamp_ms=timestamp,
+            score=score,
+            diff_threshold=window.diff_threshold,
+            force_keep=force_anchor or force_state,
+            exact_duplicate=exact_duplicate,
+            frame_hash=frame_hash,
+            retained_hashes=retained_hashes,
+            previous_small=previous_gray,
+            last_kept_ms=last_kept_ms,
+            config=config,
+            entropy_delta=entropy_delta,
+        )
+        previous_gray = gray
+        previous_entropy = entropy
+        if not keep:
+            continue
+        frame_id = f"frame_{window_index}_{len(retained)}"
+        image_path = temp_dir / f"{frame_id}_{timestamp}.jpg"
+        cv2.imwrite(str(image_path), frame)
+        if force_state:
+            reason = f"{window.priority}:action_state:{action_state}"
+        elif force_anchor:
+            reason = f"{window.priority}:anchor"
         else:
-            phases[-1].append(frame)
+            reason = f"{window.priority}:visual_change"
+        keyframe = KeyFrame(
+            frame_id,
+            timestamp,
+            str(image_path),
+            round(float(score), 4),
+            reason,
+            window_id=f"window_{window_index}",
+        )
+        candidate = _FrameCandidate(keyframe, window.priority, gray, frame_hash, entropy)
+        retained.append(candidate)
+        retained_grays.append(gray)
+        retained_hashes.append(frame_hash)
+        last_kept_ms = timestamp
 
-    stable = [phase for phase in phases if phase[-1].timestamp_ms - phase[0].timestamp_ms >= _STABLE_PHASE_MIN_MS]
-    chosen = stable[0] if stable else max(phases, key=lambda phase: (phase[-1].timestamp_ms - phase[0].timestamp_ms, len(phase)))
-    return chosen[-1]
-
-
-def _structure_delta(cv2, previous, current) -> float:
-    previous_edges = cv2.Canny(previous, 40, 120)
-    current_edges = cv2.Canny(current, 40, 120)
-    changed = cv2.countNonZero(cv2.bitwise_xor(previous_edges, current_edges))
-    return float(changed / max(1, previous_edges.size))
-
-
-def _windows_overlap(left: AnalysisWindow, right: AnalysisWindow) -> bool:
-    return left.start_ms <= right.end_ms and right.start_ms <= left.end_ms
-
-
-def _frame_delta(cv2, previous, current) -> float:
-    diff = cv2.absdiff(previous, current)
-    return float(diff.mean() / 255.0)
-
-
-def _average_hash(cv2, gray) -> tuple[int, int]:
-    tiny = cv2.resize(gray, (16, 16))
-    mean = float(tiny.mean())
-    bits = 0
-    for index, value in enumerate(tiny.flatten()):
-        if value >= mean:
-            bits |= 1 << index
-    return bits, 64
+    retained = _focus_semantic_action_phases(retained, window)
+    limit = max(window.max_keyframes, len(window.anchor_ms))
+    if len(retained) <= limit:
+        return retained
+    mandatory = [item for item in retained if "anchor" in item.frame.reason or "action_state" in item.frame.reason]
+    optional = [item for item in retained if item not in mandatory]
+    available = max(0, limit - len(mandatory))
+    return sorted([*mandatory, *_evenly_spaced(optional, available)], key=lambda item: item.frame.timestamp_ms)
 
 
-def _hamming(left: tuple[int, int], right: tuple[int, int]) -> int:
-    return int((left[0] ^ right[0]).bit_count())
+def _probe_timestamps(window: AnalysisWindow, config: VisionConfig) -> list[int]:
+    timestamps = set(_action_state_timestamps(window))
+    for anchor in _representative_anchors(window.anchor_ms, limit=4):
+        for timestamp in (anchor, anchor - window.step_ms, anchor + window.step_ms):
+            if window.start_ms <= timestamp <= window.end_ms:
+                timestamps.add(timestamp)
+    if window.priority == "activity":
+        timestamps.update(_activity_probe_timestamps(window))
+    elif not timestamps:
+        timestamps.update(_coverage_timestamps(window))
+    if not timestamps and window.start_ms <= window.end_ms:
+        timestamps.add(window.start_ms)
+    limit = max(window.max_keyframes * max(1, config.frame_probe_multiplier), len(window.anchor_ms))
+    ordered = sorted(timestamp for timestamp in timestamps if window.start_ms <= timestamp <= window.end_ms)
+    return _evenly_spaced_values(ordered, limit)
 
 
-def _is_exact_duplicate(cv2, current, retained_frames: list, threshold: float) -> bool:
-    return any(_frame_delta(cv2, retained, current) <= threshold for retained in retained_frames)
+def _action_state_timestamps(window: AnalysisWindow) -> tuple[int, ...]:
+    if not window.action_anchor_ms:
+        return ()
+    phases = window.action_phases or (
+        (max(window.action_anchor_ms), "paste" if window.requires_post_action_state else "action"),
+    )
+    timestamps = set()
+    for anchor, action in phases:
+        timestamps.update(_phase_timestamps(window, anchor, action))
+    return tuple(
+        sorted(timestamps)
+    )
+
+
+def _action_state_at(timestamp_ms: int, window: AnalysisWindow, tolerance_ms: int) -> str:
+    phases = window.action_phases or tuple(
+        (anchor, "paste" if window.requires_post_action_state else "action")
+        for anchor in window.action_anchor_ms
+    )
+    matches = [
+        (abs(timestamp_ms - target), action)
+        for anchor, action in phases
+        for target in _phase_timestamps(window, anchor, action)
+        if abs(timestamp_ms - target) <= tolerance_ms
+    ]
+    return min(matches, default=(0, ""))[1]
+
+
+def _phase_timestamps(window: AnalysisWindow, anchor: int, action: str) -> tuple[int, ...]:
+    if action == "capture_start":
+        offsets = _CAPTURE_START_OFFSETS_MS
+    elif action == "capture":
+        offsets = _CAPTURE_OFFSETS_MS
+    elif action == "file_selected":
+        offsets = _FILE_SELECTION_OFFSETS_MS
+    elif action == "outbound_context":
+        offsets = _OUTBOUND_CONTEXT_OFFSETS_MS
+    elif action in {"upload", "send", "removable", "screen_share", "paste"}:
+        offsets = _OUTBOUND_OFFSETS_MS
+    elif action == "derive":
+        offsets = _DERIVATION_OFFSETS_MS
+    else:
+        offsets = _ACTION_OFFSETS_MS
+    return tuple(
+        anchor + offset
+        for offset in offsets
+        if window.start_ms <= anchor + offset <= window.end_ms
+    )
+
+
+def _focus_semantic_action_phases(
+    candidates: list[_FrameCandidate],
+    window: AnalysisWindow,
+) -> list[_FrameCandidate]:
+    focused = list(candidates)
+    for anchor, action in sorted(window.action_phases):
+        if action == "capture_start":
+            start, end = anchor - 1_500, anchor + 8_500
+        elif action == "capture":
+            start, end = anchor - 15_500, anchor + 500
+        elif action == "paste":
+            start, end = anchor - 2_500, anchor + 11_000
+        elif action in {"clipboard", "derive"}:
+            start, end = anchor - 2_500, anchor + 500
+        else:
+            continue
+        phase = [item for item in focused if start <= item.frame.timestamp_ms <= end]
+        if not phase:
+            continue
+        before_or_at = [item for item in phase if item.frame.timestamp_ms <= anchor]
+        pool = before_or_at if action in {"capture", "clipboard"} and before_or_at else phase
+        if action == "capture_start":
+            after_start = [item for item in pool if item.frame.timestamp_ms >= anchor]
+            chosen_items = [max(after_start or pool, key=lambda item: (item.frame.score, float(item.gray.std())))]
+        elif action == "capture":
+            chosen_items = [min(pool, key=lambda item: (float(item.gray.mean()), -item.frame.score))]
+        elif action == "derive":
+            ordered = sorted(pool, key=lambda item: item.frame.timestamp_ms)
+            chosen_items = [ordered[0], ordered[-1]] if ordered[0] is not ordered[-1] else [ordered[0]]
+        else:
+            chosen_items = [max(pool, key=lambda item: item.frame.timestamp_ms)]
+        focused = [item for item in focused if item not in phase]
+        focused.extend(chosen_items)
+    return sorted({item.frame.frame_id: item for item in focused}.values(), key=lambda item: item.frame.timestamp_ms)
+
+
+def _representative_anchors(anchors: tuple[int, ...], *, limit: int) -> tuple[int, ...]:
+    ordered = sorted(set(anchors))
+    if len(ordered) <= limit:
+        return tuple(ordered)
+    last = len(ordered) - 1
+    return tuple(dict.fromkeys(ordered[round(index * last / (limit - 1))] for index in range(limit)))
+
+
+def _activity_probe_timestamps(window: AnalysisWindow) -> tuple[int, ...]:
+    timestamps = set(window.anchor_ms)
+    ranges = window.active_ranges or ((window.start_ms, window.end_ms),)
+    external = any(
+        identify_frontend_app(app_name=app).risk_hint.startswith("external_capable")
+        for app in window.active_apps
+    )
+    for start, end in ranges:
+        if end < start:
+            continue
+        if external:
+            timestamps.update((start, start + (end - start) // 2, end))
+        elif window.anchor_ms:
+            nearby = [anchor for anchor in window.anchor_ms if start <= anchor <= end]
+            timestamps.update(nearby[:1])
+            timestamps.update(nearby[-1:])
+    return tuple(sorted(timestamp for timestamp in timestamps if window.start_ms <= timestamp <= window.end_ms))
+
+
+def _coverage_timestamps(window: AnalysisWindow) -> tuple[int, ...]:
+    if window.priority == "activity" or window.anchor_ms or window.end_ms <= window.start_ms:
+        return ()
+    span = window.end_ms - window.start_ms
+    return tuple(window.start_ms + round(span * fraction) for fraction in (0.0, 0.5, 1.0))
+
+
+def _should_keep_frame(
+    *,
+    timestamp_ms: int,
+    score: float,
+    diff_threshold: float,
+    force_keep: bool,
+    exact_duplicate: bool,
+    frame_hash: tuple[int, int],
+    retained_hashes: list[tuple[int, int]],
+    previous_small,
+    last_kept_ms: int,
+    config: VisionConfig,
+    entropy_delta: float = 0.0,
+) -> bool:
+    del previous_small
+    if force_keep:
+        return not exact_duplicate
+    if exact_duplicate:
+        return False
+    del frame_hash, retained_hashes
+    if score < diff_threshold and entropy_delta < config.frame_entropy_change_threshold:
+        return False
+    return config.frame_min_keep_gap_ms <= 0 or last_kept_ms < 0 or timestamp_ms - last_kept_ms >= config.frame_min_keep_gap_ms
 
 
 def _dedupe_keyframes_globally(
@@ -838,343 +458,253 @@ def _dedupe_keyframes_globally(
     *,
     windows: list[AnalysisWindow] | None = None,
 ) -> tuple[list[KeyFrame], list[KeyFrameDuplicate]]:
-    if not candidates:
-        return [], []
-
-    try:
-        import cv2
-    except ImportError:
-        return [candidate.frame for candidate in candidates], []
-
-    kept: list[_FrameCandidate] = []
+    del windows
+    retained: list[_FrameCandidate] = []
     duplicates: list[KeyFrameDuplicate] = []
-    window_by_id = {f"window_{index}": window for index, window in enumerate(windows or [])}
-    for candidate in sorted(candidates, key=lambda item: _dedupe_sort_key(item, window_by_id)):
-        duplicate_of = _find_global_duplicate(
-            cv2,
-            candidate,
-            kept,
-            config.frame_exact_duplicate_threshold,
-            config.frame_near_duplicate_threshold,
-            config.frame_hash_distance_threshold,
-            config.frame_anchor_duplicate_gap_ms,
-        )
-        if duplicate_of is None:
-            kept.append(candidate)
-            continue
-        kept_candidate, delta, hash_distance = duplicate_of
-        duplicates.append(
-            KeyFrameDuplicate(
-                frame=candidate.frame,
-                kept_frame_id=kept_candidate.frame.frame_id,
-                reason="same_timestamp" if candidate.frame.timestamp_ms == kept_candidate.frame.timestamp_ms else "near_exact_visual_duplicate",
-                delta=round(float(delta), 6),
-                hash_distance=hash_distance,
+    for candidate in sorted(candidates, key=lambda item: (item.frame.timestamp_ms, _priority_sort_key(item.priority))):
+        duplicate_index = None
+        duplicate_delta = 0.0
+        duplicate_hash = 0
+        for index, kept in enumerate(retained):
+            gap = abs(candidate.frame.timestamp_ms - kept.frame.timestamp_ms)
+            if (
+                gap >= 1_000
+                and "action_state" in candidate.frame.reason
+                and "action_state" in kept.frame.reason
+            ):
+                continue
+            has_anchor = "anchor" in candidate.frame.reason or "anchor" in kept.frame.reason
+            same_action_phase = gap <= (max(config.frame_anchor_duplicate_gap_ms, 500) if has_anchor else 2_000)
+            if not same_action_phase:
+                continue
+            delta = _array_delta(candidate.gray, kept.gray)
+            hash_distance = _hamming(candidate.frame_hash, kept.frame_hash)
+            entropy_delta = abs(candidate.entropy - kept.entropy) / 8.0
+            exact = delta <= config.frame_exact_duplicate_threshold
+            visual_change = "visual_change" in candidate.frame.reason or "visual_change" in kept.frame.reason
+            pixel_close = delta <= config.frame_near_duplicate_threshold
+            hash_close = hash_distance <= config.frame_hash_distance_threshold
+            entropy_close = entropy_delta <= config.frame_entropy_duplicate_threshold
+            near = (
+                same_action_phase
+                and not visual_change
+                and sum((pixel_close, hash_close, entropy_close)) >= 2
             )
-        )
-    return [candidate.frame for candidate in sorted(kept, key=lambda item: item.frame.timestamp_ms)], duplicates
-
-
-def _find_global_duplicate(
-    cv2,
-    candidate: _FrameCandidate,
-    kept: list[_FrameCandidate],
-    exact_threshold: float,
-    near_threshold: float,
-    hash_distance_threshold: int,
-    anchor_duplicate_gap_ms: int,
-) -> tuple[_FrameCandidate, float, int] | None:
-    candidate_is_anchor = "anchor" in candidate.frame.reason
-    candidate_can_near_dedupe = _can_near_dedupe(candidate.frame)
-    for retained in kept:
-        retained_is_anchor = "anchor" in retained.frame.reason
-        if candidate_is_anchor and not retained_is_anchor:
+            if exact or near:
+                duplicate_index = index
+                duplicate_delta = delta
+                duplicate_hash = hash_distance
+                break
+        if duplicate_index is None:
+            retained.append(candidate)
             continue
-        delta = _frame_delta(cv2, retained.gray, candidate.gray)
-        hash_distance = _hamming(candidate.frame_hash, retained.frame_hash)
-        if candidate.frame.timestamp_ms == retained.frame.timestamp_ms or delta <= exact_threshold:
-            return retained, delta, hash_distance
-        anchor_near_duplicate = (
-            candidate_is_anchor
-            and retained_is_anchor
-            and delta <= near_threshold
-            and hash_distance <= hash_distance_threshold
-        )
-        close_anchor_near_duplicate = (
-            anchor_near_duplicate
-            and anchor_duplicate_gap_ms > 0
-            and abs(candidate.frame.timestamp_ms - retained.frame.timestamp_ms) <= anchor_duplicate_gap_ms
-        )
-        if (candidate_can_near_dedupe or close_anchor_near_duplicate) and delta <= near_threshold and hash_distance <= hash_distance_threshold:
-            return retained, delta, hash_distance
-    return None
+        kept = retained[duplicate_index]
+        if _candidate_rank(candidate) > _candidate_rank(kept):
+            duplicates.append(
+                KeyFrameDuplicate(kept.frame, candidate.frame.frame_id, "lower_evidence_priority", duplicate_delta, duplicate_hash)
+            )
+            retained[duplicate_index] = candidate
+        else:
+            duplicates.append(
+                KeyFrameDuplicate(candidate.frame, kept.frame.frame_id, "visual_duplicate", duplicate_delta, duplicate_hash)
+            )
+    return [item.frame for item in sorted(retained, key=lambda item: item.frame.timestamp_ms)], duplicates
 
 
-def _can_near_dedupe(frame: KeyFrame) -> bool:
-    reason = frame.reason.lower()
-    return "coverage" in reason or "window_start" in reason
-
-
-def _dedupe_evidence_priority(
-    candidate: _FrameCandidate,
-    window_by_id: dict[str, AnalysisWindow] | None = None,
-) -> int:
-    """Prefer anchors tied to a sensitive-file activity over generic actions."""
-
-    window = (window_by_id or {}).get(candidate.frame.window_id or "")
-    if window is not None and _is_file_dialog_window(window):
-        return -1
-    if window is not None and _is_near_action_anchor(candidate.frame.timestamp_ms, window):
-        return -1
-    if candidate.priority == "activity" and "anchor" in candidate.frame.reason:
-        return 0
-    return _priority_sort_key(candidate.priority) + 1
-
-
-def _is_near_action_anchor(timestamp_ms: int, window: AnalysisWindow) -> bool:
-    return any(
-        anchor - window.step_ms <= timestamp_ms <= anchor + 1_250
-        for anchor in window.action_anchor_ms
+def _candidate_rank(candidate: _FrameCandidate) -> tuple[int, int, float, int]:
+    reason = candidate.frame.reason
+    return (
+        1 if candidate.priority == "strong" else 0,
+        1 if "anchor" in reason or "action_state" in reason else 0,
+        candidate.frame.score,
+        -candidate.frame.timestamp_ms,
     )
 
 
-def _dedupe_sort_key(
-    candidate: _FrameCandidate,
-    window_by_id: dict[str, AnalysisWindow] | None = None,
-) -> tuple[int, int]:
-    priority = _dedupe_evidence_priority(candidate, window_by_id)
-    timestamp = candidate.frame.timestamp_ms
-    if priority == 0 or "activity_gap" in candidate.frame.reason.lower():
-        return priority, -timestamp
-    return priority, timestamp
+def _focus_actionable_keyframes(
+    keyframes: list[KeyFrame],
+    candidates: list[_FrameCandidate],
+    windows: list[AnalysisWindow],
+) -> list[KeyFrame]:
+    """Compatibility boundary: selection now happens before global deduplication."""
+
+    del candidates, windows
+    return sorted(keyframes, key=lambda frame: frame.timestamp_ms)
 
 
-def _should_keep_frame(
-    *,
-    timestamp_ms: int,
-    score: float,
-    frame_hash: tuple[int, int],
-    diff_threshold: float,
-    force_keep: bool,
-    exact_duplicate: bool,
-    retained_hashes: list[tuple[int, int]],
-    previous_small,
-    last_kept_ms: int,
-    config: VisionConfig,
-) -> bool:
-    if previous_small is None:
-        return True
-    if force_keep:
-        return True
-    if exact_duplicate:
-        return False
-    if score < diff_threshold:
-        return False
-    if config.frame_min_keep_gap_ms > 0 and timestamp_ms - last_kept_ms < config.frame_min_keep_gap_ms:
-        return False
-    return all(_hamming(frame_hash, retained) > config.frame_hash_distance_threshold for retained in retained_hashes)
-
-
-def _is_near_anchor(timestamp_ms: int, anchors: tuple[int, ...], step_ms: int) -> bool:
-    tolerance = max(step_ms // 2, 125)
-    return any(abs(timestamp_ms - anchor) <= tolerance for anchor in anchors)
-
-
-def _coverage_timestamps(window: AnalysisWindow) -> tuple[int, ...]:
-    if window.priority == "activity" or window.anchor_ms or window.end_ms <= window.start_ms or window.max_keyframes <= 3:
-        return ()
-    slots = min(window.max_keyframes, 12)
-    if slots <= 1:
-        return (window.start_ms,)
-    span = window.end_ms - window.start_ms
-    return tuple(window.start_ms + round(slot * span / (slots - 1)) for slot in range(slots))
+def _focus_file_dialog_flows(
+    keyframes: list[KeyFrame],
+    candidates: list[_FrameCandidate],
+    windows: list[AnalysisWindow],
+) -> list[KeyFrame]:
+    del candidates, windows
+    return sorted(keyframes, key=lambda frame: frame.timestamp_ms)
 
 
 def _clamp_window_to_duration(window: AnalysisWindow, duration_ms: int) -> AnalysisWindow:
-    if duration_ms <= 0:
-        return window
-    end_ms = min(window.end_ms, duration_ms)
-    start_ms = min(window.start_ms, end_ms)
+    end_ms = min(window.end_ms, duration_ms) if duration_ms > 0 else window.end_ms
+    start_ms = min(max(window.start_ms, 0), end_ms)
     return AnalysisWindow(
-        start_ms=start_ms,
-        end_ms=end_ms,
-        reason=window.reason,
+        start_ms,
+        end_ms,
+        window.reason,
         priority=window.priority,
         step_ms=window.step_ms,
         max_keyframes=window.max_keyframes,
         diff_threshold=window.diff_threshold,
         anchor_ms=tuple(anchor for anchor in window.anchor_ms if start_ms <= anchor <= end_ms),
         action_anchor_ms=tuple(anchor for anchor in window.action_anchor_ms if start_ms <= anchor <= end_ms),
+        action_phases=tuple(phase for phase in window.action_phases if start_ms <= phase[0] <= end_ms),
+        requires_post_action_state=window.requires_post_action_state,
         active_apps=window.active_apps,
         active_ranges=_clip_active_ranges(window.active_ranges, start_ms, end_ms),
     )
 
 
-def _probe_timestamps(window: AnalysisWindow, config: VisionConfig) -> list[int]:
-    if window.priority == "activity":
-        return _activity_probe_timestamps(window)
-    if window.priority == "strong" and window.anchor_ms:
-        return _strong_probe_timestamps(window)
-    if window.end_ms <= window.start_ms:
-        return [window.start_ms]
-
-    exact = list(range(window.start_ms, window.end_ms + 1, max(1, window.step_ms)))
-    max_probes = max(window.max_keyframes, window.max_keyframes * config.frame_probe_multiplier)
-    if len(exact) <= max_probes:
-        timestamps = exact
-    else:
-        timestamps = []
-        last_index = len(exact) - 1
-        for slot in range(max_probes):
-            timestamps.append(exact[round(slot * last_index / max(1, max_probes - 1))])
-
-    anchors = [anchor for anchor in window.anchor_ms if window.start_ms <= anchor <= window.end_ms]
-    ordered: list[int] = []
-    seen: set[int] = set()
-    for timestamp in [*sorted(anchors), window.start_ms, window.end_ms, *timestamps]:
-        if timestamp in seen:
-            continue
-        seen.add(timestamp)
-        ordered.append(timestamp)
-    return sorted(ordered)
-
-
-def _activity_probe_timestamps(window: AnalysisWindow) -> list[int]:
-    """Probe sensitive activity anchors and sparse relative positions between them."""
-
-    anchors = sorted(anchor for anchor in window.anchor_ms if window.start_ms <= anchor <= window.end_ms)
-    if not anchors:
-        return []
-
-    # A leak action can occur between two file-operation anchors.  Cover those
-    # gaps by relative positions so continuous activity remains observable
-    # without adopting a wall-clock sampling interval.
-    gap_candidates_by_position: dict[int, list[int]] = {1: [], 2: [], 3: []}
-    confirmation_candidates: list[tuple[int, int]] = []
-    for range_start, range_end in _activity_probe_ranges(window):
-        range_anchors = [anchor for anchor in anchors if range_start <= anchor <= range_end]
-        boundaries = [range_start, *range_anchors, range_end]
-        for start_ms, end_ms in zip(boundaries, boundaries[1:]):
-            span_ms = end_ms - start_ms
-            if span_ms <= 3 * window.step_ms:
-                continue
-            for fraction in (1, 2, 3):
-                gap_candidates_by_position[fraction].append(start_ms + round(span_ms * fraction / 4))
-            if any(abs(anchor - end_ms) <= window.step_ms for anchor in anchors):
-                operation_timestamp = start_ms + round(span_ms * 3 / 4)
-                confirmation_candidates.append((operation_timestamp, start_ms + round(span_ms * 7 / 8)))
-
-    # File exfiltration normally follows the preceding file activity.  Prioritize
-    # later gap positions, but retain explicit anchors and their nearby context
-    # after that priority set so they cannot consume the whole frame budget.
-    gap_budget = max(3, window.max_keyframes // 2)
-    gap_timestamps: list[int] = []
-    if confirmation_candidates:
-        operation_timestamp, confirmation_timestamp = max(confirmation_candidates, key=lambda item: item[1])
-        gap_timestamps.extend((operation_timestamp, confirmation_timestamp))
-    for fraction in (3, 2, 1):
-        remaining = gap_budget - len(gap_timestamps)
-        if remaining <= 0:
-            break
-        gap_timestamps.extend(_evenly_spaced_timestamps(gap_candidates_by_position[fraction], remaining))
-
-    anchor_context = [
-        timestamp
-        for anchor in anchors
-        for timestamp in (anchor - window.step_ms, anchor + window.step_ms, anchor + 2 * window.step_ms)
-        if window.start_ms <= timestamp <= window.end_ms
-    ]
-    ordered: list[int] = []
-    seen: set[int] = set()
-    for timestamp in [*gap_timestamps, *anchors, *anchor_context]:
-        if timestamp not in seen:
-            seen.add(timestamp)
-            ordered.append(timestamp)
-    return sorted(ordered)
-
-
-def _activity_probe_ranges(window: AnalysisWindow) -> tuple[tuple[int, int], ...]:
-    if window.active_ranges:
-        return _clip_active_ranges(window.active_ranges, window.start_ms, window.end_ms)
-    return ((window.start_ms, window.end_ms),)
-
-
-def _evenly_spaced_timestamps(timestamps: list[int], limit: int) -> list[int]:
-    ordered = sorted(set(timestamps))
-    if len(ordered) <= limit:
-        return ordered
-    last_index = len(ordered) - 1
-    return [ordered[round(slot * last_index / max(1, limit - 1))] for slot in range(limit)]
-
-
-def _strong_probe_timestamps(window: AnalysisWindow) -> list[int]:
-    """Keep every explicit risk anchor before adding its immediate context."""
-
-    anchors = sorted(anchor for anchor in window.anchor_ms if window.start_ms <= anchor <= window.end_ms)
-    ordered = list(dict.fromkeys(anchors))
-    for anchor in anchors:
-        for timestamp in (anchor - window.step_ms, anchor + window.step_ms):
-            if window.start_ms <= timestamp <= window.end_ms and timestamp not in ordered:
-                ordered.append(timestamp)
-    for anchor in window.action_anchor_ms:
-        for timestamp in (anchor - 1_000, anchor + 1_000, anchor + 1_250):
-            if window.start_ms <= timestamp <= window.end_ms and timestamp not in ordered:
-                ordered.append(timestamp)
-    return ordered
-
-
-def _read_frames_for_timestamps(
-    cv2,
-    capture,
-    video_path: Path,
-    timestamps: list[int],
-    fps: float,
-    config: VisionConfig,
-    *,
-    cuda_decoder: str | None,
-) -> dict[int, object]:
-    if not timestamps:
-        return {}
-
-    ordered_timestamps = sorted(set(timestamps))
-    frames = _read_frames_with_ffmpeg_cuda(cv2, video_path, ordered_timestamps, cuda_decoder)
-    remaining = [timestamp for timestamp in ordered_timestamps if timestamp not in frames]
-    for group in _timestamp_groups(remaining, config.frame_sequential_gap_ms):
+def _read_frames_for_timestamps(cv2, capture, timestamps: list[int], fps: float, config: VisionConfig) -> dict[int, object]:
+    frames = {}
+    for group in _timestamp_groups(sorted(set(timestamps)), config.frame_sequential_gap_ms):
         if len(group) == 1:
             frame = _seek_read_frame(cv2, capture, group[0])
             if frame is not None:
                 frames[group[0]] = frame
-            continue
-        frames.update(_read_timestamp_group_sequentially(cv2, capture, group, fps))
+        else:
+            frames.update(_read_timestamp_group_sequentially(cv2, capture, group, fps))
     return frames
 
 
-def _read_frames_with_ffmpeg_cuda(cv2, video_path: Path, timestamps: list[int], decoder: str | None) -> dict[int, object]:
-    if not decoder:
-        return {}
+def _timestamp_groups(timestamps: list[int], max_gap_ms: int) -> list[list[int]]:
+    if not timestamps:
+        return []
+    if max_gap_ms <= 0:
+        return [[timestamp] for timestamp in timestamps]
+    groups = [[timestamps[0]]]
+    for timestamp in timestamps[1:]:
+        if timestamp - groups[-1][-1] <= max_gap_ms:
+            groups[-1].append(timestamp)
+        else:
+            groups.append([timestamp])
+    return groups
 
+
+def _seek_read_frame(cv2, capture, timestamp_ms: int):
+    capture.set(cv2.CAP_PROP_POS_MSEC, float(timestamp_ms))
+    ok, frame = capture.read()
+    return frame.copy() if ok else None
+
+
+def _read_timestamp_group_sequentially(cv2, capture, timestamps: list[int], fps: float) -> dict[int, object]:
+    frames = {}
+    if not timestamps:
+        return frames
+    frame_interval_ms = max(1, int(round(1000.0 / max(fps, 1.0))))
+    tolerance_ms = max(frame_interval_ms, 50)
+    target_index = 0
+    capture.set(cv2.CAP_PROP_POS_MSEC, float(timestamps[0]))
+    while target_index < len(timestamps):
+        ok, frame = capture.read()
+        if not ok:
+            break
+        position_ms = int(round(capture.get(cv2.CAP_PROP_POS_MSEC) or timestamps[target_index]))
+        if position_ms > timestamps[-1] + tolerance_ms:
+            break
+        while target_index < len(timestamps) and position_ms + tolerance_ms >= timestamps[target_index]:
+            frames[timestamps[target_index]] = frame.copy()
+            target_index += 1
+    return frames
+
+
+def _frame_delta(cv2, left, right) -> float:
+    return float(cv2.absdiff(left, right).mean() / 255.0)
+
+
+def _frame_entropy(cv2, gray) -> float:
+    histogram = cv2.calcHist([gray], [0], None, [256], [0, 256]).ravel()
+    total = float(histogram.sum())
+    if total <= 0:
+        return 0.0
+    return -sum(
+        probability * math.log2(probability)
+        for count in histogram
+        if count > 0
+        for probability in (float(count) / total,)
+    )
+
+
+def _array_delta(left, right) -> float:
     try:
         import numpy as np
     except ImportError:
-        return {}
+        return 1.0
+    return float(np.mean(np.abs(left.astype("float32") - right.astype("float32"))) / 255.0)
 
-    executable = _ffmpeg_executable()
-    if not executable:
-        return {}
 
-    frames: dict[int, object] = {}
-    for timestamp_ms in timestamps:
-        command = _ffmpeg_cuda_frame_command(executable, video_path, timestamp_ms, decoder)
-        try:
-            result = subprocess.run(command, capture_output=True, timeout=20, check=False)
-        except (OSError, subprocess.TimeoutExpired):
-            continue
-        if result.returncode != 0 or not result.stdout:
-            continue
-        frame = cv2.imdecode(np.frombuffer(result.stdout, dtype=np.uint8), cv2.IMREAD_COLOR)
-        if frame is not None:
-            frames[timestamp_ms] = frame
-    return frames
+def _average_hash(cv2, gray) -> tuple[int, int]:
+    small = cv2.resize(gray, (8, 8))
+    mean = float(small.mean())
+    value = 0
+    for bit, pixel in enumerate(small.flatten()):
+        if float(pixel) >= mean:
+            value |= 1 << bit
+    return value, 64
+
+
+def _hamming(left: tuple[int, int], right: tuple[int, int]) -> int:
+    if left[1] != right[1]:
+        return max(left[1], right[1])
+    return int((left[0] ^ right[0]).bit_count())
+
+
+def _is_exact_duplicate(cv2, gray, retained_grays: list[object], threshold: float) -> bool:
+    return any(_frame_delta(cv2, gray, retained) <= threshold for retained in retained_grays)
+
+
+def _near_any(timestamp_ms: int, targets: set[int], tolerance_ms: int) -> bool:
+    return any(abs(timestamp_ms - target) <= tolerance_ms for target in targets)
+
+
+def _evenly_spaced(items: list[_FrameCandidate], limit: int) -> list[_FrameCandidate]:
+    if limit <= 0:
+        return []
+    if len(items) <= limit:
+        return items
+    last = len(items) - 1
+    return [items[round(index * last / max(1, limit - 1))] for index in range(limit)]
+
+
+def _evenly_spaced_values(values: list[int], limit: int) -> list[int]:
+    if limit <= 0 or len(values) <= limit:
+        return values
+    last = len(values) - 1
+    return sorted({values[round(index * last / max(1, limit - 1))] for index in range(limit)})
+
+
+def _timestamp_in_ranges(timestamp_ms: int, ranges: tuple[tuple[int, int], ...]) -> bool:
+    return any(start <= timestamp_ms <= end for start, end in ranges)
+
+
+def _clip_active_ranges(
+    ranges: tuple[tuple[int, int], ...],
+    start_ms: int,
+    end_ms: int,
+) -> tuple[tuple[int, int], ...]:
+    return _merge_active_ranges(
+        tuple((max(start, start_ms), min(end, end_ms)) for start, end in ranges if start <= end_ms and end >= start_ms)
+    )
+
+
+def _merge_active_ranges(*groups: tuple[tuple[int, int], ...]) -> tuple[tuple[int, int], ...]:
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted((start, end) for group in groups for start, end in group if start <= end):
+        if not merged or start > merged[-1][1] + 1:
+            merged.append((start, end))
+        else:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+    return tuple(merged)
+
+
+def _priority_sort_key(priority: str) -> int:
+    return {"strong": 0, "activity": 1, "medium": 2, "weak": 3}.get(priority, 2)
 
 
 def _ffmpeg_cuda_frame_command(executable: str, video_path: Path, timestamp_ms: int, decoder: str) -> list[str]:
@@ -1205,7 +735,6 @@ def _ffmpeg_executable() -> str | None:
     executable = shutil.which("ffmpeg")
     if executable:
         return executable
-
     if os.name != "nt":
         return None
     packages = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
@@ -1213,130 +742,12 @@ def _ffmpeg_executable() -> str | None:
     return str(candidates[0]) if candidates else None
 
 
-@lru_cache(maxsize=1)
-def _ffmpeg_cuda_available(executable: str) -> bool:
-    try:
-        result = subprocess.run([executable, "-hide_banner", "-hwaccels"], capture_output=True, text=True, timeout=10, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return result.returncode == 0 and "cuda" in result.stdout.lower()
-
-
-@lru_cache(maxsize=64)
-def _cuda_decoder_for_video(video_path: Path) -> str | None:
-    executable = _ffmpeg_executable()
-    if not executable or not _ffmpeg_cuda_available(executable):
-        return None
-
-    ffprobe = str(Path(executable).with_name("ffprobe.exe" if os.name == "nt" else "ffprobe"))
-    try:
-        result = subprocess.run(
-            [ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    decoders = {"h264": "h264_cuvid", "hevc": "hevc_cuvid", "av1": "av1_cuvid"}
-    return decoders.get(result.stdout.strip().lower()) if result.returncode == 0 else None
-
-
-def _timestamp_groups(timestamps: list[int], max_gap_ms: int) -> list[list[int]]:
-    if not timestamps:
-        return []
-    if max_gap_ms <= 0:
-        return [[timestamp] for timestamp in timestamps]
-
-    groups: list[list[int]] = [[timestamps[0]]]
-    for timestamp in timestamps[1:]:
-        if timestamp - groups[-1][-1] <= max_gap_ms:
-            groups[-1].append(timestamp)
-        else:
-            groups.append([timestamp])
-    return groups
-
-
-def _seek_read_frame(cv2, capture, timestamp_ms: int):
-    capture.set(cv2.CAP_PROP_POS_MSEC, float(timestamp_ms))
-    ok, frame = capture.read()
-    return frame.copy() if ok else None
-
-
-def _read_timestamp_group_sequentially(cv2, capture, timestamps: list[int], fps: float) -> dict[int, object]:
-    frames: dict[int, object] = {}
-    if not timestamps:
-        return frames
-
-    frame_interval_ms = max(1, int(round(1000.0 / max(fps, 1.0))))
-    tolerance_ms = max(frame_interval_ms, 50)
-    target_index = 0
-    capture.set(cv2.CAP_PROP_POS_MSEC, float(timestamps[0]))
-
-    while target_index < len(timestamps):
-        ok, frame = capture.read()
-        if not ok:
-            break
-        position_ms = int(round(capture.get(cv2.CAP_PROP_POS_MSEC) or timestamps[target_index]))
-        if position_ms > timestamps[-1] + tolerance_ms:
-            break
-        while target_index < len(timestamps) and position_ms + tolerance_ms >= timestamps[target_index]:
-            frames[timestamps[target_index]] = frame.copy()
-            target_index += 1
-    return frames
-
-
-def _merge_same_priority_windows(windows: list[AnalysisWindow]) -> list[AnalysisWindow]:
-    merged: list[AnalysisWindow] = []
-    for window in sorted(windows, key=lambda item: item.start_ms):
-        if not merged or window.start_ms > merged[-1].end_ms:
-            merged.append(window)
-            continue
-        previous = merged[-1]
-        apps = tuple(dict.fromkeys([*previous.active_apps, *window.active_apps]))
-        anchors = tuple(sorted({*previous.anchor_ms, *window.anchor_ms}))
-        action_anchors = tuple(sorted({*previous.action_anchor_ms, *window.action_anchor_ms}))
-        merged[-1] = AnalysisWindow(
-            start_ms=previous.start_ms,
-            end_ms=max(previous.end_ms, window.end_ms),
-            reason=f"{previous.reason}+{window.reason}",
-            priority=previous.priority,
-            step_ms=min(previous.step_ms, window.step_ms),
-            max_keyframes=max(previous.max_keyframes, window.max_keyframes, len(anchors)),
-            diff_threshold=min(previous.diff_threshold, window.diff_threshold),
-            anchor_ms=anchors,
-            action_anchor_ms=action_anchors,
-            active_apps=apps,
-            active_ranges=_merge_active_ranges(previous.active_ranges, window.active_ranges),
-        )
-    return merged
-
-
-def _timestamp_in_ranges(timestamp_ms: int, ranges: tuple[tuple[int, int], ...]) -> bool:
-    return any(start_ms <= timestamp_ms <= end_ms for start_ms, end_ms in ranges)
-
-
-def _clip_active_ranges(
-    ranges: tuple[tuple[int, int], ...],
-    start_ms: int,
-    end_ms: int,
-) -> tuple[tuple[int, int], ...]:
-    return _merge_active_ranges(
-        tuple((max(range_start, start_ms), min(range_end, end_ms)) for range_start, range_end in ranges if range_start <= end_ms and range_end >= start_ms),
-    )
-
-
-def _merge_active_ranges(*range_groups: tuple[tuple[int, int], ...]) -> tuple[tuple[int, int], ...]:
-    intervals = sorted((start_ms, end_ms) for group in range_groups for start_ms, end_ms in group if start_ms <= end_ms)
-    merged: list[tuple[int, int]] = []
-    for start_ms, end_ms in intervals:
-        if not merged or start_ms > merged[-1][1] + 1:
-            merged.append((start_ms, end_ms))
-            continue
-        merged[-1] = (merged[-1][0], max(merged[-1][1], end_ms))
-    return tuple(merged)
-
-
-def _priority_sort_key(priority: str) -> int:
-    return {"strong": 0, "activity": 1, "medium": 2, "weak": 3}.get(priority, 2)
+__all__ = [
+    "AnalysisWindow",
+    "KeyFrame",
+    "KeyFrameDuplicate",
+    "KeyFrameSelection",
+    "merge_analysis_windows",
+    "select_keyframes",
+    "select_keyframes_detailed",
+]

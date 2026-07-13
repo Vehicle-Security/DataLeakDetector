@@ -127,133 +127,44 @@ def choose_keyframes_for_vlm(
 ) -> list[VlmRequestFrame]:
     if max_frames == 0:
         return []
-    unlimited = max_frames < 0
-    if max_frames_per_window is not None and max_frames_per_window <= 0:
-        max_frames_per_window = None
-
-    candidates = [
-        (
-            _keyframe_score(frame),
-            frame.timestamp_ms,
-            VlmRequestFrame(
-                frame=frame,
-                visual_note="",
-                visual_confidence=0.0,
-                selection_score=_keyframe_score(frame),
-            ),
+    selected = [
+        VlmRequestFrame(
+            frame=frame,
+            visual_note="",
+            visual_confidence=0.0,
+            selection_score=_keyframe_score(frame),
         )
-        for frame in frames
+        for frame in sorted(frames, key=lambda item: item.timestamp_ms)
     ]
-    candidates = _focus_activity_gap_evidence(candidates)
-    if max_frames_per_window is not None:
-        candidates_by_window: dict[str, list[tuple[int, int, VlmRequestFrame]]] = {}
-        for candidate in candidates:
-            window_id = candidate[2].frame.window_id or "window_unknown"
-            candidates_by_window.setdefault(window_id, []).append(candidate)
-        limited_candidates: list[tuple[int, int, VlmRequestFrame]] = []
-        for window_candidates in candidates_by_window.values():
-            limited_candidates.extend(_select_temporally_diverse_candidates(window_candidates, max_frames_per_window))
-        candidates = limited_candidates
-    elif not unlimited and len(candidates) > max_frames:
-        candidates = _select_temporally_diverse_candidates(candidates, max_frames)
-
-    selected: list[VlmRequestFrame] = []
-    for _, _, frame in sorted(candidates, key=lambda item: (-item[0], item[1])):
-        selected.append(frame)
-        if not unlimited and len(selected) >= max_frames:
-            break
-    return sorted(selected, key=lambda item: item.frame.timestamp_ms)
-
-
-def _focus_activity_gap_evidence(
-    candidates: list[tuple[int, int, VlmRequestFrame]],
-) -> list[tuple[int, int, VlmRequestFrame]]:
-    """Compact fallback activity coverage to its latest action and log context."""
-
-    by_window: dict[str, list[tuple[int, int, VlmRequestFrame]]] = {}
-    for candidate in candidates:
-        window_id = candidate[2].frame.window_id or "window_unknown"
-        by_window.setdefault(window_id, []).append(candidate)
-
-    focused: list[tuple[int, int, VlmRequestFrame]] = []
-    for window_candidates in by_window.values():
-        activity_gaps = [candidate for candidate in window_candidates if "activity_gap" in candidate[2].frame.reason.lower()]
-        if not activity_gaps:
-            focused.extend(window_candidates)
-            continue
-
-        action = max(activity_gaps, key=lambda candidate: candidate[1])
-        preceding_gap = [candidate for candidate in activity_gaps if candidate[1] < action[1]]
-        preceding_anchors = [
-            candidate
-            for candidate in window_candidates
-            if "anchor" in candidate[2].frame.reason.lower() and candidate[1] <= action[1]
+    if max_frames_per_window is not None and max_frames_per_window > 0:
+        by_window: dict[str, list[VlmRequestFrame]] = {}
+        for item in selected:
+            by_window.setdefault(item.frame.window_id or "window_unknown", []).append(item)
+        selected = [
+            item
+            for group in by_window.values()
+            for item in _evenly_spread_frames(group, max_frames_per_window)
         ]
-        following_anchors = [
-            candidate
-            for candidate in window_candidates
-            if "anchor" in candidate[2].frame.reason.lower() and candidate[1] > action[1]
-        ]
-        if preceding_anchors:
-            focused.append(max(preceding_anchors, key=lambda candidate: candidate[1]))
-        if preceding_gap:
-            focused.append(max(preceding_gap, key=lambda candidate: candidate[1]))
-        focused.append(action)
-        if following_anchors:
-            focused.append(max(following_anchors, key=lambda candidate: candidate[1]))
-    return focused
-
-
-def _select_temporally_diverse_candidates(
-    candidates: list[tuple[int, int, VlmRequestFrame]],
-    limit: int,
-) -> list[tuple[int, int, VlmRequestFrame]]:
-    if limit <= 0 or len(candidates) <= limit:
-        return candidates
-    max_score = max(score for score, _, _ in candidates)
-    preferred = [candidate for candidate in candidates if candidate[0] >= max_score - 10]
-    selected = _pick_evenly_by_time(preferred, min(limit, len(preferred)))
-    if len(selected) < limit:
-        selected_keys = {(candidate[2].frame.frame_id, candidate[1]) for candidate in selected}
-        remainder = [
-            candidate
-            for candidate in sorted(candidates, key=lambda item: (-item[0], item[1]))
-            if (candidate[2].frame.frame_id, candidate[1]) not in selected_keys
-        ]
-        selected.extend(remainder[: limit - len(selected)])
+        selected.sort(key=lambda item: item.frame.timestamp_ms)
+    if max_frames > 0:
+        selected = _evenly_spread_frames(selected, max_frames)
     return selected
 
 
-def _pick_evenly_by_time(
-    candidates: list[tuple[int, int, VlmRequestFrame]],
-    limit: int,
-) -> list[tuple[int, int, VlmRequestFrame]]:
-    if not candidates or limit <= 0:
-        return []
+def _evenly_spread_frames(frames: list[VlmRequestFrame], limit: int) -> list[VlmRequestFrame]:
+    if limit <= 0 or len(frames) <= limit:
+        return frames
     if limit == 1:
-        return [max(candidates, key=lambda item: (item[0], -item[1]))]
-
-    ordered = sorted(candidates, key=lambda item: item[1])
-    start = ordered[0][1]
-    end = ordered[-1][1]
-    if start == end:
-        return sorted(ordered, key=lambda item: (-item[0], item[1]))[:limit]
-
-    selected: list[tuple[int, int, VlmRequestFrame]] = []
-    selected_keys: set[tuple[str, int]] = set()
+        return [frames[-1]]
+    ordered = sorted(frames, key=lambda item: item.frame.timestamp_ms)
+    start = ordered[0].frame.timestamp_ms
+    end = ordered[-1].frame.timestamp_ms
+    selected: list[VlmRequestFrame] = []
     for index in range(limit):
         target = start + round((end - start) * index / (limit - 1))
-        available = [
-            candidate
-            for candidate in ordered
-            if (candidate[2].frame.frame_id, candidate[1]) not in selected_keys
-        ]
-        if not available:
-            break
-        chosen = min(available, key=lambda item: (abs(item[1] - target), -item[0], item[1]))
-        selected.append(chosen)
-        selected_keys.add((chosen[2].frame.frame_id, chosen[1]))
-    return selected
+        available = [item for item in ordered if item not in selected]
+        selected.append(min(available, key=lambda item: (abs(item.frame.timestamp_ms - target), -item.frame.timestamp_ms)))
+    return sorted(selected, key=lambda item: item.frame.timestamp_ms)
 
 
 def build_vlm_frame_grids(

@@ -465,49 +465,51 @@ def _build_report_id(log_path: Path, record_count: int, case_name: str | None) -
 
 
 def _load_pipeline_records(log_path: Path) -> list[dict[str, Any]]:
-    """Include TIM's explicit upload signal recorded outside the noisy main log."""
+    """Use key events as primary input and merge only transfer-relevant raw events."""
 
-    records = load_json_records(log_path)
-    if log_path.name.lower() != "logs.json":
-        return records
     keyevents_path = log_path.with_name("keyevents.json")
-    if not keyevents_path.exists():
-        return records
+    raw_path = log_path.with_name("logs.json")
+    if log_path.name.lower() == "keyevents.json":
+        keyevents_path = log_path
+    elif log_path.name.lower() == "logs.json" and keyevents_path.exists() and keyevents_path.stat().st_size > 2:
+        pass
+    else:
+        return load_json_records(log_path)
 
-    known = {_record_identity(item) for item in records}
-    for item in load_json_records(keyevents_path):
-        if not _is_tim_upload_keyevent(item):
+    records = load_json_records(keyevents_path)
+    if not raw_path.exists() or raw_path.resolve() == keyevents_path.resolve():
+        return records
+    known_resources = {
+        normalize_path(item.get("file_path") or item.get("path") or "").lower()
+        for item in records
+        if Path(normalize_path(item.get("file_path") or item.get("path") or "")).suffix.lower()
+        in {".csv", ".doc", ".docx", ".jpeg", ".jpg", ".m4a", ".pdf", ".png", ".ppt", ".pptx", ".sql", ".txt", ".xls", ".xlsx", ".zip"}
+    }
+    known = {_pipeline_record_identity(item) for item in records}
+    for item in load_json_records(raw_path):
+        if not _is_transfer_supplement(item, known_resources):
             continue
-        identity = _record_identity(item)
-        if identity in known:
-            continue
-        records.append(item)
-        known.add(identity)
+        identity = _pipeline_record_identity(item)
+        if identity not in known:
+            records.append(item)
+            known.add(identity)
     return records
 
 
-def _is_tim_upload_keyevent(record: dict[str, Any]) -> bool:
+def _is_transfer_supplement(record: dict[str, Any], known_resources: set[str]) -> bool:
     event_type = str(record.get("event_type") or record.get("type") or "").lower()
-    if event_type not in {"file_upload", "upload", "uploaded", "upload_complete"}:
-        return False
-    process = record.get("process_info") if isinstance(record.get("process_info"), dict) else {}
-    window = record.get("window_info") if isinstance(record.get("window_info"), dict) else {}
-    context = " ".join(
-        str(value or "").lower()
-        for value in (
-            record.get("app_name"),
-            record.get("process_name"),
-            process.get("process_name"),
-            record.get("window_title"),
-            window.get("window_title"),
-        )
-    )
-    return "tim" in context or "androws" in context
+    extra = record.get("extra") if isinstance(record.get("extra"), dict) else {}
+    operation = str(extra.get("raw_operation") or record.get("operation") or "").lower()
+    if event_type in {"file_selected", "file_upload", "upload", "uploaded", "upload_complete", "send", "sent"}:
+        return True
+    path = normalize_path(record.get("file_path") or record.get("path") or "").lower()
+    return bool(path and path in known_resources and event_type in {"opened", "read"} and "browser_file_access" in operation)
 
 
-def _record_identity(record: dict[str, Any]) -> tuple[str, str, str]:
+def _pipeline_record_identity(record: dict[str, Any]) -> tuple[str, str, str]:
+    extra = record.get("extra") if isinstance(record.get("extra"), dict) else {}
     return (
-        str(record.get("timestamp") or record.get("time") or ""),
+        str(extra.get("relative_timestamp") or record.get("timestamp") or record.get("time") or ""),
         str(record.get("event_type") or record.get("type") or "").lower(),
         normalize_path(record.get("file_path") or record.get("path") or "").lower(),
     )

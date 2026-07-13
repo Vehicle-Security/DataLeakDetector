@@ -237,6 +237,8 @@ def _analysis_window_to_dict(window: AnalysisWindow) -> dict[str, Any]:
         "diff_threshold": window.diff_threshold,
         "anchor_ms": list(window.anchor_ms),
         "action_anchor_ms": list(window.action_anchor_ms),
+        "action_phases": [[timestamp, action] for timestamp, action in window.action_phases],
+        "requires_post_action_state": window.requires_post_action_state,
         "active_apps": list(window.active_apps),
         "active_ranges": [list(item) for item in window.active_ranges],
     }
@@ -253,6 +255,12 @@ def _analysis_window_from_dict(item: dict[str, Any]) -> AnalysisWindow:
         diff_threshold=float(item.get("diff_threshold") or 0.0),
         anchor_ms=tuple(int(value) for value in item.get("anchor_ms") or []),
         action_anchor_ms=tuple(int(value) for value in item.get("action_anchor_ms") or []),
+        action_phases=tuple(
+            (int(value[0]), str(value[1]))
+            for value in item.get("action_phases") or []
+            if len(value) == 2
+        ),
+        requires_post_action_state=bool(item.get("requires_post_action_state", False)),
         active_apps=tuple(str(value) for value in item.get("active_apps") or []),
         active_ranges=tuple((int(value[0]), int(value[1])) for value in item.get("active_ranges") or [] if len(value) == 2),
     )
