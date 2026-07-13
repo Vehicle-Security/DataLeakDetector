@@ -14,6 +14,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from .apps import identify_frontend_app
 from .config import VisionConfig
 
 
@@ -264,7 +265,17 @@ def _focus_unresolved_suspicious_context(
         )
     ]
     if not risk_indices:
-        return []
+        external_activity_ids = {
+            f"window_{index}"
+            for index, window in enumerate(windows)
+            if window.priority == "activity" and _has_external_activity_app(window)
+        }
+        external_activity_frames = [
+            frame
+            for frame in keyframes
+            if frame.window_id in external_activity_ids
+        ]
+        return _pick_temporal_frames(external_activity_frames, limit=4)
     risk_windows = [windows[index] for index in risk_indices]
     related_indices = {
         *risk_indices,
@@ -506,6 +517,13 @@ def _is_tim_embedded_messaging_window(window: AnalysisWindow) -> bool:
 
     context = " ".join((window.reason, *window.active_apps)).lower()
     return "androws" in context or "tencent,tim" in context
+
+
+def _has_external_activity_app(window: AnalysisWindow) -> bool:
+    return any(
+        identify_frontend_app(app_name=app).risk_hint.startswith("external_capable")
+        for app in window.active_apps
+    )
 
 
 def _tim_embedded_evidence(frames: list[KeyFrame], window_id: str) -> list[KeyFrame]:

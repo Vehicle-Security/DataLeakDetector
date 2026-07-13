@@ -147,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
         report = run_pipeline(log_file=args.log, video_file=args.video, groundtruth_file=args.groundtruth or None, **common_args)
 
     print(json.dumps(_build_cli_summary(report), ensure_ascii=False, indent=2))
-    return 0
+    return 1 if _release_failed_count(report) else 0
 
 
 def _release_direct_defaults(common_args: dict, args: argparse.Namespace) -> dict:
@@ -213,6 +213,8 @@ def _run_case_root(
     finished_uncollected: set[str] = set()
     recent_cases: list[dict] = []
     last_case: dict[str, object] | None = None
+    aborted = False
+    abort_reason = ""
 
     def persist_progress(state: str) -> None:
         if progress_file is None:
@@ -231,6 +233,8 @@ def _run_case_root(
                 len(cases) - len(completed) - len(errors) - len(running) - len(finished_uncollected),
             ),
             "last_case": last_case,
+            "aborted": aborted,
+            "abort_reason": abort_reason,
             # The live LLM adjudicator must be able to recover every completed
             # disagreement even when it is temporarily slower than VLM calls.
             "recent_cases": recent_cases,
@@ -304,6 +308,33 @@ def _run_case_root(
                 case_name = futures[future]
                 try:
                     name, result, seconds = future.result()
+                    frame_errors = _release_frame_errors(result)
+                    if release and frame_errors:
+                        with progress_lock:
+                            finished_uncollected.discard(name)
+                            error_text = "; ".join(frame_errors)
+                            error = {"case": name, "error": error_text}
+                            errors.append(error)
+                            last_case = {
+                                "case": name,
+                                "state": "failed",
+                                "seconds": round(seconds, 3),
+                                "error": error_text,
+                                "errors": frame_errors,
+                            }
+                            recent_cases.append(last_case)
+                            aborted = True
+                            abort_reason = f"frame_analyzer_failed: {name}: {error_text}"
+                            persist_progress("failed")
+                            print(
+                                f"  [{len(completed) + len(errors)}/{len(cases)}] failed "
+                                f"case={name} error={error_text} aborting_release=true",
+                                flush=True,
+                            )
+                        for pending in futures:
+                            if pending is not future:
+                                pending.cancel()
+                        break
                     with progress_lock:
                         finished_uncollected.discard(name)
                         completed.append((name, result, seconds))
@@ -315,9 +346,6 @@ def _run_case_root(
                             "conclusion": result.get("conclusion", ""),
                             **evaluation,
                         }
-                        frame_errors = result.get("frame_analyzer", {}).get("errors", [])
-                        if frame_errors:
-                            last_case["errors"] = frame_errors
                         recent_cases.append(last_case)
                         persist_progress("running")
                         correct = evaluation["detector_correct"]
@@ -370,12 +398,21 @@ def _run_case_root(
             for name, result, seconds in completed
         ],
         "errors": errors,
+        "aborted": aborted,
+        "abort_reason": abort_reason,
     }
     if not release:
         return {"batch": batch}
 
     assert output_root is not None
     output_root.mkdir(parents=True, exist_ok=True)
+    if errors:
+        completed_names = {name for name, _, _ in completed}
+        retry_file = output_root / "release_retry_cases.txt"
+        retry_cases = sorted(name for name, _ in cases if name not in completed_names)
+        retry_file.write_text("\n".join(retry_cases) + "\n", encoding="utf-8")
+        batch["retry_case_list"] = str(retry_file)
+        batch["retry_cases"] = len(retry_cases)
     release_report = {
         "batch": batch,
         "summary": _release_summary(completed),
@@ -387,7 +424,9 @@ def _run_case_root(
         report_file.write_text(json.dumps(release_report, ensure_ascii=False, indent=2), encoding="utf-8")
     if release:
         with progress_lock:
-            persist_progress("completed")
+            running.clear()
+            finished_uncollected.clear()
+            persist_progress("failed" if errors else "completed")
     return {"batch": release_report["batch"], "release_report": release_report}
 
 
@@ -457,6 +496,7 @@ def _run_release(
     report_file.write_text(json.dumps(release_report, ensure_ascii=False, indent=2), encoding="utf-8")
     comparison = _build_release_comparison(root=root, workers=workers, release_report=release_report, grid_size=grid_size)
     _write_optional_json(comparison_file, comparison)
+    release_batch = release_report["batch"]
     return {
         "batch": {
             "mode": "release",
@@ -468,6 +508,14 @@ def _run_release(
             "vlm_grid_size": grid_size,
             "vlm_grid_layout": grid_layout,
             "timing_seconds": round(time.perf_counter() - started, 3),
+            "case_count": release_batch.get("case_count", 0),
+            "completed_cases": release_batch.get("completed_cases", 0),
+            "failed_cases": release_batch.get("failed_cases", 0),
+            "errors": release_batch.get("errors", []),
+            "aborted": release_batch.get("aborted", False),
+            "abort_reason": release_batch.get("abort_reason", ""),
+            "retry_case_list": release_batch.get("retry_case_list", ""),
+            "retry_cases": release_batch.get("retry_cases", 0),
         },
         "release_report": release_report,
     }
@@ -805,6 +853,20 @@ def _release_summary(completed: list[tuple[str, dict, float]]) -> dict:
 
 def _is_scorable_conclusion(value: str) -> bool:
     return value in {"data_leak_risk_detected", "suspicious_behavior_detected", "no_confirmed_data_leak"}
+
+
+def _release_frame_errors(report: dict) -> list[str]:
+    return [
+        str(item)
+        for item in report.get("frame_analyzer", {}).get("errors", [])
+        if str(item).strip()
+    ]
+
+
+def _release_failed_count(report: dict) -> int:
+    batch = report.get("batch") if isinstance(report.get("batch"), dict) else {}
+    release_batch = report.get("release_report", {}).get("batch", {})
+    return int(batch.get("failed_cases") or release_batch.get("failed_cases") or 0)
 
 
 if __name__ == "__main__":

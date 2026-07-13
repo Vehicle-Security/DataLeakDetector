@@ -7,6 +7,9 @@ param(
   [string]$VlmGridLayout = "4x1",
   [int]$VlmRetryAttempts = 6,
   [double]$VlmRetryBackoffSeconds = 2,
+  [string]$CaseList = "",
+  [string]$VisionPrecomputeRoot = "",
+  [switch]$SkipPrecompute,
   [switch]$UseCodingPlan,
   [switch]$UseNeo4jLogMinerForPrecompute
 )
@@ -131,6 +134,8 @@ if ($VlmGridLayout -notmatch '^\d+x\d+$') {
 
 $env:DLD_VLM_RETRY_ATTEMPTS = "$VlmRetryAttempts"
 $env:DLD_VLM_RETRY_BACKOFF_SECONDS = "$VlmRetryBackoffSeconds"
+$env:DLD_VLM_WORKERS = "$VlmWorkers"
+$env:DLD_VLM_GRID_LAYOUT = $VlmGridLayout
 if ($UseCodingPlan) {
   $env:DLD_VLM_USE_CODING_PLAN = "1"
 }
@@ -144,20 +149,11 @@ $vlmPreflightLog = Join-Path $RunDir "vlm_preflight.log"
 Write-Host "Run directory: $RunDir"
 Write-Host "Case root: $CaseRoot"
 Write-Host "VLM grid layout: $VlmGridLayout"
+Write-Host "Case list: $(if ($CaseList) { $CaseList } else { 'all discovered cases' })"
 Write-Host "Coding endpoint override: $(if ($UseCodingPlan) { 'enabled' } else { 'use .env/default' })"
 
-$vlmPreflightCode = @"
-from data_leak_detector.frame_analyzer.config import VisionConfig
-c = VisionConfig.from_env()
-endpoints = c.effective_vlm_endpoints()
-if c.vlm_dry_run:
-    raise SystemExit('VLM preflight failed: DLD_VLM_DRY_RUN is enabled')
-if not endpoints:
-    raise SystemExit('VLM preflight failed: no enabled endpoint/API key pair')
-print(f'VLM preflight passed: model={c.vlm_model} endpoints={len(endpoints)} workers={c.vlm_workers}')
-"@
-Write-Host "Checking VLM configuration before precompute..."
-Invoke-PythonLogged -Arguments @("-c", $vlmPreflightCode) -LogPath $vlmPreflightLog
+Write-Host "Checking VLM endpoint and quota with a minimal real request..."
+Invoke-PythonLogged -Arguments @("tools/vlm_preflight.py") -LogPath $vlmPreflightLog
 if ($script:LastPythonExitCode -ne 0) {
   throw "VLM preflight failed. See $vlmPreflightLog"
 }
@@ -170,14 +166,27 @@ $precomputeArgs = @(
   "--release-precompute-only",
   "--output-dir", $RunDir
 )
+if ($CaseList) {
+  $precomputeArgs += @("--case-list", $CaseList)
+}
 if ($UseNeo4jLogMinerForPrecompute) {
   $precomputeArgs += "--release-precompute-neo4j-log-miner"
 }
 
-Write-Host "Starting full release precompute..."
-Invoke-PythonLogged -Arguments $precomputeArgs -LogPath $precomputeLog
-if ($script:LastPythonExitCode -ne 0) {
-  throw "Release precompute failed. See $precomputeLog"
+if ($SkipPrecompute) {
+  if (-not $VisionPrecomputeRoot) {
+    throw "SkipPrecompute requires VisionPrecomputeRoot."
+  }
+  if (-not (Test-Path $VisionPrecomputeRoot)) {
+    throw "Vision precompute root does not exist: $VisionPrecomputeRoot"
+  }
+  Write-Host "Skipping precompute; cache root: $VisionPrecomputeRoot"
+} else {
+  Write-Host "Starting full release precompute..."
+  Invoke-PythonLogged -Arguments $precomputeArgs -LogPath $precomputeLog
+  if ($script:LastPythonExitCode -ne 0) {
+    throw "Release precompute failed. See $precomputeLog"
+  }
 }
 
 $vlmArgs = @(
@@ -191,6 +200,12 @@ $vlmArgs = @(
   "--vlm-workers", "$VlmWorkers",
   "--vlm-fast-dispatch"
 )
+if ($CaseList) {
+  $vlmArgs += @("--case-list", $CaseList)
+}
+if ($VisionPrecomputeRoot) {
+  $vlmArgs += @("--vision-precompute-root", $VisionPrecomputeRoot)
+}
 $vlmProcess = $null
 try {
   Write-Host "Starting full release VLM..."

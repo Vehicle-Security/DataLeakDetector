@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import run_e2e as run_e2e_module
 
 from data_leak_detector import run_pipeline
 from data_leak_detector.datasets import discover_data_case
@@ -162,6 +163,40 @@ def test_release_keeps_deterministic_log_evidence_enabled() -> None:
 
     assert release_args["vision_enabled"] is True
     assert release_args["non_vlm_enabled"] is True
+
+
+def test_release_marks_vlm_errors_failed_and_writes_retry_list(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    case_root = tmp_path / "cases"
+    case_dir = case_root / "case-a"
+    case_dir.mkdir(parents=True)
+    output_dir = tmp_path / "release"
+
+    monkeypatch.setattr(run_e2e_module, "discover_data_case_directories", lambda root: [case_dir])
+    monkeypatch.setattr(run_e2e_module, "data_case_id", lambda case, root: case.name)
+    monkeypatch.setattr(
+        run_e2e_module,
+        "run_data_case",
+        lambda *args, **kwargs: {
+            "frame_analyzer": {"errors": ["vlm_batch_failed[0]: quota exceeded"]},
+            "conclusion": "no_confirmed_data_leak",
+        },
+    )
+
+    result = run_e2e_module._run_case_root(
+        str(case_root),
+        common_args={},
+        output_dir=str(output_dir),
+        workers=1,
+        release=True,
+    )
+
+    batch = result["batch"]
+    assert batch["completed_cases"] == 0
+    assert batch["failed_cases"] == 1
+    assert batch["aborted"] is True
+    assert Path(batch["retry_case_list"]).read_text(encoding="utf-8") == "case-a\n"
+    progress = json.loads((output_dir / "release_progress.json").read_text(encoding="utf-8"))
+    assert progress["state"] == "failed"
 
 
 def test_event_correlator_skips_file_system_noise_but_keeps_upload_action() -> None:
@@ -1414,6 +1449,26 @@ def test_sensitive_file_reading_does_not_emit_activity_only_frames() -> None:
     ]
 
     assert _focus_actionable_keyframes(frames, [], windows) == []
+
+
+def test_external_app_activity_window_keeps_sparse_visual_fallback() -> None:
+    frames = [
+        KeyFrame(f"frame_{index}", index * 1_000, f"frame_{index}.jpg", 0.2, "activity:anchor", window_id="window_0")
+        for index in range(5)
+    ]
+    windows = [
+        AnalysisWindow(
+            0,
+            5_000,
+            "sensitive_activity:secret.docx",
+            priority="activity",
+            active_apps=("Edge", "Explorer"),
+        ),
+    ]
+
+    focused = _focus_actionable_keyframes(frames, [], windows)
+
+    assert [frame.frame_id for frame in focused] == ["frame_0", "frame_1", "frame_3", "frame_4"]
 
 
 def test_generic_strong_app_switch_does_not_emit_a_desktop_frame() -> None:
