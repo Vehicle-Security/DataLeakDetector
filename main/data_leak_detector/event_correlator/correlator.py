@@ -8,6 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from ..frame_analyzer.apps import identify_frontend_app
 from ..io import normalize_logs, normalize_path, same_file
 from ..models import CorrelatedEvent
 from ..policy import SINK_TOKENS, TRANSFER_TOKENS, contains_any
@@ -39,6 +40,14 @@ class EventCorrelator:
         # Log lineage is binding context for VLM evidence as well as deterministic
         # log evidence, so it must remain available in VLM-only runs.
         lineage = self._build_lineage(logs, sensitive_files)
+        self._add_visual_lineage(observations, sensitive_files, lineage)
+        observations = self._fuse_visual_evidence(
+            logs,
+            observations,
+            sensitive_files,
+            lineage,
+            horizon_ms=config.visual_evidence_horizon_ms,
+        )
         self._add_visual_lineage(observations, sensitive_files, lineage)
         correlated = self._correlate(logs, observations, sensitive_files, lineage, config=config)
         uploads = build_upload_candidates(correlated, default_confidence=config.upload_confidence)
@@ -147,6 +156,7 @@ class EventCorrelator:
                 original,
                 sensitive_files,
                 lineage,
+                config.visual_evidence_horizon_ms,
             )
 
             if not original and observation:
@@ -168,11 +178,22 @@ class EventCorrelator:
             )
             removable_transfer = _is_removable_media_transfer(log, observation, text)
             behavior = "data_exfiltration_candidate" if removable_transfer else behavior_category(text)
+            behavior = _behavior_with_action_status(observation, behavior)
             confidence = self.config.upload_confidence if behavior == "data_exfiltration_candidate" else 0.68
             if observation:
                 confidence = max(confidence, observation.confidence)
             current_file = target_file_from_metadata(log.raw) or log.file_path or (observation.resource if observation and observation.resource else original)
-            if original and current_file and _mentions_file(current_file, original) and not Path(normalize_path(current_file)).suffix:
+            if (
+                original
+                and current_file
+                and (
+                    _matches_sensitive_file_reference(current_file, original)
+                    or (
+                        Path(normalize_path(current_file)).name.lower() == Path(normalize_path(original)).name.lower()
+                        and not _looks_like_absolute_path(current_file)
+                    )
+                )
+            ):
                 current_file = original
 
             correlated.append(
@@ -187,7 +208,9 @@ class EventCorrelator:
                     behavior_category=behavior,
                     confidence=round(min(confidence, 1.0), 3),
                     evidence_refs=tuple(
-                        [f"log:{log.event_id}"] + ([f"frame:{observation.observation_id}"] if observation else [])
+                        dict.fromkeys(
+                            [f"log:{log.event_id}", *(_observation_evidence_refs(observation) if observation else ())]
+                        )
                     ),
                     join_reasons=tuple(self._join_reasons(log, observation, original, sensitive_files, lineage)),
                 )
@@ -203,6 +226,7 @@ class EventCorrelator:
         original: str,
         sensitive_files: list[str],
         lineage: Lineage,
+        horizon_ms: int,
     ):
         log_time = self._log_observation_time(log, observation_time_mode)
         best = None
@@ -211,6 +235,8 @@ class EventCorrelator:
             if not _observation_allowed_for_log(log, observation):
                 continue
             distance = abs(log_time - self._observation_center(observation))
+            if distance > horizon_ms:
+                continue
             score = self._observation_join_score(log, observation, original, sensitive_files, lineage)
             if not _has_file_binding(log, observation, original, sensitive_files, lineage):
                 continue
@@ -256,6 +282,12 @@ class EventCorrelator:
                 reasons.append("visual_sink_context")
             if _is_transfer_observation(observation):
                 reasons.append("visual_transfer_context")
+            status = _observation_action_status(observation)
+            if status != "unknown":
+                reasons.append(f"action_status:{status}")
+            sink_type = _observation_sink_type(observation)
+            if sink_type:
+                reasons.append(f"sink_type:{sink_type}")
         joined_text = " ".join(
             [
                 _event_search_text(log),
@@ -304,6 +336,98 @@ class EventCorrelator:
                 return sensitive
         return ""
 
+    def _fuse_visual_evidence(
+        self,
+        logs,
+        observations,
+        sensitive_files: list[str],
+        lineage: Lineage,
+        *,
+        horizon_ms: int,
+    ):
+        """Bind a sink/result observation to nearby file-identity evidence."""
+
+        if not observations or not sensitive_files or horizon_ms <= 0:
+            return observations
+        time_mode = self._observation_time_mode(observations)
+        fused = []
+        for sink in observations:
+            if sink.source == "log_anchored" or self._resolve_observation_original(sink, sensitive_files, lineage):
+                fused.append(sink)
+                continue
+            sink_text = _observation_search_text(sink)
+            sink_status = _observation_action_status(sink)
+            is_actionable = _is_unbound_visual_risk(sink, sink_text) or sink_status in {
+                "submitted",
+                "in_progress",
+                "completed",
+                "failed",
+            }
+            if not is_actionable or not (_is_external_observation(sink) or _is_transfer_observation(sink)):
+                fused.append(sink)
+                continue
+
+            sink_time = self._observation_center(sink)
+            bindings: list[tuple[int, int, str, str, Any]] = []
+            for identity in observations:
+                if identity is sink or identity.source == "log_anchored":
+                    continue
+                original = self._resolve_observation_original(identity, sensitive_files, lineage)
+                if not original:
+                    continue
+                identity_time = self._observation_center(identity)
+                distance = abs(sink_time - identity_time)
+                if distance > horizon_ms:
+                    continue
+                adjusted_distance = distance + (5_000 if identity_time > sink_time else 0)
+                app_rank = _app_compatibility_rank(sink.app_name, identity.app_name)
+                bindings.append((adjusted_distance + app_rank * 10_000, 0, original, "visual", identity))
+
+            for log in logs:
+                original = self._resolve_original(log.file_path, sensitive_files, lineage)
+                if not original:
+                    continue
+                log_time = self._log_observation_time(log, time_mode)
+                distance = abs(sink_time - log_time)
+                if distance > horizon_ms:
+                    continue
+                adjusted_distance = distance + (5_000 if log_time > sink_time else 0)
+                app_rank = _app_compatibility_rank(sink.app_name, log.app_name or log.process_name)
+                bindings.append((adjusted_distance + app_rank * 10_000, 1, original, "log", log))
+
+            binding = _choose_identity_binding(bindings)
+            if binding is None:
+                fused.append(sink)
+                continue
+            _, _, original, source_kind, identity = binding
+            if source_kind == "visual":
+                identity_id = identity.observation_id
+                identity_resource = identity.resource or original
+                related = [*sink.related_resources, identity.resource, *identity.related_resources, original]
+                marker = f"visual_identity={identity_id}"
+                identity_frames = _description_evidence_frame_ids(identity.description)
+                if identity_frames:
+                    marker += " visual_identity_frame_ids=" + "|".join(identity_frames)
+                confidence = max(sink.confidence, min(identity.confidence, 0.95))
+            else:
+                identity_id = identity.event_id
+                identity_resource = identity.file_path or original
+                related = [*sink.related_resources, identity.file_path, original]
+                marker = f"log_identity={identity_id}"
+                confidence = sink.confidence
+            fused.append(
+                replace(
+                    sink,
+                    resource=normalize_path(identity_resource),
+                    related_resources=tuple(
+                        dict.fromkeys(normalize_path(item) for item in related if normalize_path(item))
+                    ),
+                    description=f"{sink.description} {marker}.",
+                    confidence=confidence,
+                )
+            )
+        return fused
+
     def _add_visual_lineage(self, observations, sensitive_files: list[str], lineage: Lineage) -> None:
         for observation in observations:
             if observation.source == "log_anchored":
@@ -339,6 +463,7 @@ class EventCorrelator:
             if not original and not _is_unbound_visual_risk(observation, text):
                 continue
             behavior = behavior_category(text) if original else "unknown_risk"
+            behavior = _behavior_with_action_status(observation, behavior)
             current_file = self._visual_current_file(observation, original, sensitive_files)
             visual_events.append(
                 CorrelatedEvent(
@@ -351,7 +476,7 @@ class EventCorrelator:
                     operation_type=observation.operation_type,
                     behavior_category=behavior,
                     confidence=round(min(max(observation.confidence, 0.70), 1.0), 3),
-                    evidence_refs=(f"frame:{observation.observation_id}",),
+                    evidence_refs=_observation_evidence_refs(observation),
                     join_reasons=tuple(_visual_join_reasons(observation, original)),
                 )
             )
@@ -613,7 +738,80 @@ def _visual_join_reasons(observation, original: str) -> list[str]:
         reasons.append("visual_sink_context")
     if _is_transfer_observation(observation):
         reasons.append("visual_transfer_context")
+    status = _observation_action_status(observation)
+    if status != "unknown":
+        reasons.append(f"action_status:{status}")
+    sink_type = _observation_sink_type(observation)
+    if sink_type:
+        reasons.append(f"sink_type:{sink_type}")
     return reasons
+
+
+def _choose_identity_binding(bindings: list[tuple[int, int, str, str, Any]]):
+    if not bindings:
+        return None
+    ordered = sorted(bindings, key=lambda item: (item[0], item[1], -float(getattr(item[4], "confidence", 0.0))))
+    best = ordered[0]
+    for candidate in ordered[1:]:
+        if same_file(candidate[2], best[2]):
+            continue
+        if candidate[0] - best[0] < 1_500:
+            return None
+        break
+    return best
+
+
+def _app_compatibility_rank(left: str, right: str) -> int:
+    left_text = str(left or "").strip().lower()
+    right_text = str(right or "").strip().lower()
+    if left_text and right_text and left_text == right_text:
+        return 0
+    left_category = identify_frontend_app(app_name=left, visual_text=left).category
+    right_category = identify_frontend_app(app_name=right, visual_text=right).category
+    if left_category == right_category and left_category != "unknown":
+        return 0
+    generic = {"unknown", "browser", "document_editor"}
+    if left_category in generic or right_category in generic:
+        return 1
+    return 2
+
+
+def _observation_action_status(observation) -> str:
+    match = re.search(r"\baction_status=(selected|submitted|in_progress|completed|failed|unknown)\b", observation.description.lower())
+    return match.group(1) if match else "unknown"
+
+
+def _observation_sink_type(observation) -> str:
+    match = re.search(r"\bsink_type=([a-z_]+)\b", observation.description.lower())
+    return match.group(1) if match else ""
+
+
+def _behavior_with_action_status(observation, fallback: str) -> str:
+    if observation is None:
+        return fallback
+    status = _observation_action_status(observation)
+    if status == "failed":
+        return "failed_external_attempt"
+    if status == "selected":
+        return "selected_external_attempt"
+    return fallback
+
+
+def _description_evidence_frame_ids(description: str) -> tuple[str, ...]:
+    values: list[str] = []
+    for match in re.finditer(r"(?:evidence_frame_ids|visual_identity_frame_ids)=([^\s.]+)", description):
+        values.extend(item for item in match.group(1).split("|") if item)
+    return tuple(dict.fromkeys(values))
+
+
+def _observation_evidence_refs(observation) -> tuple[str, ...]:
+    refs = [f"frame:{observation.observation_id}"]
+    refs.extend(f"frame:{frame_id}" for frame_id in _description_evidence_frame_ids(observation.description))
+    for marker, prefix in (("visual_identity", "frame"), ("log_identity", "log")):
+        match = re.search(rf"\b{marker}=([A-Za-z0-9_.:-]+)", observation.description)
+        if match:
+            refs.append(f"{prefix}:{match.group(1).rstrip('.')}")
+    return tuple(dict.fromkeys(refs))
 
 
 def _mentions_file(text: str, file_path: str) -> bool:
@@ -624,6 +822,11 @@ def _mentions_file(text: str, file_path: str) -> bool:
     name = Path(normalized_file).name.lower()
     stem = Path(name).stem.lower()
     return normalized_file in normalized_text or (name and name in normalized_text) or (len(stem) >= 4 and stem in normalized_text)
+
+
+def _looks_like_absolute_path(value: str) -> bool:
+    normalized = normalize_path(value)
+    return bool(re.match(r"^[A-Za-z]:/", normalized) or normalized.startswith("/"))
 
 
 def _matches_sensitive_file_reference(file_path: str, sensitive_file: str) -> bool:

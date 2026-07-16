@@ -2,7 +2,7 @@ param(
   [string]$CaseRoot = "spec\data\nas_samples",
   [string]$RunDir = "",
   [int]$PrecomputeWorkers = 8,
-  [int]$VlmCaseWorkers = 4,
+  [int]$VlmCaseWorkers = 20,
   [int]$VlmWorkers = 4,
   [string]$VlmGridLayout = "4x1",
   [int]$VlmRetryAttempts = 6,
@@ -10,7 +10,7 @@ param(
   [string]$CaseList = "",
   [string]$VisionPrecomputeRoot = "",
   [switch]$SkipPrecompute,
-  [switch]$UseCodingPlan,
+  [string]$VlmTokenBaseUrl = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
   [switch]$UseNeo4jLogMinerForPrecompute
 )
 
@@ -136,9 +136,8 @@ $env:DLD_VLM_RETRY_ATTEMPTS = "$VlmRetryAttempts"
 $env:DLD_VLM_RETRY_BACKOFF_SECONDS = "$VlmRetryBackoffSeconds"
 $env:DLD_VLM_WORKERS = "$VlmWorkers"
 $env:DLD_VLM_GRID_LAYOUT = $VlmGridLayout
-if ($UseCodingPlan) {
-  $env:DLD_VLM_USE_CODING_PLAN = "1"
-}
+$env:DLD_VLM_TOKEN_BASE_URL = $VlmTokenBaseUrl
+$env:DLD_VLM_USE_CODING_PLAN = "0"
 $env:PYTHONUNBUFFERED = "1"
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
 
@@ -150,7 +149,7 @@ Write-Host "Run directory: $RunDir"
 Write-Host "Case root: $CaseRoot"
 Write-Host "VLM grid layout: $VlmGridLayout"
 Write-Host "Case list: $(if ($CaseList) { $CaseList } else { 'all discovered cases' })"
-Write-Host "Coding endpoint override: $(if ($UseCodingPlan) { 'enabled' } else { 'use .env/default' })"
+Write-Host "VLM endpoint plan: token-plan ($VlmTokenBaseUrl)"
 
 Write-Host "Checking VLM endpoint and quota with a minimal real request..."
 Invoke-PythonLogged -Arguments @("tools/vlm_preflight.py") -LogPath $vlmPreflightLog

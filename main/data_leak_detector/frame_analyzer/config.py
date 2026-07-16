@@ -23,6 +23,7 @@ class VisionConfig:
     frame_window_before_ms: int = 30_000
     frame_window_after_ms: int = 120_000
     case_segment_ms: int = 300_000
+    external_session_segment_ms: int = 120_000
     frame_step_ms: int = 1_000
     strong_frame_step_ms: int = 250
     weak_frame_step_ms: int = 2_000
@@ -40,7 +41,7 @@ class VisionConfig:
     frame_sequential_gap_ms: int = 5_000
     frame_anchor_duplicate_gap_ms: int = 500
     max_keyframes_per_window: int = 18
-    max_keyframes_per_strong_window: int = 8
+    max_keyframes_per_strong_window: int = 12
     max_keyframes_per_medium_window: int = 2
     max_keyframes_per_weak_window: int = 2
     include_weak_windows: bool = False
@@ -77,6 +78,7 @@ class VisionConfig:
             frame_window_before_ms=_env_int("DLD_FRAME_WINDOW_BEFORE_MS", 30_000),
             frame_window_after_ms=_env_int("DLD_FRAME_WINDOW_AFTER_MS", 120_000),
             case_segment_ms=max(1, _env_int("DLD_CASE_SEGMENT_MS", 300_000)),
+            external_session_segment_ms=max(1, _env_int("DLD_EXTERNAL_SESSION_SEGMENT_MS", 120_000)),
             frame_step_ms=_env_int("DLD_FRAME_STEP_MS", 1_000),
             strong_frame_step_ms=_env_int("DLD_STRONG_FRAME_STEP_MS", 250),
             weak_frame_step_ms=_env_int("DLD_WEAK_FRAME_STEP_MS", 2_000),
@@ -94,7 +96,7 @@ class VisionConfig:
             frame_sequential_gap_ms=max(0, _env_int("DLD_FRAME_SEQUENTIAL_GAP_MS", 5_000)),
             frame_anchor_duplicate_gap_ms=max(0, _env_int("DLD_FRAME_ANCHOR_DUPLICATE_GAP_MS", 500)),
             max_keyframes_per_window=_env_int("DLD_MAX_KEYFRAMES_PER_WINDOW", 18),
-            max_keyframes_per_strong_window=_env_int("DLD_MAX_KEYFRAMES_PER_STRONG_WINDOW", 8),
+            max_keyframes_per_strong_window=_env_int("DLD_MAX_KEYFRAMES_PER_STRONG_WINDOW", 12),
             max_keyframes_per_medium_window=_env_int("DLD_MAX_KEYFRAMES_PER_MEDIUM_WINDOW", 2),
             max_keyframes_per_weak_window=_env_int("DLD_MAX_KEYFRAMES_PER_WEAK_WINDOW", 2),
             include_weak_windows=_env_bool("DLD_INCLUDE_WEAK_WINDOWS", False),
@@ -135,6 +137,7 @@ class VisionConfig:
             frame_window_before_ms=self.frame_window_before_ms,
             frame_window_after_ms=self.frame_window_after_ms,
             case_segment_ms=self.case_segment_ms,
+            external_session_segment_ms=self.external_session_segment_ms,
             frame_step_ms=self.frame_step_ms,
             strong_frame_step_ms=self.strong_frame_step_ms,
             weak_frame_step_ms=self.weak_frame_step_ms,

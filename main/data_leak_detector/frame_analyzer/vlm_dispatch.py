@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import VisionConfig
-from .parser import parse_vlm_response_detailed
+from .parser import VlmParseResult, parse_vlm_response_detailed
 from .vlm_client import OpenAICompatibleVlmClient
 
 
@@ -40,9 +40,16 @@ def effective_vlm_parallelism(config: VisionConfig) -> int:
 def vlm_frame_batches(frames: list[Any], workers: int) -> list[list[Any]]:
     if not frames:
         return []
-    batch_count = min(max(1, workers), len(frames))
-    batch_size = (len(frames) + batch_count - 1) // batch_count
-    return [frames[index : index + batch_size] for index in range(0, len(frames), batch_size)]
+    # A window is one chronological evidence packet. Worker count controls how
+    # many packets run concurrently; it must never split a packet and discard
+    # the relationship between an identity frame and its later result frame.
+    del workers
+    by_window: dict[str, list[Any]] = {}
+    for item in frames:
+        frame = getattr(item, "frame", item)
+        window_id = str(getattr(frame, "window_id", "") or "window_unknown")
+        by_window.setdefault(window_id, []).append(item)
+    return list(by_window.values())
 
 
 def vlm_batch_request_summary(
@@ -253,6 +260,41 @@ def vlm_dispatcher_snapshots() -> list[dict[str, Any]]:
         return [dispatcher.snapshot() for dispatcher in _VLM_DISPATCHERS.values()]
 
 
+def _validate_vlm_evidence(parse_result: VlmParseResult, frames: list[Any]) -> VlmParseResult:
+    allowed: set[str] = set()
+    for item in frames:
+        frame = getattr(item, "frame", item)
+        frame_id = str(getattr(frame, "frame_id", "") or "")
+        if frame_id:
+            allowed.add(frame_id)
+        for source in getattr(item, "source_frames", ()) or ():
+            if isinstance(source, dict) and str(source.get("frame_id") or ""):
+                allowed.add(str(source["frame_id"]))
+
+    events = []
+    dropped = list(parse_result.dropped_events)
+    errors = list(parse_result.parse_errors)
+    for index, event in enumerate(parse_result.events):
+        valid_ids = tuple(frame_id for frame_id in event.evidence_frame_ids if frame_id in allowed)
+        invalid_ids = tuple(frame_id for frame_id in event.evidence_frame_ids if frame_id not in allowed)
+        if invalid_ids:
+            errors.append(f"event_invalid_evidence_frame_ids[{index}]: {'|'.join(invalid_ids)}")
+        if not valid_ids:
+            dropped.append(
+                {
+                    "reason": "missing_valid_evidence_frame_ids",
+                    "event": {
+                        "app_name": event.app_name,
+                        "operation_type": event.operation_type,
+                        "evidence_frame_ids": list(event.evidence_frame_ids),
+                    },
+                }
+            )
+            continue
+        events.append(replace(event, evidence_frame_ids=valid_ids))
+    return replace(parse_result, events=events, dropped_events=dropped, parse_errors=errors)
+
+
 def _shared_vlm_endpoint_locks(
     clients: list[OpenAICompatibleVlmClient],
     *,
@@ -387,7 +429,10 @@ class _SharedVlmDispatcher:
                     break
             if response is None:
                 raise RuntimeError("vlm_response_unavailable")
-            parse_result = parse_vlm_response_detailed(response.text, keywords=sensitive_files)
+            parse_result = _validate_vlm_evidence(
+                parse_vlm_response_detailed(response.text, keywords=sensitive_files),
+                frames,
+            )
             with self._lock:
                 self._completed += 1
             return {

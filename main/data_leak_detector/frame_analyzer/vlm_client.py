@@ -186,8 +186,17 @@ def build_vlm_frame_grids(
     root.mkdir(parents=True, exist_ok=True)
     rows_per_grid, columns_per_grid = _grid_dimensions(grid_size, grid_layout)
     cells_per_grid = rows_per_grid * columns_per_grid
+    by_window: dict[str, list[VlmRequestFrame]] = {}
+    for item in frames:
+        by_window.setdefault(item.frame.window_id or "window_unknown", []).append(item)
+
     grid_frames: list[VlmRequestFrame] = []
-    for grid_index, group in enumerate(_chunks(frames, cells_per_grid)):
+    grid_groups = [
+        (window_id, group)
+        for window_id, window_frames in by_window.items()
+        for group in _chunks(window_frames, cells_per_grid)
+    ]
+    for grid_index, (window_id, group) in enumerate(grid_groups):
         source_images = [(item, Image.open(item.frame.image_path).convert("RGB")) for item in group]
         columns = min(columns_per_grid, len(source_images))
         rows = (len(source_images) + columns - 1) // columns
@@ -219,7 +228,7 @@ def build_vlm_frame_grids(
             image_path=str(target),
             score=float(score),
             reason=f"vlm_grid:{rows_per_grid}x{columns_per_grid}",
-            window_id="vlm_grid",
+            window_id=window_id,
         )
         grid_frames.append(
             VlmRequestFrame(
@@ -337,8 +346,9 @@ def _prompt(frames: list[VlmRequestFrame], sensitive_files: list[str], active_ap
         "{\"events\":[{\"evidence_frame_ids\":[\"frame_0_0\"],"
         "\"timestamp_ms\":0,\"time_range\":\"YYYY-MM-DD HH:MM:SS - YYYY-MM-DD HH:MM:SS\","
         "\"app_name\":\"...\",\"behavior_category\":\"normal|direct_leak|hidden_transfer|unknown_risk\","
-        "\"operation_type\":\"...\",\"original_filename\":\"...\",\"modified_filename\":\"...\","
-        "\"sink_type\":\"ai_chat|mail_attachment|cloud_sync|chat_upload|screen_share|removable_media|network_upload|unknown\","
+        "\"operation_type\":\"...\",\"original_filename\":\"...\",\"modified_filename\":\"...\"," 
+        "\"sink_type\":\"ai_chat|mail_attachment|cloud_sync|chat_upload|screen_share|removable_media|network_upload|unknown\"," 
+        "\"action_status\":\"selected|submitted|in_progress|completed|failed|unknown\"," 
         "\"description\":\"...\",\"confidence\":0.0}]}\n"
         "Every non-empty event must include evidence_frame_ids from the provided frame_id values. "
         "When an image is a grid, cite original source_frame_id values from the grid mapping whenever possible. "
@@ -348,6 +358,14 @@ def _prompt(frames: list[VlmRequestFrame], sensitive_files: list[str], active_ap
         "Classify hidden_transfer for screenshot, screen recording, copy, export, rename, split, compression, or derived files. "
         "Use unknown_risk when the foreground app or behavior cannot be identified but appears near sensitive activity. "
         "Drop purely normal reading/opening events unless they explain a later risky operation.\n"
+        "Frames with the same window_id are one chronological evidence packet. Correlate them before emitting events: "
+        "a filename may be readable in an earlier file picker or attachment frame while the submit, progress, success, or failure state "
+        "appears in a later frame. For the same resource and the same action, emit one combined event and cite every source frame needed for that conclusion. "
+        "Emit separate events for different resources or independent actions, even if they share a timestamp. Use the strongest terminal-state frame "
+        "for timestamp_ms when completion, failure, or progress appears later than the identity frame. "
+        "Do not require the filename and the result state to be visible in the same image. "
+        "If an exact sensitive filename is visible but no later action is proven, still emit a preparation/identity event with "
+        "action_status=selected so downstream evidence can bind it to another observation.\n"
         "Frontend application and sink cues:\n"
         "- mail_attachment: compose/send screens, attachment chips, paperclip icons, recipient fields, Outlook/Gmail/QQ mail/163 mail.\n"
         "- cloud_sync: upload dialogs/progress, drag-drop upload areas, sync status, Baidu Netdisk/Quark/OneDrive/Google Drive/Dropbox.\n"
@@ -366,6 +384,9 @@ def _prompt(frames: list[VlmRequestFrame], sensitive_files: list[str], active_ap
         "Require evidence that the transfer was selected or submitted, such as an addressee/conversation/destination, a file in a transfer queue, "
         "upload/send progress, or an explicit Send/Confirm control. A generic 'Send File' panel that only offers copy file, drag-to-send, or open-location "
         "actions without such evidence is a copy/preparation action: classify it as hidden_transfer rather than direct_leak.\n"
+        "The primary decision is whether an outbound action exists, not whether it succeeded. Selection/attachment, submit, progress, success, rejection, "
+        "unsupported-file, cancellation, timeout, and error screens can all prove that an upload/send was attempted and must emit direct_leak. "
+        "Fill action_status only when obvious; it is audit metadata and does not change the leak verdict.\n"
         "Sensitive source files and aliases:\n" + "\n".join(sensitive_lines) + "\n"
         f"Non-whitelisted active apps from logs: {active_apps}\n"
         "Frame context:\n" + "\n".join(frame_lines) + "\n"

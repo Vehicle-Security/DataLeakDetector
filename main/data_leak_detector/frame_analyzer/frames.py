@@ -15,11 +15,13 @@ from .apps import identify_frontend_app
 from .config import VisionConfig
 
 
-_ACTION_OFFSETS_MS = (-2_000, 0)
-_DERIVATION_OFFSETS_MS = (-2_000, 0, 2_000, 5_000)
-_FILE_SELECTION_OFFSETS_MS = (-2_000, 0, 2_000, 5_000)
-_OUTBOUND_OFFSETS_MS = (-2_000, 0, 2_000, 5_000, 10_000, 15_000)
-_OUTBOUND_CONTEXT_OFFSETS_MS = (0, 5_000, 15_000, 25_000, 28_000, 30_000)
+_ACTION_OFFSETS_MS = (-1_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000)
+_DERIVATION_OFFSETS_MS = (-5_000, -2_000, -1_000, -250, 0, 500, 2_000, 5_000, 10_000)
+_FILE_SELECTION_OFFSETS_MS = (-2_000, -1_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000)
+_OUTBOUND_OFFSETS_MS = (-2_000, -1_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000, 10_000)
+_CLIPBOARD_OFFSETS_MS = (-1_000, -250, 0, 500, 2_000, 5_000, 10_000, 15_000, 25_000, 30_000)
+_PASTE_OFFSETS_MS = (-2_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000, 10_000, 15_000)
+_SCREEN_SHARE_OFFSETS_MS = (-2_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000, 10_000, 15_000)
 _CAPTURE_START_OFFSETS_MS = (-1_000, 0, 1_000, 2_000, 3_000, 5_000, 8_000)
 _CAPTURE_OFFSETS_MS = (-15_000, -13_000, -11_000, -9_000, -7_000, -5_000, -3_000, -1_000, 0)
 
@@ -175,6 +177,49 @@ def select_keyframes_detailed(
     return KeyFrameSelection(keyframes, raw_keyframes, duplicates, warnings)
 
 
+def build_video_coverage_windows(video_path: str | Path, config: VisionConfig) -> list[AnalysisWindow]:
+    """Create sparse evidence anchors when log mining cannot locate an action."""
+
+    path = Path(video_path)
+    if not path.is_file():
+        return []
+    try:
+        import cv2
+    except ImportError:
+        return []
+    capture = cv2.VideoCapture(str(path))
+    try:
+        if not capture.isOpened():
+            return []
+        fps = capture.get(cv2.CAP_PROP_FPS) or 0.0
+        frame_count = capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0
+    finally:
+        capture.release()
+    if fps <= 0 or frame_count <= 0:
+        return []
+    duration_ms = max(1, int(round(frame_count * 1000.0 / fps)) - 1)
+    anchors = tuple(
+        sorted(
+            {
+                min(duration_ms, max(0, round(duration_ms * fraction)))
+                for fraction in (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
+            }
+        )
+    )
+    return [
+        AnalysisWindow(
+            0,
+            duration_ms,
+            "medium:video_coverage_fallback",
+            priority="medium",
+            step_ms=config.frame_step_ms,
+            max_keyframes=max(12, len(anchors)),
+            diff_threshold=min(config.frame_diff_threshold, 0.02),
+            anchor_ms=anchors,
+        )
+    ]
+
+
 def _activity_context_window(
     activity: AnalysisWindow,
     windows: list[AnalysisWindow],
@@ -239,7 +284,14 @@ def _select_window_candidates(
         force_anchor = _near_any(timestamp, anchors, max(window.step_ms // 2, 125))
         action_state = _action_state_at(timestamp, window, max(window.step_ms // 2, 125))
         force_state = bool(action_state)
-        exact_duplicate = _is_exact_duplicate(cv2, gray, retained_grays, config.frame_exact_duplicate_threshold)
+        # Anchors and planned action states are evidence positions. Keep them in
+        # raw_all and let the global, traceable dedupe choose the better frame.
+        exact_duplicate = not (force_anchor or force_state) and _is_exact_duplicate(
+            cv2,
+            gray,
+            retained_grays,
+            config.frame_exact_duplicate_threshold,
+        )
         keep = _should_keep_frame(
             timestamp_ms=timestamp,
             score=score,
@@ -284,27 +336,39 @@ def _select_window_candidates(
     limit = max(window.max_keyframes, len(window.anchor_ms))
     if len(retained) <= limit:
         return retained
-    mandatory = [item for item in retained if "anchor" in item.frame.reason or "action_state" in item.frame.reason]
+    mandatory = [item for item in retained if "action_state" in item.frame.reason]
+    if not mandatory:
+        mandatory = [item for item in retained if "anchor" in item.frame.reason]
     optional = [item for item in retained if item not in mandatory]
+    mandatory = _trim_mandatory_evidence(mandatory, window, limit)
     available = max(0, limit - len(mandatory))
-    return sorted([*mandatory, *_evenly_spaced(optional, available)], key=lambda item: item.frame.timestamp_ms)
+    return sorted([*mandatory, *_select_optional_evidence(optional, available)], key=lambda item: item.frame.timestamp_ms)
 
 
 def _probe_timestamps(window: AnalysisWindow, config: VisionConfig) -> list[int]:
     timestamps = set(_action_state_timestamps(window))
-    for anchor in _representative_anchors(window.anchor_ms, limit=4):
+    for anchor in window.anchor_ms:
         for timestamp in (anchor, anchor - window.step_ms, anchor + window.step_ms):
             if window.start_ms <= timestamp <= window.end_ms:
                 timestamps.add(timestamp)
     if window.priority == "activity":
         timestamps.update(_activity_probe_timestamps(window))
-    elif not timestamps:
-        timestamps.update(_coverage_timestamps(window))
+    limit = max(
+        window.max_keyframes * max(1, config.frame_probe_multiplier),
+        len(timestamps),
+        len(window.anchor_ms) * 3,
+    )
+    if window.priority != "activity":
+        timestamps.update(_dense_probe_timestamps(window, max(0, limit - len(timestamps))))
     if not timestamps and window.start_ms <= window.end_ms:
         timestamps.add(window.start_ms)
-    limit = max(window.max_keyframes * max(1, config.frame_probe_multiplier), len(window.anchor_ms))
     ordered = sorted(timestamp for timestamp in timestamps if window.start_ms <= timestamp <= window.end_ms)
-    return _evenly_spaced_values(ordered, limit)
+    if len(ordered) <= limit:
+        return ordered
+    mandatory = set(_action_state_timestamps(window)) | set(window.anchor_ms)
+    planned = [timestamp for timestamp in ordered if timestamp in mandatory]
+    optional = [timestamp for timestamp in ordered if timestamp not in mandatory]
+    return sorted([*planned, *_evenly_spaced_values(optional, max(0, limit - len(planned)))])
 
 
 def _action_state_timestamps(window: AnalysisWindow) -> tuple[int, ...]:
@@ -327,24 +391,42 @@ def _action_state_at(timestamp_ms: int, window: AnalysisWindow, tolerance_ms: in
         for anchor in window.action_anchor_ms
     )
     matches = [
-        (abs(timestamp_ms - target), action)
+        (abs(timestamp_ms - target), action, anchor, target)
         for anchor, action in phases
         for target in _phase_timestamps(window, anchor, action)
         if abs(timestamp_ms - target) <= tolerance_ms
     ]
-    return min(matches, default=(0, ""))[1]
+    if not matches:
+        return ""
+    best_by_action: dict[str, tuple[int, int, int]] = {}
+    for distance, action, anchor, target in matches:
+        previous = best_by_action.get(action)
+        candidate = (distance, anchor, target)
+        if previous is None or candidate < previous:
+            best_by_action[action] = candidate
+    return "|".join(
+        f"{action}:{_phase_role(target - anchor)}"
+        for action, (_, anchor, target) in sorted(best_by_action.items())
+    )
 
 
 def _phase_timestamps(window: AnalysisWindow, anchor: int, action: str) -> tuple[int, ...]:
+    action = action.split(":", 1)[0]
     if action == "capture_start":
         offsets = _CAPTURE_START_OFFSETS_MS
     elif action == "capture":
         offsets = _CAPTURE_OFFSETS_MS
     elif action == "file_selected":
         offsets = _FILE_SELECTION_OFFSETS_MS
-    elif action == "outbound_context":
-        offsets = _OUTBOUND_CONTEXT_OFFSETS_MS
-    elif action in {"upload", "send", "removable", "screen_share", "paste"}:
+    elif action in {"external_session", "external_state", "resource_identity", "session_end"}:
+        offsets = (0,)
+    elif action == "clipboard":
+        offsets = _CLIPBOARD_OFFSETS_MS
+    elif action == "paste":
+        offsets = _PASTE_OFFSETS_MS
+    elif action == "screen_share":
+        offsets = _SCREEN_SHARE_OFFSETS_MS
+    elif action in {"upload", "send", "removable"}:
         offsets = _OUTBOUND_OFFSETS_MS
     elif action == "derive":
         offsets = _DERIVATION_OFFSETS_MS
@@ -361,36 +443,207 @@ def _focus_semantic_action_phases(
     candidates: list[_FrameCandidate],
     window: AnalysisWindow,
 ) -> list[_FrameCandidate]:
-    focused = list(candidates)
-    for anchor, action in sorted(window.action_phases):
-        if action == "capture_start":
-            start, end = anchor - 1_500, anchor + 8_500
-        elif action == "capture":
-            start, end = anchor - 15_500, anchor + 500
-        elif action == "paste":
-            start, end = anchor - 2_500, anchor + 11_000
-        elif action in {"clipboard", "derive"}:
-            start, end = anchor - 2_500, anchor + 500
-        else:
-            continue
-        phase = [item for item in focused if start <= item.frame.timestamp_ms <= end]
+    if not window.action_phases:
+        return candidates
+    chosen: list[_FrameCandidate] = []
+    claimed_ids: set[str] = set()
+    phases = _collapse_frame_action_phases(window.action_phases)
+    for anchor, action in phases:
+        base_action = action.split(":", 1)[0]
+        planned = _phase_timestamps(window, anchor, base_action) or (anchor,)
+        tolerance = max(window.step_ms // 2, 125)
+        start = min(planned) - tolerance
+        end = max(planned) + tolerance
+        phase_region = [item for item in candidates if start <= item.frame.timestamp_ms <= end]
+        phase = [
+            item
+            for item in phase_region
+            if _candidate_matches_action(item, base_action, single_phase=len(phases) == 1)
+        ]
+        claimed_ids.update(item.frame.frame_id for item in phase)
         if not phase:
             continue
-        before_or_at = [item for item in phase if item.frame.timestamp_ms <= anchor]
-        pool = before_or_at if action in {"capture", "clipboard"} and before_or_at else phase
-        if action == "capture_start":
-            after_start = [item for item in pool if item.frame.timestamp_ms >= anchor]
-            chosen_items = [max(after_start or pool, key=lambda item: (item.frame.score, float(item.gray.std())))]
-        elif action == "capture":
-            chosen_items = [min(pool, key=lambda item: (float(item.gray.mean()), -item.frame.score))]
-        elif action == "derive":
-            ordered = sorted(pool, key=lambda item: item.frame.timestamp_ms)
-            chosen_items = [ordered[0], ordered[-1]] if ordered[0] is not ordered[-1] else [ordered[0]]
+        ordered = sorted(phase, key=lambda item: item.frame.timestamp_ms)
+        if base_action in {"external_session", "external_state", "resource_identity", "session_end"}:
+            chosen_items = [min(ordered, key=lambda item: abs(item.frame.timestamp_ms - anchor))]
         else:
-            chosen_items = [max(pool, key=lambda item: item.frame.timestamp_ms)]
-        focused = [item for item in focused if item not in phase]
-        focused.extend(chosen_items)
-    return sorted({item.frame.frame_id: item for item in focused}.values(), key=lambda item: item.frame.timestamp_ms)
+            pre = [item for item in ordered if item.frame.timestamp_ms < anchor]
+            immediate = [item for item in ordered if anchor <= item.frame.timestamp_ms <= anchor + 1_000]
+            post = [item for item in ordered if anchor + 1_000 < item.frame.timestamp_ms <= anchor + 5_000]
+            late = [item for item in ordered if item.frame.timestamp_ms > anchor + 5_000]
+            pre_items = [*pre[:1], *pre[-1:]] if base_action == "file_selected" else pre[-1:]
+            if base_action == "capture" and pre:
+                pre_items = [max(pre, key=lambda item: (float(item.gray.std()), item.frame.score, item.frame.timestamp_ms))]
+            chosen_items = [
+                *pre_items,
+                *([max(immediate, key=lambda item: (item.frame.score, item.frame.timestamp_ms))] if immediate else []),
+                *post[:1],
+                *late[-1:],
+            ]
+        chosen.extend(chosen_items)
+    optional = [item for item in candidates if item.frame.frame_id not in claimed_ids]
+    return sorted(
+        {item.frame.frame_id: item for item in [*optional, *chosen]}.values(),
+        key=lambda item: item.frame.timestamp_ms,
+    )
+
+
+def _collapse_frame_action_phases(
+    phases: tuple[tuple[int, str], ...],
+    *,
+    echo_gap_ms: int = 1_500,
+) -> tuple[tuple[int, str], ...]:
+    collapsed: list[tuple[int, str]] = []
+    for timestamp, action in sorted(phases):
+        if (
+            collapsed
+            and collapsed[-1][1] == action
+            and action not in {"external_session", "external_state", "resource_identity", "session_end"}
+            and timestamp - collapsed[-1][0] <= echo_gap_ms
+        ):
+            collapsed[-1] = (timestamp, action)
+        else:
+            collapsed.append((timestamp, action))
+    return tuple(collapsed)
+
+
+def _candidate_matches_action(item: _FrameCandidate, action: str, *, single_phase: bool) -> bool:
+    reason = item.frame.reason
+    if "action_state" not in reason:
+        return False
+    suffix = reason.split("action_state", 1)[1].lstrip(":")
+    if not suffix:
+        return single_phase
+    return any(state.split(":", 1)[0] == action for state in suffix.split("|"))
+
+
+def _phase_role(offset_ms: int) -> str:
+    if offset_ms < 0:
+        return "pre"
+    if offset_ms == 0:
+        return "at"
+    if offset_ms <= 1_000:
+        return "immediate"
+    if offset_ms <= 5_000:
+        return "post"
+    return "result"
+
+
+def _dense_probe_timestamps(window: AnalysisWindow, slots: int) -> tuple[int, ...]:
+    if slots <= 0 or window.end_ms < window.start_ms:
+        return ()
+    if slots == 1 or window.end_ms == window.start_ms:
+        return (window.start_ms + (window.end_ms - window.start_ms) // 2,)
+    span = window.end_ms - window.start_ms
+    return tuple(
+        window.start_ms + round(span * index / (slots - 1))
+        for index in range(slots)
+    )
+
+
+def _trim_mandatory_evidence(
+    candidates: list[_FrameCandidate],
+    window: AnalysisWindow,
+    limit: int,
+) -> list[_FrameCandidate]:
+    if limit <= 0:
+        return []
+    if len(candidates) <= limit:
+        return candidates
+    phase_groups: list[tuple[_FrameCandidate, list[_FrameCandidate]]] = []
+    phases = _collapse_frame_action_phases(window.action_phases)
+    phase_anchors = sorted({timestamp for timestamp, _ in phases})
+    for anchor, action in phases:
+        base_action = action.split(":", 1)[0]
+        planned = _phase_timestamps(window, anchor, base_action) or (anchor,)
+        previous = [timestamp for timestamp in phase_anchors if timestamp < anchor]
+        following = [timestamp for timestamp in phase_anchors if timestamp > anchor]
+        left_boundary = (max(previous) + anchor) // 2 if previous else window.start_ms
+        right_boundary = (anchor + min(following)) // 2 if following else window.end_ms
+        region_start = max(min(planned) - max(window.step_ms // 2, 125), left_boundary)
+        region_end = min(max(planned) + max(window.step_ms // 2, 125), right_boundary)
+        group = [
+            item
+            for item in candidates
+            if region_start <= item.frame.timestamp_ms <= region_end
+            and _candidate_matches_action(item, base_action, single_phase=len(phases) == 1)
+        ]
+        if not group:
+            continue
+        core = min(group, key=lambda item: (abs(item.frame.timestamp_ms - anchor), -item.frame.score))
+        phase_groups.append((core, _phase_evidence_preferences(group, anchor, base_action)))
+
+    selected: list[_FrameCandidate] = []
+    selected_ids: set[str] = set()
+    cores = list(dict.fromkeys(core.frame.frame_id for core, _ in phase_groups))
+    core_lookup = {core.frame.frame_id: core for core, _ in phase_groups}
+    if len(cores) > limit:
+        cores = [item.frame.frame_id for item in _evenly_spaced([core_lookup[item] for item in cores], limit)]
+    for frame_id in cores:
+        selected.append(core_lookup[frame_id])
+        selected_ids.add(frame_id)
+
+    queues = [list(preferences) for _, preferences in phase_groups]
+    while len(selected) < limit and any(queues):
+        progressed = False
+        for queue in queues:
+            while queue and queue[0].frame.frame_id in selected_ids:
+                queue.pop(0)
+            if not queue or len(selected) >= limit:
+                continue
+            item = queue.pop(0)
+            selected.append(item)
+            selected_ids.add(item.frame.frame_id)
+            progressed = True
+        if not progressed:
+            break
+
+    remaining = [item for item in candidates if item.frame.frame_id not in selected_ids]
+    selected.extend(_select_optional_evidence(remaining, limit - len(selected)))
+    return sorted(selected, key=lambda item: item.frame.timestamp_ms)
+
+
+def _phase_evidence_preferences(
+    candidates: list[_FrameCandidate],
+    anchor: int,
+    action: str,
+) -> list[_FrameCandidate]:
+    ordered = sorted(candidates, key=lambda item: item.frame.timestamp_ms)
+    pre = [item for item in ordered if item.frame.timestamp_ms < anchor]
+    immediate = [item for item in ordered if anchor <= item.frame.timestamp_ms <= anchor + 1_000]
+    post = [item for item in ordered if anchor + 1_000 < item.frame.timestamp_ms <= anchor + 5_000]
+    result = [item for item in ordered if item.frame.timestamp_ms > anchor + 5_000]
+    if action in {"external_session", "external_state", "resource_identity", "session_end"}:
+        return []
+    preferences: list[_FrameCandidate] = []
+    if action == "file_selected" and pre:
+        preferences.extend((pre[0], pre[-1]))
+    elif pre:
+        preferences.append(pre[-1])
+    if result:
+        preferences.append(result[-1])
+    if immediate:
+        preferences.append(max(immediate, key=lambda item: (item.frame.score, item.frame.timestamp_ms)))
+    if post:
+        preferences.append(post[0])
+    return list({item.frame.frame_id: item for item in preferences}.values())
+
+
+def _select_optional_evidence(candidates: list[_FrameCandidate], limit: int) -> list[_FrameCandidate]:
+    if limit <= 0:
+        return []
+    if len(candidates) <= limit:
+        return candidates
+    spread_limit = max(1, limit // 2)
+    selected = _evenly_spaced(candidates, spread_limit)
+    selected_ids = {item.frame.frame_id for item in selected}
+    ranked = sorted(
+        (item for item in candidates if item.frame.frame_id not in selected_ids),
+        key=lambda item: (item.frame.score, item.entropy, -item.frame.timestamp_ms),
+        reverse=True,
+    )
+    selected.extend(ranked[: limit - len(selected)])
+    return sorted(selected, key=lambda item: item.frame.timestamp_ms)
 
 
 def _representative_anchors(anchors: tuple[int, ...], *, limit: int) -> tuple[int, ...]:
@@ -467,6 +720,12 @@ def _dedupe_keyframes_globally(
         duplicate_hash = 0
         for index, kept in enumerate(retained):
             gap = abs(candidate.frame.timestamp_ms - kept.frame.timestamp_ms)
+            if gap < max(config.frame_anchor_duplicate_gap_ms, 500) and (
+                ":pre" in candidate.frame.reason or ":pre" in kept.frame.reason
+            ):
+                # The payload immediately before a click is distinct evidence,
+                # even when the clicked-state pixels are nearly unchanged.
+                continue
             if (
                 gap >= 1_000
                 and "action_state" in candidate.frame.reason
@@ -570,6 +829,14 @@ def _read_frames_for_timestamps(cv2, capture, timestamps: list[int], fps: float,
                 frames[group[0]] = frame
         else:
             frames.update(_read_timestamp_group_sequentially(cv2, capture, group, fps))
+    # Some codecs report unreliable positions during sequential reads. Retry
+    # only missing evidence timestamps with direct seeks before giving up.
+    for timestamp in timestamps:
+        if timestamp in frames:
+            continue
+        frame = _seek_read_frame(cv2, capture, timestamp)
+        if frame is not None:
+            frames[timestamp] = frame
     return frames
 
 
@@ -747,6 +1014,7 @@ __all__ = [
     "KeyFrame",
     "KeyFrameDuplicate",
     "KeyFrameSelection",
+    "build_video_coverage_windows",
     "merge_analysis_windows",
     "select_keyframes",
     "select_keyframes_detailed",

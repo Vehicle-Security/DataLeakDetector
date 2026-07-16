@@ -13,6 +13,7 @@ from pathlib import Path
 
 from data_leak_detector import run_data_case, run_pipeline
 from data_leak_detector.datasets import data_case_id, discover_data_case_directories
+from data_leak_detector.frame_analyzer.artifacts import VISION_PRECOMPUTE_STRATEGY_VERSION
 from data_leak_detector.frame_analyzer.vlm_dispatch import vlm_dispatcher_snapshots
 from data_leak_detector.sensitivity import DEFAULT_SENSITIVE_FILES_CONFIG_PATH
 
@@ -593,6 +594,7 @@ def _build_release_vision_precompute(
                     {
                         "schema_version": 1,
                         "precompute_mode": "direct_keyframes_only",
+                        "vision_strategy_version": VISION_PRECOMPUTE_STRATEGY_VERSION,
                         "vision_precompute_file": cache_file,
                         "records": report.get("event_correlator", {}).get("raw_log_events", []),
                         "log_observations": [
@@ -682,7 +684,12 @@ def _precompute_baseline_matches_mode(path: Path, mode: str) -> bool:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
-    return isinstance(payload, dict) and payload.get("schema_version") == 1 and payload.get("precompute_mode") == mode
+    return (
+        isinstance(payload, dict)
+        and payload.get("schema_version") == 1
+        and payload.get("precompute_mode") == mode
+        and payload.get("vision_strategy_version") == VISION_PRECOMPUTE_STRATEGY_VERSION
+    )
 
 
 def _write_json_atomic(path: Path, payload: dict, *, attempts: int = 3) -> None:

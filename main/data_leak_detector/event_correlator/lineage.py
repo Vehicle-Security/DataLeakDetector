@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..io import normalize_path, same_file
+from ..io import normalize_path
 
 
 @dataclass
@@ -20,9 +20,9 @@ class Lineage:
     def add(self, derived: str, source: str) -> None:
         derived = normalize_path(derived)
         source = normalize_path(source)
-        if not derived or not source or same_file(derived, source) or derived in self.direct:
+        if not derived or not source or _same_artifact_path(derived, source) or derived in self.direct:
             return
-        if any(same_file(derived, item) for item in self.chain(source)):
+        if any(_same_artifact_path(derived, item) for item in self.chain(source)):
             return
         self.direct[derived] = source
 
@@ -43,3 +43,7 @@ class Lineage:
             current = self.direct[current]
             parts.append(current)
         return parts
+
+
+def _same_artifact_path(left: str, right: str) -> bool:
+    return normalize_path(left).lower() == normalize_path(right).lower()

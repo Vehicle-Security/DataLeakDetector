@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any
 
 from .frames import AnalysisWindow, KeyFrame, KeyFrameDuplicate, KeyFrameSelection
 from .vlm_client import build_vlm_frame_grids, prepare_vlm_frame_images
+
+
+VISION_PRECOMPUTE_STRATEGY_VERSION = 6
 
 
 def export_vision_artifacts(
@@ -75,6 +79,7 @@ def write_vision_precompute(
     }
     payload = {
         "schema_version": 1,
+        "strategy_version": VISION_PRECOMPUTE_STRATEGY_VERSION,
         "windows": [_analysis_window_to_dict(item) for item in windows],
         "keyframes": [_keyframe_to_dict(item, image_path=image_by_id.get(item.frame_id, item.image_path)) for item in selection.keyframes],
         "raw_keyframe_count": len(selection.raw_keyframes),
@@ -89,7 +94,11 @@ def write_vision_precompute(
 
 def load_vision_precompute(path: str | Path) -> dict[str, Any]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != 1
+        or payload.get("strategy_version") != VISION_PRECOMPUTE_STRATEGY_VERSION
+    ):
         raise ValueError(f"unsupported_vision_precompute: {path}")
     keyframes = [_keyframe_from_dict(item) for item in payload.get("keyframes", []) if isinstance(item, dict)]
     return {
@@ -197,7 +206,7 @@ def _copy_frame_images(frames: list[Any], target_dir: Path) -> list[str]:
         if not source.exists():
             continue
         timestamp = int(getattr(frame, "timestamp_ms", 0))
-        reason = str(getattr(frame, "reason", "frame")).replace(":", "-").replace("/", "-").replace("\\", "-")
+        reason = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "-", str(getattr(frame, "reason", "frame"))).strip(" .-") or "frame"
         target = target_dir / f"{index:03d}_{timestamp}ms_{reason}{source.suffix or '.jpg'}"
         shutil.copy2(source, target)
         copied.append(str(target))

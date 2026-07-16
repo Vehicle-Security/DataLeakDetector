@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 import json
 from pathlib import Path
+import re
 from typing import Any, Iterable
 
 from .frame_analyzer.apps import identify_frontend_app
@@ -259,7 +260,9 @@ def build_analysis_windows(
     candidates = [
         event
         for event in ordered
-        if _may_need_analysis_window(event, sensitive) or _may_be_derived_file_event(event, sensitive)
+        if event.event_type in _FOREGROUND_EVENTS
+        or _may_need_analysis_window(event, sensitive)
+        or _may_be_derived_file_event(event, sensitive)
     ]
     candidates = _select_semantic_candidates(candidates, sensitive)
     event_view = _compact_event_view(ordered, candidates)
@@ -275,11 +278,18 @@ def build_analysis_windows(
         )
         if window is not None:
             actions.append(window)
-    outbound_context = _build_outbound_context_windows(event_view, actions, config)
+    outbound_context = _build_outbound_context_windows(ordered, actions, config, sensitive_files=sensitive)
+    covered_phases = {
+        phase
+        for window in outbound_context
+        for phase in window.action_phases
+        if phase[1] not in {"external_session", "session_end"}
+    }
     visible_actions = [
         window
         for window in actions
         if not any(action == "transfer_anchor" for _, action in window.action_phases)
+        and any(phase not in covered_phases for phase in window.action_phases)
     ]
     return _finalize_windows([*visible_actions, *outbound_context], [], event_view)
 
@@ -298,9 +308,11 @@ def build_analysis_window_for_event(
     normalized_sensitive: bool = False,
 ) -> AnalysisWindow | None:
     del active_app_index, time_index, sensitive_context_index
-    if event.video_time_ms < 0 or _is_noise_only_event(event):
+    if event.video_time_ms < 0:
         return None
     sensitive = tuple(sensitive_files) if normalized_sensitive else _normalize_sensitive_files(sensitive_files)
+    if _is_noise_only_event(event) and not _event_matches_sensitive(event, sensitive):
+        return None
     timeline = sensitive_timeline or _SensitiveTimeline.from_logs(logs, sensitive)
     direct_sensitive = _event_matches_sensitive(event, sensitive)
     path_sensitive = bool(event.file_path) and any(same_file(event.file_path, source) for source in sensitive)
@@ -312,12 +324,27 @@ def build_analysis_window_for_event(
         or timeline.recent_at(event.video_time_ms)
     )
     action = _action_kind(event)
+    if action == "transfer_anchor" and direct_sensitive:
+        # A browser access to a known sensitive document is the file-selection
+        # phase of an outbound action, even if the monitor labels it as IO.
+        action = "file_selected"
     if action == "transfer_anchor" and not direct_sensitive:
         action = ""
     if not action and direct_derivation:
-        action = "derive"
+        app_identity = identify_frontend_app(
+            app_name=event.app_name or event.process_name,
+            window_title=event.window_title,
+        )
+        action = "file_selected" if app_identity.risk_hint.startswith("external_capable") else "derive"
+    if not action and direct_sensitive and event.file_path:
+        app_identity = identify_frontend_app(
+            app_name=event.app_name or event.process_name,
+            window_title=event.window_title,
+        )
+        if app_identity.risk_hint.startswith("external_capable"):
+            action = "resource_identity" if event.event_type in _FOREGROUND_EVENTS else "file_selected"
     priority = "none"
-    if action in {"upload", "send", "file_selected", "transfer_anchor"}:
+    if action in {"upload", "send", "file_selected", "resource_identity", "transfer_anchor"}:
         priority = "strong"
     elif action == "removable":
         priority = "strong"
@@ -335,7 +362,7 @@ def build_analysis_window_for_event(
         after_ms = config.strong_window_after_ms
         if action == "capture":
             before_ms = max(before_ms, 15_000)
-        if action in {"file_selected", "upload", "send", "removable", "screen_share"}:
+        if action in {"file_selected", "upload", "send", "removable", "screen_share", "clipboard"}:
             after_ms = max(after_ms, 30_000)
         step_ms = config.strong_frame_step_ms
         budget = config.max_keyframes_per_strong_window
@@ -359,7 +386,15 @@ def build_analysis_window_for_event(
         anchor_ms=(timestamp,),
         action_anchor_ms=(timestamp,),
         action_phases=((timestamp, action),),
-        requires_post_action_state=action == "paste",
+        requires_post_action_state=action in {
+            "clipboard",
+            "file_selected",
+            "paste",
+            "removable",
+            "screen_share",
+            "send",
+            "upload",
+        },
         active_apps=active_apps or (),
     )
 
@@ -455,98 +490,313 @@ def _merge_activities(
     return merged
 
 
+@dataclass(frozen=True)
+class _FrontendSession:
+    start_ms: int
+    end_ms: int
+    app_key: str
+    app_name: str
+    category: str
+    state_ms: tuple[int, ...] = ()
+
+
+_EVIDENCE_SESSION_CATEGORIES = frozenset(
+    {
+        "ai_chat",
+        "chat",
+        "cloud_drive",
+        "code_hosting",
+        "community",
+        "external_sink",
+        "mail",
+        "meeting",
+        "removable_media",
+        "workplace",
+    }
+)
+
+
 def _build_outbound_context_windows(
     logs: list[LogEvent],
     action_windows: list[AnalysisWindow],
     config: VisionConfig,
     *,
-    evidence_horizon_ms: int = 600_000,
-    session_gap_ms: int = 180_000,
+    sensitive_files: tuple[str, ...] = (),
+    evidence_horizon_ms: int = 120_000,
+    session_gap_ms: int = 30_000,
 ) -> list[AnalysisWindow]:
-    """Link source-side evidence to the next foreground business session."""
+    """Build one evidence packet for each concrete external-application session."""
 
-    evidence = sorted(
+    phases = sorted(
         {
             phase
             for window in action_windows
-            for phase in (
-                window.action_phases
-                or tuple((anchor, "action") for anchor in window.action_anchor_ms)
-            )
-            if phase[1] in {"capture", "clipboard", "derive"}
+            for phase in (window.action_phases or tuple((anchor, "action") for anchor in window.action_anchor_ms))
         }
     )
-    if not evidence:
-        return []
-    foreground = [event for event in logs if event.event_type in _FOREGROUND_EVENTS and _foreground_app_key(event)]
-    source_events = {
-        event.video_time_ms: event
-        for event in logs
-        if event.event_type not in _FOREGROUND_EVENTS
-    }
-    windows = []
-    seen_sessions: set[tuple[int, int, str]] = set()
-    for timestamp, action in evidence:
-        source_event = source_events.get(timestamp)
-        source_app = _foreground_app_key(source_event) if source_event is not None else ""
-        start_index = next(
+    sessions = [
+        segment
+        for session in _frontend_sessions(logs, session_gap_ms=session_gap_ms)
+        for segment in _segment_frontend_session(session, config.external_session_segment_ms)
+    ]
+    source_phase_owner: dict[tuple[int, str], int] = {}
+    for phase in phases:
+        if phase[1] not in {"capture", "clipboard", "derive", "paste"}:
+            continue
+        candidates = [
+            (max(0, session.start_ms - phase[0]), index)
+            for index, session in enumerate(sessions)
+            if session.category in _EVIDENCE_SESSION_CATEGORIES
+            and session.end_ms >= phase[0]
+            and session.start_ms - phase[0] <= evidence_horizon_ms
+        ]
+        if candidates:
+            source_phase_owner[phase] = min(candidates)[1]
+
+    windows: list[AnalysisWindow] = []
+    for session_index, session in enumerate(sessions):
+        if session.category not in _EVIDENCE_SESSION_CATEGORIES:
+            continue
+
+        nearby_phases = [
+            phase
+            for phase in phases
+            if session.start_ms - evidence_horizon_ms <= phase[0] <= session.end_ms
+            and (
+                phase[1] not in {"capture", "clipboard", "derive", "paste"}
+                or source_phase_owner.get(phase) == session_index
+            )
+            and (
+                session.start_ms - 30_000 <= phase[0]
+                or phase[1] in {"capture", "clipboard", "derive", "paste"}
+            )
+        ]
+        accesses = _outbound_sensitive_file_accesses(
+            logs,
+            sensitive_files,
+            start_ms=max(0, session.start_ms - 5_000),
+            end_ms=session.end_ms,
+        )
+        nearby_phases.extend((event.video_time_ms, "file_selected") for event in accesses)
+        nearby_phases = list(_collapse_action_phases(tuple(nearby_phases)))
+        if not nearby_phases and not _session_warrants_visual_evidence(
+            session,
+            logs,
+            sensitive_files,
+            evidence_horizon_ms=evidence_horizon_ms,
+        ):
+            # Merely opening an external-capable app is not evidence. A session
+            # packet needs nearby sensitive context, an action, or a substantive
+            # meeting session where the visual channel carries the evidence.
+            continue
+
+        phase_starts = [
+            max(0, timestamp - config.strong_window_before_ms)
+            for timestamp, _ in nearby_phases
+            if timestamp <= session.end_ms
+        ]
+        start_ms = max(0, min([session.start_ms, *phase_starts]))
+        phase_end = max((timestamp for timestamp, _ in nearby_phases), default=session.end_ms)
+        end_ms = max(session.end_ms, phase_end + (30_000 if nearby_phases else 0))
+        session_phases = _collapse_action_phases(
             (
-                index
-                for index, event in enumerate(foreground)
-                if 0 <= event.video_time_ms - timestamp <= evidence_horizon_ms
-                and _visible_foreground(event)
-                and _foreground_app_key(event) != source_app
-            ),
-            None,
+                (session.start_ms, "external_session"),
+                *((timestamp, "external_state") for timestamp in session.state_ms if timestamp != session.start_ms),
+                *nearby_phases,
+                (session.end_ms, "session_end"),
+            )
         )
-        if start_index is None:
-            continue
-        session = []
-        app = _foreground_app_key(foreground[start_index])
-        for event in foreground[start_index:]:
-            if session and event.video_time_ms - session[-1].video_time_ms > session_gap_ms:
-                break
-            if _foreground_app_key(event) != app:
-                break
-            if not _visible_foreground(event):
-                if session:
-                    break
-                continue
-            session.append(event)
-        if not session:
-            continue
-        session_start = session[0].video_time_ms
-        session_end = session[-1].video_time_ms
-        source_has_resource = bool(source_event and normalize_path(source_event.file_path))
-        transfer_signal = any(_looks_like_file_dialog(event.window_title) for event in session) or any(
-            session_start <= event.video_time_ms <= session_end
-            and _action_kind(event) in {"paste", "file_selected", "upload", "send"}
-            for event in logs
-        )
-        if action == "capture" and not transfer_signal:
-            continue
-        if action == "clipboard" and not source_has_resource and not transfer_signal:
-            continue
-        identity = (session[0].video_time_ms, session[-1].video_time_ms, app)
-        if identity in seen_sessions:
-            continue
-        seen_sessions.add(identity)
-        anchor = session[-1].video_time_ms
+        anchors = tuple(sorted({timestamp for timestamp, _ in session_phases}))
         windows.append(
             AnalysisWindow(
-                max(0, anchor - 1_000),
-                anchor + max(config.strong_window_after_ms, 30_000),
-                "strong:outbound_context",
+                start_ms,
+                end_ms,
+                f"strong:external_session:{session.category}",
                 priority="strong",
                 step_ms=config.strong_frame_step_ms,
-                max_keyframes=6,
+                max_keyframes=config.max_keyframes_per_strong_window,
                 diff_threshold=config.strong_frame_diff_threshold,
-                anchor_ms=(anchor,),
-                action_anchor_ms=(anchor,),
-                action_phases=((anchor, "outbound_context"),),
+                anchor_ms=anchors,
+                action_anchor_ms=anchors,
+                action_phases=session_phases,
+                requires_post_action_state=True,
+                active_apps=(session.app_name,),
             )
         )
     return windows
+
+
+def _segment_frontend_session(session: _FrontendSession, segment_ms: int) -> list[_FrontendSession]:
+    if segment_ms <= 0 or session.end_ms - session.start_ms <= segment_ms:
+        return [session]
+    segments: list[_FrontendSession] = []
+    start_ms = session.start_ms
+    while start_ms <= session.end_ms:
+        end_ms = min(session.end_ms, start_ms + segment_ms)
+        segments.append(
+            _FrontendSession(
+                start_ms,
+                end_ms,
+                session.app_key,
+                session.app_name,
+                session.category,
+                tuple(timestamp for timestamp in session.state_ms if start_ms <= timestamp <= end_ms),
+            )
+        )
+        start_ms = end_ms + 1
+    return segments
+
+
+def _frontend_sessions(logs: list[LogEvent], *, session_gap_ms: int) -> list[_FrontendSession]:
+    foreground = sorted(
+        (
+            event
+            for event in logs
+            if event.video_time_ms >= 0 and event.event_type in _FOREGROUND_EVENTS
+        ),
+        key=lambda event: (event.video_time_ms, event.event_id),
+    )
+    if not foreground:
+        return []
+    timeline_end = max((event.video_time_ms for event in logs if event.video_time_ms >= 0), default=foreground[-1].video_time_ms)
+    sessions: list[_FrontendSession] = []
+    previous_identity = None
+    previous_visible_index = -2
+    for index, event in enumerate(foreground):
+        if not _visible_foreground(event):
+            previous_identity = None
+            continue
+        identity = identify_frontend_app(
+            app_name=event.app_name or event.process_name,
+            window_title=event.window_title,
+        )
+        if _looks_like_file_dialog(event.window_title) and previous_identity is not None:
+            identity = previous_identity
+        end_ms = min(
+            foreground[index + 1].video_time_ms - 1
+            if index + 1 < len(foreground)
+            else max(timeline_end, event.video_time_ms) + 10_000,
+            event.video_time_ms + 30_000,
+        )
+        app_key = _frontend_session_app_key(event, identity)
+        if (
+            sessions
+            and sessions[-1].app_key == app_key
+            and index == previous_visible_index + 1
+            and event.video_time_ms - sessions[-1].end_ms <= session_gap_ms
+        ):
+            sessions[-1] = _FrontendSession(
+                sessions[-1].start_ms,
+                max(sessions[-1].end_ms, end_ms),
+                app_key,
+                identity.app_name,
+                identity.category,
+                tuple(sorted({*sessions[-1].state_ms, event.video_time_ms})),
+            )
+        else:
+            sessions.append(
+                _FrontendSession(
+                    event.video_time_ms,
+                    max(event.video_time_ms, end_ms),
+                    app_key,
+                    identity.app_name,
+                    identity.category,
+                    (event.video_time_ms,),
+                )
+            )
+        previous_identity = identity
+        previous_visible_index = index
+    return sessions
+
+
+def _frontend_session_app_key(event: LogEvent, identity) -> str:
+    aliases = {
+        "meet": "google meet",
+        "google meet": "google meet",
+        "wemeet": "tencent meeting",
+        "tencent meeting": "tencent meeting",
+        "腾讯会议": "tencent meeting",
+        "doubao": "doubao",
+        "豆包": "doubao",
+        "ai 中文版": "doubao",
+    }
+    if identity.known:
+        product = aliases.get(normalize_text(identity.app_name), normalize_text(identity.app_name))
+    else:
+        product = _foreground_app_key(event) or normalize_text(identity.app_name)
+    return f"{identity.category}:{product}"
+
+
+def _session_warrants_visual_evidence(
+    session: _FrontendSession,
+    logs: list[LogEvent],
+    sensitive_files: tuple[str, ...],
+    *,
+    evidence_horizon_ms: int,
+) -> bool:
+    if not sensitive_files or session.end_ms - session.start_ms < 8_000:
+        return False
+    if session.category == "meeting":
+        return True
+    return any(
+        session.start_ms - evidence_horizon_ms <= event.video_time_ms <= session.end_ms
+        and not _is_close_event(event)
+        and (
+            _event_matches_sensitive(event, sensitive_files)
+            or _may_be_derived_file_event(event, sensitive_files)
+        )
+        for event in logs
+    )
+
+
+def _outbound_sensitive_file_accesses(
+    logs: list[LogEvent],
+    sensitive_files: tuple[str, ...],
+    *,
+    start_ms: int,
+    end_ms: int,
+) -> list[LogEvent]:
+    known_paths = {
+        normalize_path(event.file_path).lower()
+        for event in logs
+        if event.video_time_ms <= start_ms
+        and _is_user_document_path(normalize_path(event.file_path).lower())
+        and _event_matches_sensitive_or_derived_path(event, sensitive_files)
+    }
+    accesses = [
+        event
+        for event in logs
+        if start_ms < event.video_time_ms <= end_ms
+        and event.event_type not in _FOREGROUND_EVENTS
+        and not _is_close_event(event)
+        and _action_kind(event) not in {"file_selected", "upload", "send", "removable", "screen_share"}
+        and _is_user_document_path(normalize_path(event.file_path).lower())
+        and _event_matches_sensitive_or_derived_path(event, sensitive_files)
+        and (
+            identify_frontend_app(
+                app_name=event.app_name or event.process_name,
+                window_title=event.window_title,
+            ).risk_hint.startswith("external_capable")
+            or normalize_path(event.file_path).lower() in known_paths
+        )
+    ]
+    retained: list[LogEvent] = []
+    for event in sorted(accesses, key=lambda item: item.video_time_ms):
+        if (
+            retained
+            and same_file(retained[-1].file_path, event.file_path)
+            and event.video_time_ms - retained[-1].video_time_ms <= 2_000
+        ):
+            continue
+        retained.append(event)
+    return retained
+
+
+def _event_matches_sensitive_or_derived_path(event: LogEvent, sensitive_files: tuple[str, ...]) -> bool:
+    target = normalize_path(event.file_path).lower()
+    return _event_matches_sensitive(event, sensitive_files) or any(
+        _target_path_references_source(target, source) for source in sensitive_files
+    )
 
 
 def _finalize_windows(
@@ -584,7 +834,17 @@ def _finalize_windows(
 def _merge_action_windows(windows: list[AnalysisWindow]) -> list[AnalysisWindow]:
     merged = []
     for window in sorted(windows, key=lambda item: (item.start_ms, item.end_ms, item.reason)):
-        if not merged or window.priority != merged[-1].priority or window.start_ms > merged[-1].end_ms:
+        separate_external_packets = bool(
+            merged
+            and merged[-1].reason.startswith("strong:external_session:")
+            and window.reason.startswith("strong:external_session:")
+        )
+        if (
+            not merged
+            or separate_external_packets
+            or window.priority != merged[-1].priority
+            or window.start_ms > merged[-1].end_ms
+        ):
             merged.append(window)
             continue
         previous = merged[-1]
@@ -598,11 +858,32 @@ def _merge_action_windows(windows: list[AnalysisWindow]) -> list[AnalysisWindow]
             diff_threshold=min(previous.diff_threshold, window.diff_threshold),
             anchor_ms=tuple(sorted({*previous.anchor_ms, *window.anchor_ms})),
             action_anchor_ms=tuple(sorted({*previous.action_anchor_ms, *window.action_anchor_ms})),
-            action_phases=tuple(sorted({*previous.action_phases, *window.action_phases})),
+            action_phases=_collapse_action_phases((*previous.action_phases, *window.action_phases)),
             requires_post_action_state=previous.requires_post_action_state or window.requires_post_action_state,
             active_apps=tuple(dict.fromkeys((*previous.active_apps, *window.active_apps))),
         )
     return merged
+
+
+def _collapse_action_phases(
+    phases: tuple[tuple[int, str], ...] | list[tuple[int, str]],
+    *,
+    echo_gap_ms: int = 1_500,
+) -> tuple[tuple[int, str], ...]:
+    """Collapse monitor echoes without merging distinct steps in one workflow."""
+
+    collapsed: list[tuple[int, str]] = []
+    for timestamp, action in sorted({(int(timestamp), str(action)) for timestamp, action in phases}):
+        if (
+            collapsed
+            and collapsed[-1][1] == action
+            and action not in {"external_session", "external_state", "resource_identity", "session_end"}
+            and timestamp - collapsed[-1][0] <= echo_gap_ms
+        ):
+            collapsed[-1] = (timestamp, action)
+        else:
+            collapsed.append((timestamp, action))
+    return tuple(collapsed)
 
 
 @dataclass(frozen=True)
@@ -654,16 +935,17 @@ def _compact_event_view(logs: list[LogEvent], candidate_events: list[LogEvent]) 
         if event.event_id in candidate_ids
         or event.event_type in _FOREGROUND_EVENTS
         or _action_kind(event)
-        if not _is_noise_only_event(event)
     ]
     return sorted({event.event_id: event for event in kept}.values(), key=lambda event: (event.video_time_ms, event.event_id))
 
 
 def _may_need_analysis_window(event: LogEvent, sensitive_files: tuple[str, ...]) -> bool:
-    if event.video_time_ms < 0 or _is_noise_only_event(event):
+    if event.video_time_ms < 0:
         return False
     if _event_matches_sensitive(event, sensitive_files) or _action_kind(event):
         return True
+    if _is_noise_only_event(event):
+        return False
     return event.event_type not in _FOREGROUND_EVENTS and _is_high_risk_hint(event)
 
 
@@ -717,9 +999,29 @@ def _select_semantic_candidates(
         if action == "clipboard":
             if any(0 <= capture_ms - event.video_time_ms <= 15_000 for capture_ms in capture_downstream):
                 continue
-            if not any(
+            has_recent_sensitive = any(
+                0 <= event.video_time_ms - signal.video_time_ms <= 120_000
+                and _event_matches_sensitive(signal, sensitive_files)
+                for signal in events
+            )
+            has_later_external_app = any(
+                0 <= signal.video_time_ms - event.video_time_ms <= 120_000
+                and signal.event_type in _FOREGROUND_EVENTS
+                and identify_frontend_app(
+                    app_name=signal.app_name or signal.process_name,
+                    window_title=signal.window_title,
+                ).category in _EVIDENCE_SESSION_CATEGORIES
+                for signal in events
+            )
+            has_bound_sensitive_path = bool(event.file_path) and _event_matches_sensitive(event, sensitive_files)
+            if not has_later_external_app and not has_bound_sensitive_path and not any(
                 0 <= downstream_ms - event.video_time_ms <= 60_000
                 for downstream_ms in downstream
+            ) and not any(
+                abs(event.video_time_ms - signal.video_time_ms) <= 30_000
+                and _event_matches_sensitive(signal, sensitive_files)
+                and _is_noise_only_event(signal)
+                for signal in events
             ):
                 continue
         if action in {"capture_start", "capture"}:
@@ -739,7 +1041,7 @@ def _action_kind(event: LogEvent) -> str:
     combined = f"{event_type} {operation} {text}".lower()
     if event_type == "file_selected" or operation == "file_selected":
         return "file_selected"
-    if event_type in {"opened", "read"} and "browser_file_access" in operation and _is_user_document_path(
+    if event_type in _OPEN_EVENTS | _FILE_CREATION_EVENTS and "browser_file_access" in operation and _is_user_document_path(
         normalize_path(event.file_path).lower()
     ):
         return "transfer_anchor"
@@ -763,9 +1065,15 @@ def _action_kind(event: LogEvent) -> str:
         token in operation for token in ("export", "save_as", "print", "compress", "encode", "decode")
     ):
         return "derive"
-    if any(token in combined for token in ("bluetooth", "removable", "usb", "u盘", "蓝牙", "fsquirt")):
+    if _has_removable_media_signal(combined):
         return "removable"
     return ""
+
+
+def _has_removable_media_signal(text: str) -> bool:
+    if any(token in text for token in ("bluetooth", "removable", "fsquirt", "u盘", "蓝牙")):
+        return True
+    return re.search(r"(?<![a-z0-9])usb(?![a-z0-9])", text) is not None
 
 
 def _is_open_event(event: LogEvent) -> bool:
@@ -856,10 +1164,28 @@ def _event_matches_sensitive(event: LogEvent, sensitive_files: tuple[str, ...]) 
 
 
 def _event_matches_source(event: LogEvent, source: str) -> bool:
-    if event.file_path and same_file(event.file_path, source):
-        return True
+    if event.file_path:
+        if same_file(event.file_path, source):
+            return True
+        if (
+            event.event_type not in _FOREGROUND_EVENTS
+            and not event.event_type.lower().startswith("clipboard")
+            and event.event_type.lower() not in {"modified", "accessed", "read"}
+        ):
+            return False
     filename = Path(normalize_path(source)).name.lower()
-    return bool(filename and len(filename) >= 4 and filename in normalize_path(_event_text(event)).lower())
+    semantic_context = normalize_path(
+        " ".join(
+            str(item or "")
+            for item in (
+                event.window_title,
+                event.description,
+                event.raw.get("content_preview"),
+                _extra(event).get("content_preview"),
+            )
+        )
+    ).lower()
+    return bool(filename and len(filename) >= 4 and filename in semantic_context)
 
 
 def _may_be_derived_file_event(event: LogEvent, sensitive_files: tuple[str, ...]) -> bool:

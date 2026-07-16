@@ -18,3 +18,4 @@ class EventCorrelatorConfig:
     upload_confidence: float = 0.86
     transfer_confidence: float = 0.72
     non_vlm_enabled: bool = True
+    visual_evidence_horizon_ms: int = 120_000

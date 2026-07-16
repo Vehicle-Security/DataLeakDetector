@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ..io import normalize_path, parse_timestamp_ms
@@ -25,6 +26,7 @@ class ParsedVisionEvent:
     confidence: float = 0.80
     evidence_frame_ids: tuple[str, ...] = ()
     sink_type: str = ""
+    action_status: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -52,7 +54,17 @@ def parse_vlm_response_detailed(response_text: str, *, keywords: list[str] | Non
         payload = _extract_json(response_text)
     except Exception as exc:
         return VlmParseResult(events=[], raw_events=[], dropped_events=[], parse_errors=[f"{type(exc).__name__}: {exc}"])
-    raw_events = payload.get("events", payload if isinstance(payload, list) else [])
+    if isinstance(payload, dict):
+        raw_events = payload.get("events", [])
+    elif isinstance(payload, list):
+        raw_events = payload
+    else:
+        return VlmParseResult(
+            events=[],
+            raw_events=[],
+            dropped_events=[{"reason": "top_level_not_object_or_array", "event": payload}],
+            parse_errors=[],
+        )
     events: list[ParsedVisionEvent] = []
     raw_event_dicts: list[dict[str, Any]] = []
     dropped: list[dict[str, Any]] = []
@@ -138,6 +150,10 @@ def _normalize_event(item: dict[str, Any]) -> ParsedVisionEvent:
     behavior = _first_text(item, "behavior_category", "category", "risk_type")
     description = _first_text(item, "description", "reason", "evidence")
     evidence_frame_ids = _text_tuple(item.get("evidence_frame_ids") or item.get("frame_ids") or item.get("frame_id"))
+    action_status = _action_status(
+        _first_text(item, "action_status", "status", "transfer_status"),
+        context=f"{operation} {behavior} {description}",
+    )
     return ParsedVisionEvent(
         start_ms=start_ms,
         end_ms=end_ms or start_ms,
@@ -150,6 +166,7 @@ def _normalize_event(item: dict[str, Any]) -> ParsedVisionEvent:
         confidence=_confidence(item.get("confidence")),
         evidence_frame_ids=evidence_frame_ids,
         sink_type=_first_text(item, "sink_type", "sink", "channel"),
+        action_status=action_status,
     )
 
 
@@ -196,6 +213,58 @@ def _confidence(value: Any) -> float:
     return max(0.0, min(confidence, 1.0))
 
 
+def _action_status(value: str, *, context: str = "") -> str:
+    status = value.strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "attached": "selected",
+        "queued": "submitted",
+        "uploading": "in_progress",
+        "sending": "in_progress",
+        "success": "completed",
+        "succeeded": "completed",
+        "complete": "completed",
+        "error": "failed",
+        "unsupported": "failed",
+        "not_supported": "failed",
+        "timed_out": "failed",
+        "timeout": "failed",
+        "rejected": "failed",
+        "cancelled": "failed",
+        "canceled": "failed",
+    }
+    status = aliases.get(status, status)
+    allowed = {"selected", "submitted", "in_progress", "completed", "failed", "unknown"}
+    if status in allowed and status != "unknown":
+        return status
+    context_text = context.lower()
+    if re.search(r"\b(completed|complete|succeeded|success|sent)\b", context_text) and not re.search(
+        r"\b(not supported|unsupported|failed|rejected|timed out|timeout)\b",
+        context_text,
+    ):
+        return "completed"
+    if any(
+        marker in context_text
+        for marker in (
+            "not supported",
+            "unsupported",
+            "rejected",
+            "cancelled",
+            "canceled",
+            "timed out",
+            "timeout",
+            "error occurred",
+            "error:",
+            "failed",
+            "不支持",
+            "失败",
+            "错误",
+            "取消",
+        )
+    ):
+        return "failed"
+    return "unknown"
+
+
 def _is_relevant(event: ParsedVisionEvent, keywords: list[str]) -> bool:
     text = " ".join(
         [
@@ -209,11 +278,16 @@ def _is_relevant(event: ParsedVisionEvent, keywords: list[str]) -> bool:
             " ".join(event.evidence_frame_ids),
         ]
     ).lower()
+    sensitive_match = any(_mentions_sensitive_keyword(text, keyword) for keyword in keywords)
+    if sensitive_match and event.action_status in {"selected", "submitted", "in_progress", "completed", "failed"}:
+        return True
     if _is_normal_only(text):
         return False
     if contains_any(text, SINK_TOKENS) or contains_any(text, TRANSFER_TOKENS):
         return True
     if contains_any(text, SENSITIVE_TOKENS):
+        return True
+    if sensitive_match:
         return True
     compact = re.sub(r"\s+", "", text)
     for keyword in keywords:
@@ -221,6 +295,20 @@ def _is_relevant(event: ParsedVisionEvent, keywords: list[str]) -> bool:
         if key and (key in compact or semantic_sensitive_match(key, compact)):
             return True
     return "unknown" in event.behavior_category.lower() or "未知" in event.behavior_category
+
+
+def _mentions_sensitive_keyword(text: str, keyword: str) -> bool:
+    normalized = normalize_path(keyword).strip().lower()
+    if not normalized:
+        return False
+    name = Path(normalized).name
+    stem = Path(name).stem
+    compact = re.sub(r"\s+", "", normalize_path(text).lower())
+    return any(
+        len(alias) >= 3 and re.sub(r"\s+", "", alias) in compact
+        for alias in {normalized, name, stem}
+        if alias
+    )
 
 
 def _is_normal_only(text: str) -> bool:
@@ -276,6 +364,7 @@ def _observation_description(event: ParsedVisionEvent) -> str:
         parts.append("evidence_frame_ids=" + "|".join(event.evidence_frame_ids) + ".")
     if event.sink_type:
         parts.append(f"sink_type={event.sink_type}.")
+    parts.append(f"action_status={event.action_status}.")
     if event.description:
         parts.append(event.description)
     return " ".join(parts)
@@ -294,14 +383,24 @@ def _event_to_dict(event: ParsedVisionEvent) -> dict[str, Any]:
         "confidence": event.confidence,
         "evidence_frame_ids": list(event.evidence_frame_ids),
         "sink_type": event.sink_type,
+        "action_status": event.action_status,
     }
 
 
 def _dedupe(events: list[ParsedVisionEvent]) -> list[ParsedVisionEvent]:
-    seen: set[tuple[int, str, str, str]] = set()
+    seen: set[tuple[object, ...]] = set()
     result: list[ParsedVisionEvent] = []
     for event in events:
-        key = (event.start_ms, event.app_name, event.operation_type, event.description)
+        key = (
+            event.start_ms,
+            event.app_name,
+            event.operation_type,
+            event.original_resource,
+            event.modified_resource,
+            event.sink_type,
+            event.action_status,
+            event.description,
+        )
         if key in seen:
             continue
         seen.add(key)

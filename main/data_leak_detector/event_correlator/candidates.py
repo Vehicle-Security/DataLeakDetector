@@ -19,7 +19,10 @@ def build_upload_candidates(
 
     uploads: list[UploadCandidate] = []
     for event in correlated:
-        text = f"{event.event_type} {event.operation_type} {event.app_name} {event.behavior_category}"
+        text = (
+            f"{event.event_type} {event.operation_type} {event.app_name} "
+            f"{event.behavior_category} {' '.join(event.join_reasons)}"
+        )
         current_file = event.current_file or event.original_file
         if not _is_explicit_upload_event(event, text):
             continue
@@ -79,6 +82,14 @@ def _is_explicit_upload_event(event: CorrelatedEvent, text: str) -> bool:
 
 
 def _upload_risk_level(event: CorrelatedEvent, text: str) -> str:
+    if "action_status:failed" in text or "failed_external_attempt" in text:
+        return "selected_or_attached"
+    if "action_status:selected" in text or "action_status:submitted" in text:
+        return "selected_or_attached"
+    if "action_status:in_progress" in text:
+        return "in_progress"
+    if "action_status:completed" in text:
+        return "completed"
     if any(ref.startswith("frame:vlm") for ref in event.evidence_refs):
         return "content_exposed"
     if "removable_media_sink" in event.join_reasons:
