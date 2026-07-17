@@ -197,22 +197,27 @@ def test_release_keeps_deterministic_log_evidence_enabled() -> None:
     assert release_args["non_vlm_enabled"] is True
 
 
-def test_release_marks_vlm_errors_failed_and_writes_retry_list(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_release_marks_vlm_errors_failed_and_continues_remaining_cases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     case_root = tmp_path / "cases"
-    case_dir = case_root / "case-a"
-    case_dir.mkdir(parents=True)
+    case_dirs = [case_root / "case-a", case_root / "case-b"]
+    for case_dir in case_dirs:
+        case_dir.mkdir(parents=True)
     output_dir = tmp_path / "release"
 
-    monkeypatch.setattr(run_e2e_module, "discover_data_case_directories", lambda root: [case_dir])
+    monkeypatch.setattr(run_e2e_module, "discover_data_case_directories", lambda root: case_dirs)
     monkeypatch.setattr(run_e2e_module, "data_case_id", lambda case, root: case.name)
-    monkeypatch.setattr(
-        run_e2e_module,
-        "run_data_case",
-        lambda *args, **kwargs: {
-            "frame_analyzer": {"errors": ["vlm_batch_failed[0]: quota exceeded"]},
-            "conclusion": "no_confirmed_data_leak",
-        },
-    )
+
+    def run_case(case: Path, **kwargs: object) -> dict:
+        if case.name == "case-a":
+            return {
+                "frame_analyzer": {"errors": ["vlm_batch_failed[0]: quota exceeded"]},
+                "conclusion": "no_confirmed_data_leak",
+            }
+        return {"frame_analyzer": {"errors": []}, "conclusion": "no_confirmed_data_leak"}
+
+    monkeypatch.setattr(run_e2e_module, "run_data_case", run_case)
 
     result = run_e2e_module._run_case_root(
         str(case_root),
@@ -223,9 +228,10 @@ def test_release_marks_vlm_errors_failed_and_writes_retry_list(tmp_path: Path, m
     )
 
     batch = result["batch"]
-    assert batch["completed_cases"] == 0
+    assert batch["completed_cases"] == 1
     assert batch["failed_cases"] == 1
-    assert batch["aborted"] is True
+    assert batch["aborted"] is False
+    assert batch["abort_reason"] == ""
     assert Path(batch["retry_case_list"]).read_text(encoding="utf-8") == "case-a\n"
     progress = json.loads((output_dir / "release_progress.json").read_text(encoding="utf-8"))
     assert progress["state"] == "failed"

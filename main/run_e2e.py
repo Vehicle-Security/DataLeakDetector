@@ -324,18 +324,13 @@ def _run_case_root(
                                 "errors": frame_errors,
                             }
                             recent_cases.append(last_case)
-                            aborted = True
-                            abort_reason = f"frame_analyzer_failed: {name}: {error_text}"
                             persist_progress("failed")
                             print(
                                 f"  [{len(completed) + len(errors)}/{len(cases)}] failed "
-                                f"case={name} error={error_text} aborting_release=true",
+                                f"case={name} error={error_text} continuing_release=true",
                                 flush=True,
                             )
-                        for pending in futures:
-                            if pending is not future:
-                                pending.cancel()
-                        break
+                        continue
                     with progress_lock:
                         finished_uncollected.discard(name)
                         completed.append((name, result, seconds))

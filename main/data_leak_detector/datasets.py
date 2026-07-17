@@ -14,6 +14,24 @@ GROUNDTRUTH_FILENAMES = ("groundtruth.json", "groundtrutn.json")
 
 
 @dataclass(frozen=True)
+class DataSession:
+    session_id: str
+    session_dir: Path
+    log_file: Path
+    video_file: Path | None
+    recording_start_ms: int = 0
+
+    def to_input_metadata(self) -> dict[str, Any]:
+        return {
+            "session_id": self.session_id,
+            "session_dir": str(self.session_dir),
+            "log_file": str(self.log_file),
+            "video_file": str(self.video_file or ""),
+            "recording_start_ms": self.recording_start_ms,
+        }
+
+
+@dataclass(frozen=True)
 class DataCase:
     case_id: str
     case_dir: Path
@@ -26,8 +44,18 @@ class DataCase:
     case_name: str = ""
     groundtruth_status: str = ""
     nearest_ancestor_groundtruth_file: Path | None = None
+    sessions: tuple[DataSession, ...] = ()
 
     def to_input_metadata(self) -> dict[str, Any]:
+        sessions = self.sessions or (
+            DataSession(
+                session_id=self.case_dir.name,
+                session_dir=self.case_dir,
+                log_file=self.log_file,
+                video_file=self.video_file,
+                recording_start_ms=self.recording_start_ms,
+            ),
+        )
         return {
             "case_id": self.case_id,
             "case_name": self.case_name or self.case_dir.name,
@@ -40,18 +68,37 @@ class DataCase:
             "nearest_ancestor_groundtruth_file": str(self.nearest_ancestor_groundtruth_file or ""),
             "sensitive_files_from_case": list(self.sensitive_files),
             "recording_start_ms": self.recording_start_ms,
+            "session_count": len(sessions),
+            "sessions": [item.to_input_metadata() for item in sessions],
+            "log_files": [str(item.log_file) for item in sessions],
+            "video_files": [str(item.video_file or "") for item in sessions],
         }
 
 
 def discover_data_case_directories(root: str | Path) -> list[Path]:
-    """Recursively find sample directories with direct logs and video folders."""
+    """Find logical cases, grouping direct ``session_*`` children under their case."""
 
     root_path = Path(root)
     if not root_path.is_dir():
         raise FileNotFoundError(f"case root does not exist: {root_path}")
     candidates = [root_path, *root_path.rglob("*")]
+    composite_cases = {
+        path
+        for path in candidates
+        if path.is_dir() and _is_composite_case_dir(path)
+    }
+    atomic_cases = {
+        path
+        for path in candidates
+        if path.is_dir() and (path / "logs").is_dir() and (path / "video").is_dir()
+    }
+    grouped_sessions = {
+        session
+        for case_dir in composite_cases
+        for session in _direct_session_directories(case_dir)
+    }
     return sorted(
-        (path for path in candidates if path.is_dir() and (path / "logs").is_dir() and (path / "video").is_dir()),
+        [*composite_cases, *(atomic_cases - grouped_sessions)],
         key=lambda path: str(path).lower(),
     )
 
@@ -73,8 +120,10 @@ def discover_data_case(
         raise FileNotFoundError(f"case path does not exist: {case_dir}")
 
     case_relative_path = data_case_id(case_dir, case_root)
-    log_file = _choose_log_file(case_dir)
-    video_file = _choose_video_file(case_dir)
+    session_dirs = _direct_session_directories(case_dir) if _is_composite_case_dir(case_dir) else [case_dir]
+    sessions = tuple(_discover_data_session(path) for path in session_dirs)
+    log_file = sessions[0].log_file
+    video_file = sessions[0].video_file
     groundtruth_candidate = _groundtruth_file(case_dir)
     groundtruth_file = groundtruth_candidate if groundtruth_candidate.exists() else None
     nearest_ancestor_groundtruth_file = None if groundtruth_file else _nearest_ancestor_groundtruth(case_dir, case_root)
@@ -90,7 +139,8 @@ def discover_data_case(
         groundtruth_status = "missing"
 
     sensitive = load_sensitive_files_config(sensitive_files_config)
-    recording_start_ms = _recording_start_ms(case_dir)
+    recording_starts = [item.recording_start_ms for item in sessions if item.recording_start_ms]
+    recording_start_ms = min(recording_starts) if recording_starts else _recording_start_ms(case_dir)
 
     return DataCase(
         case_id=case_relative_path,
@@ -104,7 +154,33 @@ def discover_data_case(
         case_name=case_dir.name,
         groundtruth_status=groundtruth_status,
         nearest_ancestor_groundtruth_file=nearest_ancestor_groundtruth_file,
+        sessions=sessions,
     )
+
+
+def _discover_data_session(session_dir: Path) -> DataSession:
+    return DataSession(
+        session_id=session_dir.name,
+        session_dir=session_dir,
+        log_file=_choose_log_file(session_dir),
+        video_file=_choose_video_file(session_dir),
+        recording_start_ms=_recording_start_ms(session_dir),
+    )
+
+
+def _direct_session_directories(case_dir: Path) -> list[Path]:
+    return sorted(
+        (
+            path
+            for path in case_dir.glob("session_*")
+            if path.is_dir() and (path / "logs").is_dir() and (path / "video").is_dir()
+        ),
+        key=lambda path: path.name.lower(),
+    )
+
+
+def _is_composite_case_dir(case_dir: Path) -> bool:
+    return _groundtruth_file(case_dir).exists() and len(_direct_session_directories(case_dir)) > 1
 
 
 def data_case_id(path: str | Path, case_root: str | Path | None = None) -> str:
