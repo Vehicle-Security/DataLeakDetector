@@ -42,6 +42,7 @@ from data_leak_detector.frame_analyzer.frames import (
     _focus_actionable_keyframes,
     _focus_file_dialog_flows,
     _focus_semantic_action_phases,
+    _budget_window_candidates,
     _frame_entropy,
     _hamming,
     _probe_timestamps,
@@ -1554,6 +1555,84 @@ def test_mandatory_budget_keeps_identity_and_result_for_each_repeated_selection(
     }
 
 
+def test_window_budget_reserves_visual_completion_over_repeated_context_states() -> None:
+    np = pytest.importorskip("numpy")
+    gray = np.zeros((90, 160), dtype=np.uint8)
+
+    def candidate(frame_id: str, timestamp: int, score: float, reason: str) -> _FrameCandidate:
+        return _FrameCandidate(KeyFrame(frame_id, timestamp, f"{frame_id}.jpg", score, reason), "strong", gray, (0, 64))
+
+    candidates = [
+        candidate("session", 2_000, 0.01, "strong:action_state:external_session:at"),
+        candidate("state_1", 7_000, 0.01, "strong:action_state:external_state:at"),
+        candidate("selection_pre", 8_000, 0.01, "strong:action_state:file_selected:pre"),
+        candidate("selection_at", 10_000, 0.01, "strong:action_state:file_selected:at"),
+        candidate("selection_post", 12_000, 0.02, "strong:action_state:file_selected:post"),
+        candidate("state_2", 16_000, 0.01, "strong:action_state:external_state:at"),
+        candidate("state_3", 20_000, 0.01, "strong:action_state:external_state:at"),
+        candidate("upload_complete", 21_000, 0.8, "strong:visual_change"),
+        candidate("uploaded_file", 22_000, 0.6, "strong:visual_change"),
+        candidate("selection_result", 30_000, 0.01, "strong:action_state:file_selected:result"),
+        candidate("state_4", 35_000, 0.01, "strong:action_state:external_state:at"),
+        candidate("end", 39_000, 0.01, "strong:action_state:session_end:at"),
+    ]
+    window = AnalysisWindow(
+        0,
+        40_000,
+        "strong:external_session:cloud_drive",
+        priority="strong",
+        max_keyframes=8,
+        action_phases=(
+            (2_000, "external_session"),
+            (7_000, "external_state"),
+            (10_000, "file_selected"),
+            (16_000, "external_state"),
+            (20_000, "external_state"),
+            (35_000, "external_state"),
+            (39_000, "session_end"),
+        ),
+    )
+
+    selected = _budget_window_candidates(candidates, window, 8)
+    selected_ids = {item.frame.frame_id for item in selected}
+
+    assert len(selected) == 8
+    assert {"upload_complete", "uploaded_file", "selection_at", "selection_result"}.issubset(selected_ids)
+    assert len(selected_ids & {"session", "state_1", "state_2", "state_3", "state_4", "end"}) <= 3
+
+
+def test_window_budget_keeps_clipboard_paste_and_submitted_visual_states() -> None:
+    np = pytest.importorskip("numpy")
+    gray = np.zeros((90, 160), dtype=np.uint8)
+
+    def candidate(frame_id: str, timestamp: int, score: float, reason: str) -> _FrameCandidate:
+        return _FrameCandidate(KeyFrame(frame_id, timestamp, f"{frame_id}.jpg", score, reason), "strong", gray, (0, 64))
+
+    candidates = [
+        candidate("copy", 10_000, 0.1, "strong:action_state:clipboard:at"),
+        candidate("post_copy", 12_000, 0.1, "strong:action_state:clipboard:post"),
+        candidate("chat", 15_000, 0.5, "strong:visual_change"),
+        candidate("paste_menu", 25_000, 0.01, "strong:action_state:clipboard:result"),
+        candidate("pasted", 25_400, 0.8, "strong:visual_change"),
+        candidate("submitted", 27_000, 0.7, "strong:visual_change"),
+        candidate("external", 30_000, 0.01, "strong:action_state:external_state:at"),
+        candidate("end", 39_000, 0.01, "strong:action_state:session_end:at"),
+        candidate("noise", 35_000, 0.2, "strong:visual_change"),
+    ]
+    window = AnalysisWindow(
+        5_000,
+        40_000,
+        "strong:action_cluster",
+        priority="strong",
+        max_keyframes=7,
+        action_phases=((10_000, "clipboard"), (30_000, "external_state"), (39_000, "session_end")),
+    )
+
+    selected = _budget_window_candidates(candidates, window, 7)
+
+    assert {"paste_menu", "pasted", "submitted"}.issubset({item.frame.frame_id for item in selected})
+
+
 def test_exact_anchor_reaches_traceable_global_dedupe(tmp_path: Path) -> None:
     cv2 = pytest.importorskip("cv2")
     np = pytest.importorskip("numpy")
@@ -3010,6 +3089,55 @@ def test_event_correlator_fuses_visual_file_identity_with_later_send_result() ->
     assert ":leak" in leaks[0].full_path
 
 
+def test_event_correlator_preserves_distinct_sink_channels_for_same_file() -> None:
+    original = "C:/Users/alice/Documents/company_contract.docx"
+    observations = [
+        {
+            "observation_id": "vlm_chat",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Tencent Meeting",
+            "operation_type": "external_sink_interaction",
+            "resource": original,
+            "description": (
+                "direct_leak: file_send. sink_type=chat_upload. "
+                "action_status=completed. The file was sent to the meeting chat."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        },
+        {
+            "observation_id": "vlm_share",
+            "start_ms": 20_000,
+            "end_ms": 20_000,
+            "app_name": "Tencent Meeting",
+            "operation_type": "external_sink_interaction",
+            "resource": original,
+            "description": (
+                "direct_leak: screen_share. sink_type=screen_share. "
+                "action_status=in_progress. The document is visible while sharing."
+            ),
+            "confidence": 0.9,
+            "source": "vlm",
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": [],
+            "frame_segments": observations,
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert {item["sink_type"] for item in bundle["upload_candidates"]} == {"chat_upload", "screen_share"}
+    engine = DatalogEngine()
+    for fact in bundle["datalog_facts"]:
+        engine.add_fact(fact["relation"], *fact["args"])
+    assert {item.leak_channel for item in engine.query_leak()} == {"chat_upload", "screen_share"}
+
+
 def test_event_correlator_uses_log_identity_for_filename_free_vlm_sink() -> None:
     original = "C:/Users/alice/Documents/company_contract.docx"
     observations = [
@@ -3468,6 +3596,33 @@ def test_vlm_parser_preserves_evidence_frames_and_relative_timestamp() -> None:
     assert result.events[0].evidence_frame_ids == ("frame_0_0", "frame_0_1")
     assert result.events[0].sink_type == "ai_chat"
     assert result.dropped_events[0]["reason"] == "not_relevant"
+
+
+def test_vlm_parser_normalizes_tencent_meeting_document_import_channel() -> None:
+    result = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "evidence_frame_ids": ["frame_import"],
+                        "timestamp_ms": 33_000,
+                        "app_name": "腾讯会议",
+                        "behavior_category": "direct_leak",
+                        "operation_type": "import_document",
+                        "original_filename": "公司合作合同.docx",
+                        "sink_type": "screen_share",
+                        "action_status": "in_progress",
+                        "description": "Import Local Document progress is visible.",
+                        "confidence": 0.95,
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        keywords=["公司合作合同.docx"],
+    )
+
+    assert result.events[0].sink_type == "chat_upload"
 
 
 def test_vlm_parser_accepts_top_level_array_and_keeps_distinct_resources() -> None:

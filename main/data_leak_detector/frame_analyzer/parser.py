@@ -147,6 +147,7 @@ def _normalize_event(item: dict[str, Any]) -> ParsedVisionEvent:
     original = _first_text(item, "original_filename", "original_file", "file_name", "filename", "resource")
     modified = _first_text(item, "modified_filename", "modified_file", "target_file", "derived_file")
     operation = _first_text(item, "operation_type", "operation", "action")
+    app_name = _first_text(item, "app_name", "application", "frontend_app")
     behavior = _first_text(item, "behavior_category", "category", "risk_type")
     description = _first_text(item, "description", "reason", "evidence")
     evidence_frame_ids = _text_tuple(item.get("evidence_frame_ids") or item.get("frame_ids") or item.get("frame_id"))
@@ -157,7 +158,7 @@ def _normalize_event(item: dict[str, Any]) -> ParsedVisionEvent:
     return ParsedVisionEvent(
         start_ms=start_ms,
         end_ms=end_ms or start_ms,
-        app_name=_first_text(item, "app_name", "application", "frontend_app"),
+        app_name=app_name,
         behavior_category=behavior or "unknown",
         operation_type=operation or "unknown",
         original_resource=original or "unknown",
@@ -165,9 +166,24 @@ def _normalize_event(item: dict[str, Any]) -> ParsedVisionEvent:
         description=description,
         confidence=_confidence(item.get("confidence")),
         evidence_frame_ids=evidence_frame_ids,
-        sink_type=_first_text(item, "sink_type", "sink", "channel"),
+        sink_type=_normalize_sink_type(
+            _first_text(item, "sink_type", "sink", "channel"),
+            app_name=app_name,
+            operation=operation,
+        ),
         action_status=action_status,
     )
+
+
+def _normalize_sink_type(sink_type: str, *, app_name: str, operation: str) -> str:
+    sink = sink_type.strip().lower()
+    app = app_name.strip().lower()
+    action = operation.strip().lower().replace(" ", "_")
+    meeting_document_actions = {"import_document", "import_local_document", "meeting_document_upload"}
+    meeting_apps = ("tencent meeting", "wemeet", "腾讯会议")
+    if sink == "screen_share" and action in meeting_document_actions and any(token in app for token in meeting_apps):
+        return "chat_upload"
+    return sink_type
 
 
 def _parse_time_range(value: str) -> tuple[int, int]:

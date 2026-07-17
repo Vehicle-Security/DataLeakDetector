@@ -24,6 +24,8 @@ _PASTE_OFFSETS_MS = (-2_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000, 10_00
 _SCREEN_SHARE_OFFSETS_MS = (-2_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000, 10_000, 15_000)
 _CAPTURE_START_OFFSETS_MS = (-1_000, 0, 1_000, 2_000, 3_000, 5_000, 8_000)
 _CAPTURE_OFFSETS_MS = (-15_000, -13_000, -11_000, -9_000, -7_000, -5_000, -3_000, -1_000, 0)
+_CONTEXT_ACTIONS = {"external_session", "external_state", "resource_identity", "session_end"}
+_RESULT_BEARING_ACTIONS = {"clipboard", "paste", "file_selected", "upload", "send", "screen_share", "removable", "derive"}
 
 
 @dataclass(frozen=True)
@@ -336,13 +338,7 @@ def _select_window_candidates(
     limit = max(window.max_keyframes, len(window.anchor_ms))
     if len(retained) <= limit:
         return retained
-    mandatory = [item for item in retained if "action_state" in item.frame.reason]
-    if not mandatory:
-        mandatory = [item for item in retained if "anchor" in item.frame.reason]
-    optional = [item for item in retained if item not in mandatory]
-    mandatory = _trim_mandatory_evidence(mandatory, window, limit)
-    available = max(0, limit - len(mandatory))
-    return sorted([*mandatory, *_select_optional_evidence(optional, available)], key=lambda item: item.frame.timestamp_ms)
+    return _budget_window_candidates(retained, window, limit)
 
 
 def _probe_timestamps(window: AnalysisWindow, config: VisionConfig) -> list[int]:
@@ -486,6 +482,135 @@ def _focus_semantic_action_phases(
         {item.frame.frame_id: item for item in [*optional, *chosen]}.values(),
         key=lambda item: item.frame.timestamp_ms,
     )
+
+
+def _budget_window_candidates(
+    candidates: list[_FrameCandidate],
+    window: AnalysisWindow,
+    limit: int,
+) -> list[_FrameCandidate]:
+    if limit <= 0:
+        return []
+    if len(candidates) <= limit:
+        return candidates
+
+    action_states = [
+        item
+        for item in candidates
+        if "action_state" in item.frame.reason and not _is_context_only_candidate(item)
+    ]
+    context_states = [
+        item
+        for item in candidates
+        if "action_state" in item.frame.reason and _is_context_only_candidate(item)
+    ]
+    anchors = [item for item in candidates if "anchor" in item.frame.reason and item not in action_states and item not in context_states]
+    optional = [item for item in candidates if item not in action_states and item not in context_states and item not in anchors]
+
+    result_limit = min(4, max(0, limit // 3))
+    result_states = _post_action_visual_evidence(optional, window, result_limit)
+    result_ids = {item.frame.frame_id for item in result_states}
+    optional = [item for item in optional if item.frame.frame_id not in result_ids]
+
+    mandatory = action_states or anchors
+    minimum_context = min(len(context_states), 2 if mandatory or result_states else max(1, limit // 2))
+    mandatory_limit = max(0, limit - len(result_states) - minimum_context)
+    mandatory = _trim_mandatory_evidence(mandatory, window, mandatory_limit)
+
+    remaining = max(0, limit - len(mandatory) - len(result_states))
+    context_limit = min(len(context_states), 3 if mandatory or result_states else max(1, limit // 2), remaining)
+    context = _select_context_evidence(context_states, context_limit)
+
+    selected = [*mandatory, *result_states, *context]
+    selected_ids = {item.frame.frame_id for item in selected}
+    remaining_optional = [item for item in optional if item.frame.frame_id not in selected_ids]
+    available = max(0, limit - len(selected))
+    selected.extend(_select_optional_evidence(remaining_optional, available))
+    return sorted({item.frame.frame_id: item for item in selected}.values(), key=lambda item: item.frame.timestamp_ms)
+
+
+def _post_action_visual_evidence(
+    candidates: list[_FrameCandidate],
+    window: AnalysisWindow,
+    limit: int,
+) -> list[_FrameCandidate]:
+    if limit <= 0 or not candidates:
+        return []
+    groups: list[list[_FrameCandidate]] = []
+    for anchor, action in _collapse_frame_action_phases(window.action_phases):
+        base_action = action.split(":", 1)[0]
+        if base_action not in _RESULT_BEARING_ACTIONS:
+            continue
+        targets = [
+            timestamp
+            for timestamp in _phase_timestamps(window, anchor, base_action)
+            if timestamp - anchor >= 5_000
+        ]
+        for target in targets:
+            group = [
+                item
+                for item in candidates
+                if "visual_change" in item.frame.reason and target < item.frame.timestamp_ms <= min(window.end_ms, target + 5_000)
+            ]
+            if not group:
+                continue
+            groups.append(
+                sorted(
+                    group,
+                    key=lambda item: (item.frame.score, item.entropy, item.frame.timestamp_ms),
+                    reverse=True,
+                )[:2]
+            )
+
+    selected: list[_FrameCandidate] = []
+    selected_ids: set[str] = set()
+    queues = [list(group) for group in groups]
+    while len(selected) < limit and any(queues):
+        progressed = False
+        for queue in queues:
+            while queue and queue[0].frame.frame_id in selected_ids:
+                queue.pop(0)
+            if not queue or len(selected) >= limit:
+                continue
+            item = queue.pop(0)
+            selected.append(item)
+            selected_ids.add(item.frame.frame_id)
+            progressed = True
+        if not progressed:
+            break
+    return selected
+
+
+def _is_context_only_candidate(candidate: _FrameCandidate) -> bool:
+    actions = _candidate_actions(candidate)
+    return bool(actions) and actions <= _CONTEXT_ACTIONS
+
+
+def _candidate_actions(candidate: _FrameCandidate) -> set[str]:
+    reason = candidate.frame.reason
+    if "action_state" not in reason:
+        return set()
+    suffix = reason.split("action_state", 1)[1].lstrip(":")
+    return {state.split(":", 1)[0] for state in suffix.split("|") if state}
+
+
+def _select_context_evidence(candidates: list[_FrameCandidate], limit: int) -> list[_FrameCandidate]:
+    if limit <= 0:
+        return []
+    ordered = sorted(candidates, key=lambda item: item.frame.timestamp_ms)
+    if len(ordered) <= limit:
+        return ordered
+
+    selected: list[_FrameCandidate] = []
+    starts = [item for item in ordered if "external_session" in _candidate_actions(item) or "resource_identity" in _candidate_actions(item)]
+    ends = [item for item in ordered if "session_end" in _candidate_actions(item)]
+    if starts:
+        selected.append(starts[0])
+    if ends and len(selected) < limit and ends[-1].frame.frame_id not in {item.frame.frame_id for item in selected}:
+        selected.append(ends[-1])
+    remaining = [item for item in ordered if item.frame.frame_id not in {chosen.frame.frame_id for chosen in selected}]
+    selected.extend(_evenly_spaced(remaining, limit - len(selected)))
+    return sorted(selected, key=lambda item: item.frame.timestamp_ms)
 
 
 def _collapse_frame_action_phases(

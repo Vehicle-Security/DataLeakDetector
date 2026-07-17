@@ -45,9 +45,13 @@ def build_upload_candidates(
 
 
 def _dedupe_upload_candidates(candidates: list[UploadCandidate]) -> list[UploadCandidate]:
-    merged: dict[tuple[str, str], UploadCandidate] = {}
+    merged: dict[tuple[str, str, str], UploadCandidate] = {}
     for candidate in candidates:
-        key = (normalize_path(candidate.original_file).lower(), normalize_path(candidate.current_file).lower())
+        key = (
+            normalize_path(candidate.original_file).lower(),
+            normalize_path(candidate.current_file).lower(),
+            candidate.sink_type,
+        )
         previous = merged.get(key)
         if previous is None:
             merged[key] = candidate
@@ -59,12 +63,22 @@ def _dedupe_upload_candidates(candidates: list[UploadCandidate]) -> list[UploadC
 
 
 def _prefer_upload_candidate(left: UploadCandidate, right: UploadCandidate) -> tuple[UploadCandidate, UploadCandidate]:
+    risk_rank = {
+        "selected_or_attached": 1,
+        "in_progress": 2,
+        "content_exposed": 3,
+        "completed": 4,
+    }
+    left_rank = risk_rank.get(left.risk_level, 0)
+    right_rank = risk_rank.get(right.risk_level, 0)
+    if left_rank != right_rank:
+        return (left, right) if left_rank > right_rank else (right, left)
+    if right.confidence != left.confidence:
+        return (left, right) if left.confidence > right.confidence else (right, left)
     left_has_log = any(ref.startswith("log:") for ref in left.evidence_refs)
     right_has_log = any(ref.startswith("log:") for ref in right.evidence_refs)
     if left_has_log != right_has_log:
         return (left, right) if left_has_log else (right, left)
-    if right.confidence > left.confidence:
-        return right, left
     return left, right
 
 
