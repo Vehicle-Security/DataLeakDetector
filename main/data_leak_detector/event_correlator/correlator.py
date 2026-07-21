@@ -21,6 +21,38 @@ from .observations import ObservationIndex, normalize_observations
 from .output import lineage_payload, operation_record
 
 
+_CLIPBOARD_SOURCE_HORIZON_MS = 120_000
+_CLIPBOARD_TARGET_HORIZON_MS = 15_000
+_CLIPBOARD_TARGET_EVENTS = {"created", "modified", "file_created", "file_modified"}
+_CLIPBOARD_DOCUMENT_EXTENSIONS = {
+    ".bmp",
+    ".csv",
+    ".doc",
+    ".docx",
+    ".jpeg",
+    ".jpg",
+    ".m4a",
+    ".pdf",
+    ".png",
+    ".ppt",
+    ".pptx",
+    ".rar",
+    ".sql",
+    ".txt",
+    ".xls",
+    ".xlsx",
+    ".zip",
+}
+_CLIPBOARD_HIDDEN_PATH_MARKERS = (
+    "/appdata/",
+    "/cache/",
+    "/program files/",
+    "/programdata/",
+    "/temp/",
+    "/windows/",
+)
+
+
 class EventCorrelator:
     """Correlate logs, visual observations, lineage, and upload candidates."""
 
@@ -33,6 +65,14 @@ class EventCorrelator:
             config = replace(config, non_vlm_enabled=bool(payload.get("non_vlm_enabled")))
         session_start_ms = int(payload.get("recording_start_ms") or 0) or None
         logs = normalize_logs([item for item in payload.get("log_events") or [] if isinstance(item, dict)], session_start_ms=session_start_ms)
+        visual_recording_start_ms = int(session_start_ms or 0) or next(
+            (
+                event.timestamp_ms - event.video_time_ms
+                for event in logs
+                if event.timestamp_ms and event.video_time_ms > 0
+            ),
+            0,
+        )
         observations = normalize_observations(payload.get("frame_segments") or [])
         if not config.non_vlm_enabled:
             observations = [item for item in observations if item.source == "vlm"]
@@ -49,11 +89,20 @@ class EventCorrelator:
             horizon_ms=config.visual_evidence_horizon_ms,
         )
         self._add_visual_lineage(observations, sensitive_files, lineage)
-        correlated = self._correlate(logs, observations, sensitive_files, lineage, config=config)
+        correlated = self._correlate(
+            logs,
+            observations,
+            sensitive_files,
+            lineage,
+            config=config,
+            recording_start_ms=visual_recording_start_ms,
+        )
         uploads = build_upload_candidates(correlated, default_confidence=config.upload_confidence)
-        facts = build_datalog_facts(correlated, uploads, lineage)
+        case_id = str(payload.get("case_id") or "case")
+        facts = build_datalog_facts(correlated, uploads, lineage, case_id=case_id)
 
         return {
+            "case_id": case_id,
             "session_id": str(payload.get("session_id") or payload.get("record_id") or "session"),
             "analysis_status": "success" if correlated or uploads else "no_match",
             "analysis_windows": self._analysis_windows(logs, sensitive_files),
@@ -100,32 +149,90 @@ class EventCorrelator:
         known_stems = [_known_stem(item) for item in known]
         known_stems = [item for item in known_stems if item[0]]
         last_sensitive_by_process: dict[str, str] = {}
+        recent_artifact_by_process: dict[str, tuple[str, int]] = {}
+        active_clipboard: tuple[str, int, str, str] | None = None
 
         for event in sorted(logs, key=lambda item: item.timestamp_ms):
             process_key = (event.process_name or event.app_name or "").lower()
+            process_family = _lineage_process_family(event)
             original = original_file_from_metadata(event.raw)
             target = target_file_from_metadata(event.raw) or event.file_path
-            if not _may_contribute_lineage(event, original, target, known_keys, known_stems):
+            event_time_ms = _lineage_event_time_ms(event)
+
+            contextual_artifact = _event_sensitive_artifact(event, known, sensitive_files, lineage)
+            if contextual_artifact and process_key:
+                recent_artifact_by_process[process_key] = (contextual_artifact, event_time_ms)
+
+            clipboard_kind = _clipboard_event_kind(event)
+            if clipboard_kind:
+                active_clipboard = None
+                recent = recent_artifact_by_process.get(process_key)
+                if recent and 0 <= event_time_ms - recent[1] <= _CLIPBOARD_SOURCE_HORIZON_MS:
+                    active_clipboard = (recent[0], event_time_ms, clipboard_kind, process_family)
+            elif active_clipboard:
+                clipboard_source, clipboard_time_ms, clipboard_kind, clipboard_process_family = active_clipboard
+                elapsed_ms = event_time_ms - clipboard_time_ms
+                if elapsed_ms > _CLIPBOARD_TARGET_HORIZON_MS:
+                    active_clipboard = None
+                elif (
+                    0 <= elapsed_ms
+                    and process_family
+                    and (
+                        process_family != clipboard_process_family
+                        or (
+                            clipboard_kind == "image"
+                            and _is_screenshot_target(event, normalize_path(target).lower())
+                        )
+                    )
+                    and _is_clipboard_derived_target(event, target, clipboard_kind)
+                ):
+                    lineage.add(target, clipboard_source)
+                    if self._resolve_original(target, sensitive_files, lineage):
+                        _remember_known(target, known, known_keys, known_stems)
+                        if process_key:
+                            recent_artifact_by_process[process_key] = (normalize_path(target), event_time_ms)
+                            last_sensitive_by_process[process_key] = self._resolve_original(
+                                target,
+                                sensitive_files,
+                                lineage,
+                            )
+                        active_clipboard = None
+
+            parent_inferred_source = _source_from_derived_parent_alias(target, sensitive_files)
+            if not parent_inferred_source and not _may_contribute_lineage(event, original, target, known_keys, known_stems):
                 continue
             text = _event_search_text(event)
             if original and self._resolve_original(original, sensitive_files, lineage):
                 lineage.add(target, original)
                 _remember_known(target, known, known_keys, known_stems)
             elif target:
-                inferred_source = _source_from_derived_filename(target, sensitive_files)
-                if inferred_source and _has_derived_transfer_evidence(event, text):
+                inferred_source = parent_inferred_source or _source_from_derived_filename(target, sensitive_files)
+                if inferred_source and (
+                    parent_inferred_source
+                    or _has_derived_transfer_evidence(event, text, target)
+                ):
                     lineage.add(target, inferred_source)
                     _remember_known(target, known, known_keys, known_stems)
 
             resolved = self._resolve_original(event.file_path, sensitive_files, lineage)
             if resolved and process_key:
                 last_sensitive_by_process[process_key] = resolved
+                recent_artifact_by_process[process_key] = (normalize_path(event.file_path), event_time_ms)
 
             if event.file_path and contains_any(text, TRANSFER_TOKENS):
                 source = original or last_sensitive_by_process.get(process_key, "") or _guess_source_by_stem_from_index(target, known_stems)
                 if source and not self._resolve_original(source, sensitive_files, lineage):
                     source = ""
-                if source and (original or _is_generated_descendant_name(Path(normalize_path(target)).stem.lower(), Path(normalize_path(source)).stem.lower())):
+                if source and (
+                    original
+                    or (
+                        _is_generated_descendant_name(
+                            Path(normalize_path(target)).stem.lower(),
+                            Path(normalize_path(source)).stem.lower(),
+                        )
+                        and _has_derived_transfer_evidence(event, text, target)
+                    )
+                ):
                     lineage.add(target, source)
                     _remember_known(target, known, known_keys, known_stems)
         return lineage
@@ -138,6 +245,7 @@ class EventCorrelator:
         lineage: Lineage,
         *,
         config: EventCorrelatorConfig | None = None,
+        recording_start_ms: int = 0,
     ) -> list[CorrelatedEvent]:
         config = config or self.config
         correlated: list[CorrelatedEvent] = []
@@ -215,7 +323,15 @@ class EventCorrelator:
                     join_reasons=tuple(self._join_reasons(log, observation, original, sensitive_files, lineage)),
                 )
             )
-        correlated.extend(self._correlate_visual_only(observations, sensitive_files, lineage, start_index=len(correlated)))
+        correlated.extend(
+            self._correlate_visual_only(
+                observations,
+                sensitive_files,
+                lineage,
+                start_index=len(correlated),
+                recording_start_ms=recording_start_ms,
+            )
+        )
         return correlated
 
     def _best_observation_for_log(
@@ -330,11 +446,7 @@ class EventCorrelator:
             resolved = self._resolve_original(candidate, sensitive_files, lineage)
             if resolved:
                 return resolved
-        description = observation.description.lower()
-        for sensitive in sensitive_files:
-            if sensitive and (sensitive.lower() in description or _mentions_file(description, sensitive)):
-                return sensitive
-        return ""
+        return _best_sensitive_mention(observation.description, sensitive_files)
 
     def _fuse_visual_evidence(
         self,
@@ -357,7 +469,10 @@ class EventCorrelator:
                 continue
             sink_text = _observation_search_text(sink)
             sink_status = _observation_action_status(sink)
-            is_actionable = _is_unbound_visual_risk(sink, sink_text) or sink_status in {
+            is_actionable = (
+                _is_unbound_visual_risk(sink, sink_text)
+                and "unknown_risk" not in sink_text.lower()
+            ) or sink_status in {
                 "submitted",
                 "in_progress",
                 "completed",
@@ -439,19 +554,26 @@ class EventCorrelator:
             if not (_is_transfer_observation(observation) or _is_external_observation(observation) or contains_any(text, SINK_TOKENS)):
                 continue
             for candidate in [observation.resource, *observation.related_resources]:
-                derived = normalize_path(candidate)
+                derived = lineage.resolve_artifact(normalize_path(candidate))
                 if _is_visual_derived_candidate(derived, original):
                     lineage.add(derived, original)
 
     def _resolve_visual_original_without_lineage(self, observation, sensitive_files: list[str]) -> str:
         candidates = [observation.resource, *observation.related_resources, observation.description]
         for candidate in candidates:
-            for sensitive in sensitive_files:
-                if same_file(candidate, sensitive) or _matches_sensitive_file_reference(candidate, sensitive) or _mentions_file(candidate, sensitive):
-                    return sensitive
+            matched = _best_sensitive_mention(candidate, sensitive_files)
+            if matched:
+                return matched
         return ""
 
-    def _correlate_visual_only(self, observations, sensitive_files: list[str], lineage: Lineage, start_index: int) -> list[CorrelatedEvent]:
+    def _correlate_visual_only(
+        self,
+        observations,
+        sensitive_files: list[str],
+        lineage: Lineage,
+        start_index: int,
+        recording_start_ms: int,
+    ) -> list[CorrelatedEvent]:
         visual_events: list[CorrelatedEvent] = []
         for observation in observations:
             if observation.source == "log_anchored":
@@ -462,13 +584,17 @@ class EventCorrelator:
                 continue
             if not original and not _is_unbound_visual_risk(observation, text):
                 continue
-            behavior = behavior_category(text) if original else "unknown_risk"
+            declared_behavior = _declared_visual_behavior(observation)
+            if declared_behavior == "unknown_risk" and _observation_action_status(observation) == "unknown":
+                behavior = "unknown_risk"
+            else:
+                behavior = behavior_category(text) if original else "unknown_risk"
             behavior = _behavior_with_action_status(observation, behavior)
-            current_file = self._visual_current_file(observation, original, sensitive_files)
+            current_file = self._visual_current_file(observation, original, sensitive_files, lineage)
             visual_events.append(
                 CorrelatedEvent(
                     event_id=f"corr_{start_index + len(visual_events)}",
-                    timestamp="",
+                    timestamp=_observation_timestamp(observation, recording_start_ms),
                     event_type="visual_observation",
                     app_name=observation.app_name,
                     original_file=original,
@@ -482,13 +608,22 @@ class EventCorrelator:
             )
         return visual_events
 
-    def _visual_current_file(self, observation, original: str, sensitive_files: list[str]) -> str:
+    def _visual_current_file(
+        self,
+        observation,
+        original: str,
+        sensitive_files: list[str],
+        lineage: Lineage,
+    ) -> str:
         current_file = observation.resource or original
         if not current_file:
             return original
         for sensitive in sensitive_files:
             if same_file(current_file, sensitive) or _matches_sensitive_file_reference(current_file, sensitive):
                 return sensitive
+        resolved_artifact = lineage.resolve_artifact(current_file)
+        if normalize_path(resolved_artifact).lower() != normalize_path(current_file).lower():
+            return resolved_artifact
         if original and _mentions_file(observation.description, original) and not _mentions_file(current_file, original):
             return original
         return current_file
@@ -684,7 +819,119 @@ def _is_removable_media_context(text: str) -> bool:
     return contains_any(normalized, removable_terms)
 
 
-def _has_derived_transfer_evidence(event, text: str) -> bool:
+def _lineage_event_time_ms(event) -> int:
+    if event.timestamp_ms:
+        return int(event.timestamp_ms)
+    return max(int(event.video_time_ms), 0)
+
+
+def _lineage_process_family(event) -> str:
+    process = (event.process_name or event.app_name or "").strip().lower().removesuffix(".exe")
+    if process in {"et", "wps", "wpp"}:
+        return "wps_office"
+    if process in {"excel", "powerpnt", "winword"}:
+        return "microsoft_office"
+    return process
+
+
+def _clipboard_event_kind(event) -> str:
+    extra = event.raw.get("extra") if isinstance(event.raw.get("extra"), dict) else {}
+    values = {
+        event.event_type.lower(),
+        str(event.raw.get("operation") or "").lower(),
+        str(extra.get("raw_operation") or "").lower(),
+    }
+    if "clipboard_image" in values:
+        return "image"
+    if values & {"clipboard_copy", "clipboard_text", "clipboard_write"}:
+        return "text"
+    return ""
+
+
+def _event_sensitive_artifact(event, known: list[str], sensitive_files: list[str], lineage: Lineage) -> str:
+    for candidate in (
+        event.file_path,
+        original_file_from_metadata(event.raw),
+        target_file_from_metadata(event.raw),
+    ):
+        artifact = normalize_path(candidate)
+        if artifact and _artifact_has_sensitive_root(artifact, sensitive_files, lineage):
+            return artifact
+    return _unique_known_artifact_mention(event.window_title, known, sensitive_files, lineage)
+
+
+def _artifact_has_sensitive_root(artifact: str, sensitive_files: list[str], lineage: Lineage) -> bool:
+    lookup = _sensitive_lookup(tuple(sensitive_files))
+    if _lookup_sensitive_source(artifact, lookup, allow_stem_reference=True):
+        return True
+    return bool(_lookup_sensitive_source(lineage.root(artifact), lookup, allow_stem_reference=False))
+
+
+def _unique_known_artifact_mention(
+    text: str,
+    known: list[str],
+    sensitive_files: list[str],
+    lineage: Lineage,
+) -> str:
+    normalized_text = normalize_path(text).lower()
+    if not normalized_text:
+        return ""
+    full_matches = {
+        normalize_path(artifact)
+        for artifact in known
+        if normalize_path(artifact).lower() in normalized_text
+        and _artifact_has_sensitive_root(artifact, sensitive_files, lineage)
+    }
+    if len(full_matches) == 1:
+        return next(iter(full_matches))
+
+    name_matches = {
+        normalize_path(artifact)
+        for artifact in known
+        if len(Path(normalize_path(artifact)).name) >= 4
+        and Path(normalize_path(artifact)).name.lower() in normalized_text
+        and _artifact_has_sensitive_root(artifact, sensitive_files, lineage)
+    }
+    return next(iter(name_matches)) if len(name_matches) == 1 else ""
+
+
+def _is_clipboard_derived_target(event, target: str, clipboard_kind: str) -> bool:
+    if event.event_type.lower() not in _CLIPBOARD_TARGET_EVENTS:
+        return False
+    normalized = normalize_path(target)
+    lowered = normalized.lower()
+    if (
+        not _looks_like_absolute_path(normalized)
+        or Path(lowered).suffix not in _CLIPBOARD_DOCUMENT_EXTENSIONS
+        or any(marker in lowered for marker in _CLIPBOARD_HIDDEN_PATH_MARKERS)
+    ):
+        return False
+
+    name = Path(lowered).name
+    title = normalize_path(event.window_title).lower()
+    if name and name in title:
+        return True
+    return clipboard_kind == "image" and _is_screenshot_target(event, lowered)
+
+
+def _is_screenshot_target(event, target: str) -> bool:
+    if Path(target).suffix not in {".bmp", ".jpeg", ".jpg", ".png"}:
+        return False
+    name = Path(target).name
+    extra = event.raw.get("extra") if isinstance(event.raw.get("extra"), dict) else {}
+    operation = str(event.raw.get("operation") or extra.get("raw_operation") or "").lower()
+    process = (event.process_name or event.app_name or "").lower()
+    return (
+        "/pictures/screenshots/" in target
+        or "screenshot" in name
+        or "屏幕截图" in name
+        or "截图" in name
+        or "snippingtool" in process
+        or operation in {"screen_capture", "screenshot"}
+    )
+
+
+def _has_derived_transfer_evidence(event, text: str, target: str) -> bool:
     file_change_events = {
         "created",
         "modified",
@@ -700,7 +947,18 @@ def _has_derived_transfer_evidence(event, text: str) -> bool:
     if event.event_type.lower() not in file_change_events:
         return False
     context = f"{text} {event.window_title} {event.description}"
-    return _is_removable_media_context(context) or contains_any(context, TRANSFER_TOKENS)
+    if _is_removable_media_context(context):
+        return True
+    return _is_user_visible_lineage_target(target) and contains_any(context, TRANSFER_TOKENS)
+
+
+def _is_user_visible_lineage_target(file_path: str) -> bool:
+    normalized = normalize_path(file_path).lower()
+    return bool(
+        normalized
+        and Path(normalized).suffix in _CLIPBOARD_DOCUMENT_EXTENSIONS
+        and not any(marker in normalized for marker in _CLIPBOARD_HIDDEN_PATH_MARKERS)
+    )
 
 
 def _source_from_derived_filename(file_path: str, sensitive_files: list[str]) -> str:
@@ -713,6 +971,30 @@ def _source_from_derived_filename(file_path: str, sensitive_files: list[str]) ->
         if _is_generated_descendant_name(candidate_stem, Path(normalize_path(sensitive)).stem.lower())
     ]
     return matches[0] if len(matches) == 1 else ""
+
+
+def _source_from_derived_parent_alias(file_path: str, sensitive_files: list[str]) -> str:
+    """Infer wrapped split outputs stored beside a source-named directory."""
+
+    normalized = normalize_path(file_path)
+    if not _looks_like_absolute_path(normalized):
+        return ""
+    candidate = Path(normalized)
+    candidate_suffixes = [suffix.lower() for suffix in candidate.suffixes]
+    if not candidate.name or not candidate_suffixes:
+        return ""
+
+    matches: list[str] = []
+    for sensitive in sensitive_files:
+        source = Path(normalize_path(sensitive))
+        source_suffix = source.suffix.lower()
+        if not source_suffix or source_suffix not in candidate_suffixes:
+            continue
+        expected_parent = normalize_path(source.with_suffix("")).lower()
+        if normalize_path(candidate.parent).lower() == expected_parent:
+            matches.append(sensitive)
+    unique = _dedupe_paths(matches)
+    return unique[0] if len(unique) == 1 else ""
 
 
 def _is_generated_descendant_name(candidate_stem: str, source_stem: str) -> bool:
@@ -747,6 +1029,15 @@ def _visual_join_reasons(observation, original: str) -> list[str]:
     return reasons
 
 
+def _observation_timestamp(observation, recording_start_ms: int) -> str:
+    timestamp_ms = int(observation.start_ms or 0)
+    if timestamp_ms > 10_000_000_000:
+        return str(timestamp_ms)
+    if recording_start_ms:
+        return str(recording_start_ms + timestamp_ms)
+    return ""
+
+
 def _choose_identity_binding(bindings: list[tuple[int, int, str, str, Any]]):
     if not bindings:
         return None
@@ -779,6 +1070,14 @@ def _app_compatibility_rank(left: str, right: str) -> int:
 def _observation_action_status(observation) -> str:
     match = re.search(r"\baction_status=(selected|submitted|in_progress|completed|failed|unknown)\b", observation.description.lower())
     return match.group(1) if match else "unknown"
+
+
+def _declared_visual_behavior(observation) -> str:
+    match = re.match(
+        r"\s*(normal|direct_leak|hidden_transfer|unknown_risk)\s*:",
+        observation.description.lower(),
+    )
+    return match.group(1) if match else ""
 
 
 def _observation_sink_type(observation) -> str:
@@ -822,6 +1121,35 @@ def _mentions_file(text: str, file_path: str) -> bool:
     name = Path(normalized_file).name.lower()
     stem = Path(name).stem.lower()
     return normalized_file in normalized_text or (name and name in normalized_text) or (len(stem) >= 4 and stem in normalized_text)
+
+
+def _best_sensitive_mention(text: str, sensitive_files: list[str]) -> str:
+    best = ""
+    best_score = (0, 0, 0)
+    normalized_text = normalize_path(text).lower()
+    for sensitive in sensitive_files:
+        normalized_sensitive = normalize_path(sensitive).lower()
+        if not normalized_sensitive:
+            continue
+        name = Path(normalized_sensitive).name.lower()
+        stem = Path(name).stem.lower()
+        if same_file(text, sensitive):
+            strength = 5
+        elif _matches_sensitive_file_reference(text, sensitive):
+            strength = 4
+        elif normalized_sensitive in normalized_text:
+            strength = 3
+        elif name and name in normalized_text:
+            strength = 2
+        elif len(stem) >= 4 and stem in normalized_text:
+            strength = 1
+        else:
+            continue
+        score = (strength, len(stem), len(name))
+        if score > best_score:
+            best = sensitive
+            best_score = score
+    return best
 
 
 def _looks_like_absolute_path(value: str) -> bool:

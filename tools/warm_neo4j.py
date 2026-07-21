@@ -12,10 +12,15 @@ from typing import Any
 from neo4j import GraphDatabase
 
 from data_leak_detector.datasets import discover_data_case, discover_data_case_directories
-from data_leak_detector.io import load_json_records, normalize_logs
+from data_leak_detector.io import normalize_logs
 from data_leak_detector.neo4j.config import Neo4jConfig
 from data_leak_detector.neo4j.importer import Neo4jLogImporter
-from data_leak_detector.pipeline import _build_report_id
+from data_leak_detector.pipeline import (
+    _build_report_id,
+    _composite_session_records,
+    _load_pipeline_records,
+    _merge_composite_records,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -64,10 +69,21 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[{index}/{len(cases)}] {case_name}", flush=True)
             try:
                 case = discover_data_case(case_dir)
-                records = load_json_records(case.log_file)
-                logs = normalize_logs(records, session_start_ms=case.recording_start_ms)
+                if len(case.sessions) > 1:
+                    session_records = _composite_session_records(case.sessions, {})
+                    records = _merge_composite_records(case.sessions, session_records)
+                    logs = normalize_logs(records)
+                else:
+                    records = _load_pipeline_records(case.log_file)
+                    logs = normalize_logs(records, session_start_ms=case.recording_start_ms)
                 case_id = _build_report_id(case.log_file, len(records), case.case_dir.name)
-                state["current_case"] = {"case": case_name, "events": len(logs), "batches": 0, "imported_events": 0}
+                state["current_case"] = {
+                    "case": case_name,
+                    "sessions": len(case.sessions),
+                    "events": len(logs),
+                    "batches": 0,
+                    "imported_events": 0,
+                }
                 write_state()
 
                 def on_batch(batch_number: int, imported_events: int, total_events: int) -> None:

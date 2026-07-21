@@ -118,6 +118,8 @@ def discover_data_case(
     case_dir = case_dir.resolve()
     if not case_dir.exists():
         raise FileNotFoundError(f"case path does not exist: {case_dir}")
+    if case_dir.name.startswith("session_") and _is_composite_case_dir(case_dir.parent):
+        case_dir = case_dir.parent
 
     case_relative_path = data_case_id(case_dir, case_root)
     session_dirs = _direct_session_directories(case_dir) if _is_composite_case_dir(case_dir) else [case_dir]
@@ -180,7 +182,7 @@ def _direct_session_directories(case_dir: Path) -> list[Path]:
 
 
 def _is_composite_case_dir(case_dir: Path) -> bool:
-    return _groundtruth_file(case_dir).exists() and len(_direct_session_directories(case_dir)) > 1
+    return bool(_direct_session_directories(case_dir))
 
 
 def data_case_id(path: str | Path, case_root: str | Path | None = None) -> str:
@@ -258,6 +260,14 @@ def _recording_start_ms(case_dir: Path) -> int:
         match = re.search(r"Recording Time\*\*:\s*([0-9][^\r\n]+)", text)
         if match:
             return parse_timestamp_ms(match.group(1).strip())
+    video_file = _choose_video_file(case_dir)
+    if video_file is not None:
+        match = re.search(r"recording[_-](\d{8})[_-](\d{6})", video_file.stem, flags=re.IGNORECASE)
+        if match:
+            date, time = match.groups()
+            return parse_timestamp_ms(
+                f"{date[:4]}-{date[4:6]}-{date[6:]} {time[:2]}:{time[2:4]}:{time[4:]}"
+            )
     return 0
 
 

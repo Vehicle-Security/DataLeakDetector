@@ -257,6 +257,7 @@ def build_analysis_windows(
     ordered = sorted((event for event in logs if event.video_time_ms >= 0), key=lambda event: event.video_time_ms)
     sensitive = _normalize_sensitive_files(sensitive_files)
     timeline = _SensitiveTimeline.from_logs(ordered, sensitive)
+    clipboard_sensitive_events = _sensitive_clipboard_event_ids(ordered, sensitive)
     candidates = [
         event
         for event in ordered
@@ -274,6 +275,7 @@ def build_analysis_windows(
             sensitive,
             config,
             sensitive_timeline=timeline,
+            sensitive_context_index=clipboard_sensitive_events,
             normalized_sensitive=True,
         )
         if window is not None:
@@ -307,7 +309,7 @@ def build_analysis_window_for_event(
     sensitive_timeline: "_SensitiveTimeline | None" = None,
     normalized_sensitive: bool = False,
 ) -> AnalysisWindow | None:
-    del active_app_index, time_index, sensitive_context_index
+    del active_app_index, time_index
     if event.video_time_ms < 0:
         return None
     sensitive = tuple(sensitive_files) if normalized_sensitive else _normalize_sensitive_files(sensitive_files)
@@ -317,13 +319,17 @@ def build_analysis_window_for_event(
     direct_sensitive = _event_matches_sensitive(event, sensitive)
     path_sensitive = bool(event.file_path) and any(same_file(event.file_path, source) for source in sensitive)
     direct_derivation = _may_be_derived_file_event(event, sensitive)
-    sensitive_context = (
-        direct_sensitive
-        or direct_derivation
-        or timeline.active_at(event.video_time_ms)
-        or timeline.recent_at(event.video_time_ms)
-    )
     action = _action_kind(event)
+    recent_context_ms = 120_000 if action in {"clipboard", "paste"} else 30_000
+    if action in {"clipboard", "paste"} and isinstance(sensitive_context_index, set | frozenset):
+        sensitive_context = direct_sensitive or direct_derivation or event.event_id in sensitive_context_index
+    else:
+        sensitive_context = (
+            direct_sensitive
+            or direct_derivation
+            or timeline.active_at(event.video_time_ms)
+            or timeline.recent_at(event.video_time_ms, radius_ms=recent_context_ms)
+        )
     if action == "transfer_anchor" and direct_sensitive:
         # A browser access to a known sensitive document is the file-selection
         # phase of an outbound action, even if the monitor labels it as IO.
@@ -362,6 +368,8 @@ def build_analysis_window_for_event(
         after_ms = config.strong_window_after_ms
         if action == "capture":
             before_ms = max(before_ms, 15_000)
+        if action == "clipboard":
+            before_ms = max(before_ms, 30_000)
         if action in {"file_selected", "upload", "send", "removable", "screen_share", "clipboard"}:
             after_ms = max(after_ms, 30_000)
         step_ms = config.strong_frame_step_ms
@@ -539,19 +547,39 @@ def _build_outbound_context_windows(
         for session in _frontend_sessions(logs, session_gap_ms=session_gap_ms)
         for segment in _segment_frontend_session(session, config.external_session_segment_ms)
     ]
-    source_phase_owner: dict[tuple[int, str], int] = {}
+    phase_owner: dict[tuple[int, str], int] = {}
     for phase in phases:
-        if phase[1] not in {"capture", "clipboard", "derive", "paste"}:
-            continue
+        source_phase = phase[1] in {"capture", "clipboard", "derive", "paste"}
+        phase_horizon_ms = _phase_evidence_horizon_ms(phase[1], evidence_horizon_ms)
         candidates = [
-            (max(0, session.start_ms - phase[0]), index)
+            (
+                0 if session.start_ms <= phase[0] <= session.end_ms else 1,
+                max(0, session.start_ms - phase[0]),
+                index,
+            )
             for index, session in enumerate(sessions)
             if session.category in _EVIDENCE_SESSION_CATEGORIES
-            and session.end_ms >= phase[0]
-            and session.start_ms - phase[0] <= evidence_horizon_ms
+            and (
+                (
+                    source_phase
+                    and session.end_ms >= phase[0]
+                    and session.start_ms - phase[0] <= phase_horizon_ms
+                )
+                or (
+                    not source_phase
+                    and session.start_ms - 30_000 <= phase[0] <= session.end_ms
+                )
+            )
         ]
         if candidates:
-            source_phase_owner[phase] = min(candidates)[1]
+            phase_owner[phase] = min(candidates)[2]
+
+    sensitive_session_owners = _sensitive_evidence_session_owners(
+        sessions,
+        logs,
+        sensitive_files,
+        evidence_horizon_ms=evidence_horizon_ms,
+    )
 
     windows: list[AnalysisWindow] = []
     for session_index, session in enumerate(sessions):
@@ -561,11 +589,10 @@ def _build_outbound_context_windows(
         nearby_phases = [
             phase
             for phase in phases
-            if session.start_ms - evidence_horizon_ms <= phase[0] <= session.end_ms
-            and (
-                phase[1] not in {"capture", "clipboard", "derive", "paste"}
-                or source_phase_owner.get(phase) == session_index
-            )
+            if session.start_ms - _phase_evidence_horizon_ms(phase[1], evidence_horizon_ms)
+            <= phase[0]
+            <= session.end_ms
+            and (phase not in phase_owner or phase_owner[phase] == session_index)
             and (
                 session.start_ms - 30_000 <= phase[0]
                 or phase[1] in {"capture", "clipboard", "derive", "paste"}
@@ -584,6 +611,8 @@ def _build_outbound_context_windows(
             logs,
             sensitive_files,
             evidence_horizon_ms=evidence_horizon_ms,
+            session_index=session_index,
+            sensitive_session_owners=sensitive_session_owners,
         ):
             # Merely opening an external-capable app is not evidence. A session
             # packet needs nearby sensitive context, an action, or a substantive
@@ -624,6 +653,14 @@ def _build_outbound_context_windows(
             )
         )
     return windows
+
+
+def _phase_evidence_horizon_ms(action: str, evidence_horizon_ms: int) -> int:
+    # A captured image can be selected later by explicit file evidence. Without
+    # that evidence, a distant external session is too weak to bind to the shot.
+    if action == "capture":
+        return min(evidence_horizon_ms, 30_000)
+    return evidence_horizon_ms
 
 
 def _segment_frontend_session(session: _FrontendSession, segment_ms: int) -> list[_FrontendSession]:
@@ -733,20 +770,46 @@ def _session_warrants_visual_evidence(
     sensitive_files: tuple[str, ...],
     *,
     evidence_horizon_ms: int,
+    session_index: int,
+    sensitive_session_owners: set[int],
 ) -> bool:
     if not sensitive_files or session.end_ms - session.start_ms < 8_000:
         return False
     if session.category == "meeting":
         return True
-    return any(
-        session.start_ms - evidence_horizon_ms <= event.video_time_ms <= session.end_ms
-        and not _is_close_event(event)
-        and (
-            _event_matches_sensitive(event, sensitive_files)
+    del logs, evidence_horizon_ms
+    return session_index in sensitive_session_owners
+
+
+def _sensitive_evidence_session_owners(
+    sessions: list[_FrontendSession],
+    logs: list[LogEvent],
+    sensitive_files: tuple[str, ...],
+    *,
+    evidence_horizon_ms: int,
+) -> set[int]:
+    owners: set[int] = set()
+    actionless_horizon_ms = min(evidence_horizon_ms, 30_000)
+    for event in logs:
+        if _is_close_event(event) or not (
+            _event_has_strict_sensitive_identity(event, sensitive_files)
             or _may_be_derived_file_event(event, sensitive_files)
-        )
-        for event in logs
-    )
+        ):
+            continue
+        candidates = [
+            (
+                0 if session.start_ms <= event.video_time_ms <= session.end_ms else 1,
+                max(0, session.start_ms - event.video_time_ms),
+                index,
+            )
+            for index, session in enumerate(sessions)
+            if session.category in _EVIDENCE_SESSION_CATEGORIES
+            and session.end_ms >= event.video_time_ms
+            and session.start_ms - event.video_time_ms <= actionless_horizon_ms
+        ]
+        if candidates:
+            owners.add(min(candidates)[2])
+    return owners
 
 
 def _outbound_sensitive_file_accesses(
@@ -947,6 +1010,76 @@ def _may_need_analysis_window(event: LogEvent, sensitive_files: tuple[str, ...])
     if _is_noise_only_event(event):
         return False
     return event.event_type not in _FOREGROUND_EVENTS and _is_high_risk_hint(event)
+
+
+def _sensitive_clipboard_event_ids(
+    events: list[LogEvent],
+    sensitive_files: tuple[str, ...],
+) -> frozenset[str]:
+    """Bind clipboard actions to the current document, not an unclosed file."""
+
+    current_document_by_app: dict[str, tuple[int, bool]] = {}
+    unbound_sensitive_context_ms: list[int] = []
+    clipboard_taint: tuple[int, bool] | None = None
+    selected: set[str] = set()
+
+    for event in events:
+        action = _action_kind(event)
+        timestamp = event.video_time_ms
+        app_family = _clipboard_app_family(event)
+        if action in {"clipboard", "paste"}:
+            current = current_document_by_app.get(app_family)
+            current_sensitive = bool(
+                current
+                and 0 <= timestamp - current[0] <= 120_000
+                and current[1]
+            )
+            if not current_sensitive and app_family:
+                current_sensitive = any(
+                    0 <= timestamp - signal_ms <= 120_000
+                    for signal_ms in unbound_sensitive_context_ms
+                )
+            if action == "paste" and clipboard_taint:
+                current_sensitive = current_sensitive or (
+                    0 <= timestamp - clipboard_taint[0] <= 120_000
+                    and clipboard_taint[1]
+                )
+            if current_sensitive:
+                selected.add(event.event_id)
+            if action == "clipboard":
+                clipboard_taint = (timestamp, current_sensitive)
+
+        if event.window_title.strip():
+            title_sensitive = _window_title_mentions_sensitive(event.window_title, sensitive_files)
+            if app_family:
+                current_document_by_app[app_family] = (timestamp, title_sensitive)
+            elif title_sensitive:
+                unbound_sensitive_context_ms.append(timestamp)
+        elif _event_has_strict_sensitive_identity(event, sensitive_files):
+            if app_family:
+                current_document_by_app[app_family] = (timestamp, True)
+            else:
+                unbound_sensitive_context_ms.append(timestamp)
+
+    return frozenset(selected)
+
+
+def _clipboard_app_family(event: LogEvent) -> str:
+    app = _foreground_app_key(event)
+    if app in {"et", "wps", "wpp", "wps ppt"}:
+        return "wps_office"
+    if app in {"excel", "powerpnt", "winword", "word"}:
+        return "microsoft_office"
+    return app
+
+
+def _window_title_mentions_sensitive(title: str, sensitive_files: tuple[str, ...]) -> bool:
+    normalized_title = normalize_path(title).lower()
+    return any(
+        len(name) >= 4 and name in normalized_title
+        for source in sensitive_files
+        if (name := Path(normalize_path(source)).name.lower())
+    )
 
 
 def _select_semantic_candidates(
@@ -1161,6 +1294,17 @@ def _looks_like_file_dialog(title: str) -> bool:
 
 def _event_matches_sensitive(event: LogEvent, sensitive_files: tuple[str, ...]) -> bool:
     return any(_event_matches_source(event, source) for source in sensitive_files)
+
+
+def _event_has_strict_sensitive_identity(event: LogEvent, sensitive_files: tuple[str, ...]) -> bool:
+    """Require file identity, not a stale title attached to unrelated IO."""
+
+    if event.file_path:
+        if any(same_file(event.file_path, source) for source in sensitive_files):
+            return True
+        if event.event_type not in _FOREGROUND_EVENTS:
+            return False
+    return _event_matches_sensitive(event, sensitive_files)
 
 
 def _event_matches_source(event: LogEvent, source: str) -> bool:

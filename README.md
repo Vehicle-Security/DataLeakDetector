@@ -110,7 +110,7 @@ VLM preflight passed: model=qwen3.7-plus endpoint=https://coding.dashscope.aliyu
 spec/data/nas_samples/
 ```
 
-可以继续使用这个目录，也可以创建自己的 case 根目录。批量扫描时，一个可识别的 case 必须直接包含 `logs/` 和 `video/` 两个目录。
+可以继续使用这个目录，也可以创建自己的 case 根目录。批量扫描支持两种 case：直接包含 `logs/` 和 `video/` 的单 session case，以及直接包含多个 `session_*` 子目录的 composite case。
 
 推荐结构：
 
@@ -127,7 +127,7 @@ spec/data/nas_samples/
       groundtruth.json          # 可选，只用于评测
 ```
 
-可以有多级目录，例如 `stage1/my-case/session_001/`。只要某一级目录直接包含 `logs/` 和 `video/`，批量模式就会把它识别成独立 case。
+可以有多级目录。若某个父目录下有多个直属 `session_*`，且每个 session 都直接包含 `logs/` 和 `video/`，批量模式会把父目录识别成一个逻辑 case。每个 session 独立抽帧，日志和视觉证据按录制绝对时间合并后只执行一次事件关联与泄漏推理。
 
 ### 4.1 日志文件
 
@@ -236,7 +236,7 @@ Video: `video/recording_20260713_120000.mp4`
 }
 ```
 
-没有 groundtruth 也可以检测，只是该 case 会显示为未评分。子 session 可以在 release 模式下继承最近祖先目录的 groundtruth，但仍然仅用于评测。
+没有 groundtruth 也可以检测，只是该 case 会显示为未评分。Composite case 使用父目录的 groundtruth 对整条跨 session 行为链评测；groundtruth 仍不参与检测和推理。
 
 ## 5. 配置原始敏感文件
 
@@ -428,7 +428,7 @@ VLM 阶段运行时持续写入 `vlm.stdout.log` 和 `vlm.stderr.log`；阶段�
   release_report.json
   release_comparison.json
   vision_precompute/
-  case_debug/                 # 启用 release debug artifacts 时存在
+  case_debug/                 # 启用 release debug artifacts 时存在；多 session 视觉产物位于 case/sessions/<session_id>/
 ```
 
 ## 10. 只运行指定 case
@@ -438,7 +438,7 @@ VLM 阶段运行时持续写入 `vlm.stdout.log` 和 `vlm.stderr.log`；阶段�
 ```text
 stage1/1-email-fastmail-1
 stage2/2-filestruct-pdfconvert-2
-stage4/e2e-1/session_20260505_213253
+stage4/e2e-1
 ```
 
 例如保存为 `artifacts/my_case_list.txt`，然后执行：
@@ -458,7 +458,7 @@ python main\run_e2e.py `
 
 ## 11. VLM 失败后的续跑
 
-Release 模式下，只要某个 VLM 批次最终失败，该 case 会被标记为失败，任务会尽快停止，而不是把空响应当成 `no_confirmed_data_leak`。
+Release 模式下，VLM 批次最终失败的 case 会被标记为失败，而不是把空响应当成 `no_confirmed_data_leak`；其余 case 会继续执行。
 
 失败目录中会生成：
 

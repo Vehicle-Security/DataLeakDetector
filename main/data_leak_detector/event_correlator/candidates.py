@@ -88,6 +88,13 @@ def _is_explicit_upload_event(event: CorrelatedEvent, text: str) -> bool:
     if event.operation_type != "external_sink_interaction" and not contains_any(text, SINK_TOKENS):
         return False
     reasons = set(event.join_reasons)
+    if (
+        event.behavior_category == "unknown_risk"
+        and "visual_only" in reasons
+        and not any(reason.startswith("action_status:") for reason in reasons)
+        and "visual_transfer_context" not in reasons
+    ):
+        return False
     if "removable_media_sink" in reasons:
         return True
     if {"explicit_sink_log", "visual_sink_context", "visual_only"} & reasons:
@@ -155,7 +162,6 @@ def _is_noise_or_placeholder_path(value: str) -> bool:
         "/tencent files/",
         "/nt_qq/",
         "/driverstore/",
-        "/screenmonitor/",
         "/recordings/session_",
         "/logs/",
         "/cache/",

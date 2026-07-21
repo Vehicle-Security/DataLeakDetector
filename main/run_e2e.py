@@ -564,7 +564,11 @@ def _build_release_vision_precompute(
         case_root_dir = cache_root / Path(case_id)
         try:
             existing = _reusable_precompute_baseline(case_root_dir)
-            if existing and _precompute_baseline_matches_mode(existing, "direct_keyframes_only"):
+            if (
+                existing
+                and _precompute_baseline_matches_mode(existing, "direct_keyframes_only")
+                and _precompute_baseline_covers_case(existing, case)
+            ):
                 return case_id, str(existing)
             args = dict(common_args)
             args.update(
@@ -580,10 +584,36 @@ def _build_release_vision_precompute(
                 args["neo4j_log_miner"] = neo4j_log_miner
             report = run_data_case(case, case_root=root, **args)
             vision = dict(report.get("frame_analyzer", {}).get("statistics", {}).get("vision", {}))
-            cache_file = str(vision.get("artifacts", {}).get("vision_precompute_file") or "")
-            if not cache_file or not Path(cache_file).exists():
-                raise RuntimeError(f"vision_precompute_missing: {case_id}")
-            baseline_file = Path(cache_file).with_name("pipeline_baseline.json")
+            artifacts = dict(vision.get("artifacts", {}))
+            session_cache_files = {
+                str(name): str(path)
+                for name, path in dict(artifacts.get("session_vision_precompute_files") or {}).items()
+                if str(name) and str(path)
+            }
+            cache_file = str(artifacts.get("vision_precompute_file") or "")
+            if session_cache_files:
+                missing = [path for path in session_cache_files.values() if not Path(path).exists()]
+                if missing:
+                    raise RuntimeError(f"vision_precompute_missing: {case_id}: {', '.join(missing)}")
+                artifact_root_text = str(artifacts.get("root_dir") or "")
+                if artifact_root_text:
+                    artifact_root = Path(artifact_root_text)
+                else:
+                    first_cache = Path(next(iter(session_cache_files.values())))
+                    artifact_root = first_cache.parent.parent.parent
+                baseline_file = artifact_root / "pipeline_baseline.json"
+            else:
+                if not cache_file or not Path(cache_file).exists():
+                    raise RuntimeError(f"vision_precompute_missing: {case_id}")
+                baseline_file = Path(cache_file).with_name("pipeline_baseline.json")
+            observations = report.get("frame_analyzer", {}).get("observations", [])
+            session_log_observations: dict[str, list[dict]] = {}
+            for item in observations:
+                if not isinstance(item, dict) or item.get("source") != "log_anchored":
+                    continue
+                session_id = str(item.get("session_id") or "")
+                if session_id:
+                    session_log_observations.setdefault(session_id, []).append(item)
             baseline_file.write_text(
                 json.dumps(
                     {
@@ -591,11 +621,15 @@ def _build_release_vision_precompute(
                         "precompute_mode": "direct_keyframes_only",
                         "vision_strategy_version": VISION_PRECOMPUTE_STRATEGY_VERSION,
                         "vision_precompute_file": cache_file,
+                        "session_vision_precompute_files": session_cache_files,
+                        "session_ids": sorted(session_cache_files),
+                        "session_count": len(session_cache_files) or 1,
                         "records": report.get("event_correlator", {}).get("raw_log_events", []),
                         "log_observations": [
-                            item for item in report.get("frame_analyzer", {}).get("observations", [])
+                            item for item in observations
                             if item.get("source") == "log_anchored"
                         ],
+                        "session_log_observations": session_log_observations,
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -668,10 +702,20 @@ def _filter_cases(cases: list[tuple[str, Path]], case_ids: set[str] | None, root
     if not case_ids:
         return cases
     known = {case_id for case_id, _ in cases}
-    missing = sorted(case_ids - known)
+    resolved: set[str] = set()
+    missing: list[str] = []
+    for requested in sorted(case_ids):
+        if requested in known:
+            resolved.add(requested)
+            continue
+        parents = [case_id for case_id in known if requested.startswith(f"{case_id}/session_")]
+        if len(parents) == 1:
+            resolved.add(parents[0])
+        else:
+            missing.append(requested)
     if missing:
         raise ValueError(f"case IDs not found under {root}: {', '.join(missing)}")
-    return [(case_id, case) for case_id, case in cases if case_id in case_ids]
+    return [(case_id, case) for case_id, case in cases if case_id in resolved]
 
 
 def _precompute_baseline_matches_mode(path: Path, mode: str) -> bool:
@@ -684,6 +728,34 @@ def _precompute_baseline_matches_mode(path: Path, mode: str) -> bool:
         and payload.get("schema_version") == 1
         and payload.get("precompute_mode") == mode
         and payload.get("vision_strategy_version") == VISION_PRECOMPUTE_STRATEGY_VERSION
+    )
+
+
+def _precompute_baseline_covers_case(path: Path, case_dir: Path) -> bool:
+    expected_sessions = {
+        child.name
+        for child in case_dir.glob("session_*")
+        if child.is_dir() and (child / "logs").is_dir() and (child / "video").is_dir()
+    }
+    if len(expected_sessions) <= 1:
+        return True
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    cached_sessions = set(dict(payload.get("session_vision_precompute_files") or {}))
+    declared_sessions = {str(item) for item in payload.get("session_ids", []) if str(item)}
+    record_sessions = {
+        str(item.get("_dld_session_id") or "")
+        for item in payload.get("records", [])
+        if isinstance(item, dict) and item.get("_dld_session_id")
+    }
+    if not declared_sessions:
+        declared_sessions = record_sessions
+    return (
+        cached_sessions == expected_sessions
+        and declared_sessions == expected_sessions
+        and record_sessions <= expected_sessions
     )
 
 

@@ -518,7 +518,10 @@ def _budget_window_candidates(
     mandatory = _trim_mandatory_evidence(mandatory, window, mandatory_limit)
 
     remaining = max(0, limit - len(mandatory) - len(result_states))
-    context_limit = min(len(context_states), 3 if mandatory or result_states else max(1, limit // 2), remaining)
+    # Context action states are explicit log-planned evidence positions. Keep all
+    # that fit the remaining budget so a later send/result state is not dropped
+    # merely because an earlier external session already supplied context.
+    context_limit = min(len(context_states), remaining)
     context = _select_context_evidence(context_states, context_limit)
 
     selected = [*mandatory, *result_states, *context]
@@ -536,16 +539,22 @@ def _post_action_visual_evidence(
 ) -> list[_FrameCandidate]:
     if limit <= 0 or not candidates:
         return []
-    groups: list[list[_FrameCandidate]] = []
+    result_groups: list[list[_FrameCandidate]] = []
+    context_groups: list[list[_FrameCandidate]] = []
     for anchor, action in _collapse_frame_action_phases(window.action_phases):
         base_action = action.split(":", 1)[0]
-        if base_action not in _RESULT_BEARING_ACTIONS:
+        if base_action == "external_state":
+            targets = [anchor]
+            groups = context_groups
+        elif base_action in _RESULT_BEARING_ACTIONS:
+            targets = [
+                timestamp
+                for timestamp in _phase_timestamps(window, anchor, base_action)
+                if timestamp - anchor >= 5_000
+            ]
+            groups = result_groups
+        else:
             continue
-        targets = [
-            timestamp
-            for timestamp in _phase_timestamps(window, anchor, base_action)
-            if timestamp - anchor >= 5_000
-        ]
         for target in targets:
             group = [
                 item
@@ -564,20 +573,21 @@ def _post_action_visual_evidence(
 
     selected: list[_FrameCandidate] = []
     selected_ids: set[str] = set()
-    queues = [list(group) for group in groups]
-    while len(selected) < limit and any(queues):
-        progressed = False
-        for queue in queues:
-            while queue and queue[0].frame.frame_id in selected_ids:
-                queue.pop(0)
-            if not queue or len(selected) >= limit:
-                continue
-            item = queue.pop(0)
-            selected.append(item)
-            selected_ids.add(item.frame.frame_id)
-            progressed = True
-        if not progressed:
-            break
+    for group_set in (result_groups, context_groups):
+        queues = [list(group) for group in group_set]
+        while len(selected) < limit and any(queues):
+            progressed = False
+            for queue in queues:
+                while queue and queue[0].frame.frame_id in selected_ids:
+                    queue.pop(0)
+                if not queue or len(selected) >= limit:
+                    continue
+                item = queue.pop(0)
+                selected.append(item)
+                selected_ids.add(item.frame.frame_id)
+                progressed = True
+            if not progressed:
+                break
     return selected
 
 
@@ -603,9 +613,14 @@ def _select_context_evidence(candidates: list[_FrameCandidate], limit: int) -> l
 
     selected: list[_FrameCandidate] = []
     starts = [item for item in ordered if "external_session" in _candidate_actions(item) or "resource_identity" in _candidate_actions(item)]
+    states = [item for item in ordered if "external_state" in _candidate_actions(item)]
     ends = [item for item in ordered if "session_end" in _candidate_actions(item)]
     if starts:
         selected.append(starts[0])
+    # A late external-state anchor commonly captures the actual send/upload
+    # result. Prefer it over a generic session-end frame when space is tight.
+    if states and len(selected) < limit and states[-1].frame.frame_id not in {item.frame.frame_id for item in selected}:
+        selected.append(states[-1])
     if ends and len(selected) < limit and ends[-1].frame.frame_id not in {item.frame.frame_id for item in selected}:
         selected.append(ends[-1])
     remaining = [item for item in ordered if item.frame.frame_id not in {chosen.frame.frame_id for chosen in selected}]

@@ -60,7 +60,7 @@ class VisionConfig:
     vlm_token_base_url: str = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
     vlm_token_chat_url: str = ""
     vlm_token_api_key: str = ""
-    vlm_timeout_seconds: int = 60
+    vlm_timeout_seconds: int = 300
     vlm_retry_attempts: int = 3
     vlm_retry_backoff_seconds: float = 1.0
     vlm_dry_run: bool = False
@@ -115,7 +115,7 @@ class VisionConfig:
             vlm_token_base_url=os.getenv("DLD_VLM_TOKEN_BASE_URL", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"),
             vlm_token_chat_url=os.getenv("DLD_VLM_TOKEN_CHAT_URL", ""),
             vlm_token_api_key=os.getenv("DLD_VLM_TOKEN_API_KEY", ""),
-            vlm_timeout_seconds=_env_int("DLD_VLM_TIMEOUT_SECONDS", 60),
+            vlm_timeout_seconds=_env_int("DLD_VLM_TIMEOUT_SECONDS", 300),
             vlm_retry_attempts=max(1, _env_int("DLD_VLM_RETRY_ATTEMPTS", 3)),
             vlm_retry_backoff_seconds=max(0.0, _env_float("DLD_VLM_RETRY_BACKOFF_SECONDS", 1.0)),
             vlm_dry_run=_env_bool("DLD_VLM_DRY_RUN", False),

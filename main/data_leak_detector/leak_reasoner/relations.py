@@ -11,6 +11,7 @@ SUPPORTED_RELATIONS = {
     "OpenFile",
     "TransferFile",
     "CrossProcessTransfer",
+    "UploadBinding",
     "LeakFile",
     "SuspiciousBehavior",
     "ClipboardWrite",

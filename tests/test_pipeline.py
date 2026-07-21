@@ -10,9 +10,11 @@ from types import SimpleNamespace
 import pytest
 import run_e2e as run_e2e_module
 
-from data_leak_detector import run_pipeline
-from data_leak_detector.datasets import discover_data_case
+from data_leak_detector import run_data_case, run_pipeline
+from data_leak_detector.datasets import discover_data_case, discover_data_case_directories
 from data_leak_detector.event_correlator import EventCorrelator
+from data_leak_detector.event_correlator.facts import build_datalog_facts
+from data_leak_detector.event_correlator.lineage import Lineage
 from data_leak_detector.frame_analyzer import analyze_video_behavior
 from data_leak_detector.frame_analyzer.artifacts import export_vision_artifacts
 from data_leak_detector.frame_analyzer.vlm_dispatch import (
@@ -45,8 +47,10 @@ from data_leak_detector.frame_analyzer.frames import (
     _budget_window_candidates,
     _frame_entropy,
     _hamming,
+    _post_action_visual_evidence,
     _probe_timestamps,
     _read_frames_for_timestamps,
+    _select_context_evidence,
     _select_window_candidates,
     _should_keep_frame,
     _timestamp_groups,
@@ -60,10 +64,11 @@ from data_leak_detector.frame_analyzer.vlm_client import VlmRequestFrame, VlmRes
 from data_leak_detector.log_mining import _action_kind, _compact_event_view, _may_need_analysis_window, build_analysis_windows, mine_analysis_windows
 from data_leak_detector.neo4j.importer import fingerprint_records, records_to_graph_events
 from data_leak_detector.groundtruth import evaluate_groundtruth
-from data_leak_detector.io import normalize_logs, normalize_path, same_file
+from data_leak_detector.io import normalize_logs, normalize_path, parse_timestamp_ms, same_file
 from run_e2e import _precompute_baseline_matches_mode, _release_direct_defaults, _reusable_precompute_baseline
 from data_leak_detector.io import load_json_records
 from data_leak_detector.leak_reasoner import DatalogEngine
+from data_leak_detector.models import CorrelatedEvent, LeakPath, UploadCandidate
 from data_leak_detector.policy import contains_any, load_policy_config
 from data_leak_detector.policy import classify_sink
 from data_leak_detector.sensitivity import load_sensitive_files_config
@@ -182,6 +187,63 @@ def test_release_precompute_rejects_stale_keyframe_strategy(tmp_path: Path) -> N
     )
 
     assert _precompute_baseline_matches_mode(baseline, "direct_keyframes_only") is True
+
+
+def test_release_precompute_writes_every_composite_session_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "stage4"
+    case_dir = root / "e2e-1"
+    case_dir.mkdir(parents=True)
+    (case_dir / "groundtruth.json").write_text(json.dumps({"operations": []}), encoding="utf-8")
+    session_ids = ["session_20260101_090000", "session_20260103_110000"]
+    for session_id in session_ids:
+        _write_composite_session(case_dir, session_id, "2026-01-01 09:00:00", [])
+
+    def fake_run_data_case(case: Path, **kwargs: object) -> dict:
+        artifact_root = Path(str(kwargs["output_dir"])) / "e2e-1_keyevents_2"
+        caches: dict[str, str] = {}
+        for session_id in session_ids:
+            cache = artifact_root / "sessions" / session_id / "vision_precompute.json"
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_text("{}", encoding="utf-8")
+            caches[session_id] = str(cache)
+        return {
+            "frame_analyzer": {
+                "observations": [],
+                "statistics": {
+                    "vision": {
+                        "artifacts": {
+                            "root_dir": str(artifact_root),
+                            "session_vision_precompute_files": caches,
+                        }
+                    }
+                },
+            },
+            "event_correlator": {
+                "raw_log_events": [
+                    {"_dld_session_id": session_id, "event_type": "test"} for session_id in session_ids
+                ]
+            },
+        }
+
+    monkeypatch.setattr(run_e2e_module, "run_data_case", fake_run_data_case)
+    completed = run_e2e_module._build_release_vision_precompute(
+        str(root),
+        common_args={},
+        cache_root=tmp_path / "cache",
+        workers=1,
+        neo4j_log_miner=False,
+    )
+
+    baseline = Path(completed["e2e-1"])
+    payload = json.loads(baseline.read_text(encoding="utf-8"))
+    assert set(payload["session_vision_precompute_files"]) == set(session_ids)
+    assert run_e2e_module._precompute_baseline_covers_case(baseline, case_dir) is True
+
+    payload["session_vision_precompute_files"].pop(session_ids[-1])
+    baseline.write_text(json.dumps(payload), encoding="utf-8")
+    assert run_e2e_module._precompute_baseline_covers_case(baseline, case_dir) is False
 
 
 def test_release_keeps_deterministic_log_evidence_enabled() -> None:
@@ -458,6 +520,143 @@ def test_clipboard_near_sensitive_window_title_survives_noise_path_before_extern
     assert len(windows) == 1
     assert (15_000, "clipboard") in windows[0].action_phases
     assert (20_000, "external_session") in windows[0].action_phases
+
+
+def test_stale_sensitive_window_title_does_not_warrant_external_session_without_action() -> None:
+    sensitive = "C:/Users/alice/Desktop/strategy.docx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:10",
+                "event_type": "modified",
+                "file_path": "C:/Users/alice/AppData/Roaming/QQ/nt_db/nt_msg.db-wal",
+                "window_info": {"window_title": "strategy.docx - Word"},
+                "extra": {"relative_timestamp": 10.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:20",
+                "event_type": "app_switch",
+                "app_name": "ChatGPT",
+                "window_info": {"window_title": "ChatGPT"},
+                "extra": {"relative_timestamp": 20.0},
+            },
+        ]
+    )
+
+    assert build_analysis_windows(logs, [sensitive], VisionConfig()) == []
+
+
+def test_clipboard_uses_current_document_instead_of_unclosed_sensitive_activity() -> None:
+    sensitive = "C:/Users/alice/Desktop/salary.xlsx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "modified",
+                "file_path": sensitive,
+                "process_info": {"process_name": "wps.exe"},
+                "window_info": {"window_title": "salary.xlsx - WPS Office"},
+                "extra": {"relative_timestamp": 0.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:00",
+                "event_type": "modified",
+                "file_path": "C:/Users/alice/AppData/Roaming/WPS/state.json",
+                "process_info": {"process_name": "wps.exe"},
+                "window_info": {"window_title": "public_report.pptx - WPS Office"},
+                "extra": {"relative_timestamp": 60.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:10",
+                "event_type": "clipboard_text",
+                "process_info": {"process_name": "wps.exe"},
+                "extra": {"relative_timestamp": 70.0, "raw_operation": "clipboard_text"},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:20",
+                "event_type": "app_switch",
+                "app_name": "ChatGPT",
+                "window_info": {"window_title": "ChatGPT"},
+                "extra": {"relative_timestamp": 80.0},
+            },
+        ]
+    )
+
+    assert build_analysis_windows(logs, [sensitive], VisionConfig()) == []
+
+
+def test_one_action_is_owned_by_only_one_external_session() -> None:
+    sensitive = "C:/Users/alice/Pictures/Screenshots/secret.png"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:30",
+                "event_type": "app_switch",
+                "app_name": "QQ",
+                "window_info": {"window_title": "QQ"},
+                "extra": {"relative_timestamp": 30.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:40",
+                "event_type": "file_selected",
+                "file_path": sensitive,
+                "app_name": "QQ",
+                "window_info": {"window_title": "QQ"},
+                "extra": {"relative_timestamp": 40.0, "raw_operation": "file_selected"},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:50",
+                "event_type": "app_switch",
+                "app_name": "ChatGPT",
+                "window_info": {"window_title": "ChatGPT"},
+                "extra": {"relative_timestamp": 50.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:10",
+                "event_type": "app_switch",
+                "app_name": "System",
+                "window_info": {"window_title": "Settings"},
+                "extra": {"relative_timestamp": 70.0},
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [sensitive], VisionConfig())
+
+    assert len(windows) == 1
+    assert windows[0].reason == "strong:external_session:chat"
+    assert (40_000, "file_selected") in windows[0].action_phases
+
+
+def test_distant_external_session_does_not_inherit_capture_without_transfer_evidence() -> None:
+    screenshot = "C:/Users/alice/Pictures/Screenshots/secret.png"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:10",
+                "event_type": "screenshot",
+                "file_path": screenshot,
+                "process_info": {"process_name": "SnippingTool.exe"},
+                "extra": {"relative_timestamp": 10.0, "raw_operation": "screenshot"},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:30",
+                "event_type": "app_switch",
+                "app_name": "ChatGPT",
+                "window_info": {"window_title": "ChatGPT"},
+                "extra": {"relative_timestamp": 90.0},
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [screenshot], VisionConfig())
+
+    assert any((10_000, "capture") in window.action_phases for window in windows)
+    assert not any(
+        action == "external_session"
+        for window in windows
+        for _, action in window.action_phases
+    )
 
 
 def test_sensitive_file_editing_does_not_create_production_window() -> None:
@@ -1607,6 +1806,53 @@ def test_window_budget_reserves_visual_completion_over_repeated_context_states()
     assert len(selected_ids & {"session", "state_1", "state_2", "state_3", "state_4", "end"}) <= 3
 
 
+def test_context_budget_prefers_latest_external_state_over_generic_session_end() -> None:
+    np = pytest.importorskip("numpy")
+    gray = np.zeros((90, 160), dtype=np.uint8)
+
+    def candidate(frame_id: str, timestamp: int, reason: str) -> _FrameCandidate:
+        frame = KeyFrame(frame_id, timestamp, f"{frame_id}.jpg", 0.01, reason)
+        return _FrameCandidate(frame, "strong", gray, (0, 64))
+
+    candidates = [
+        candidate("session", 5_838, "strong:action_state:external_session:at"),
+        candidate("early", 7_399, "strong:action_state:external_state:at"),
+        candidate("middle", 22_932, "strong:action_state:external_state:at"),
+        candidate("sent", 40_392, "strong:action_state:external_state:at"),
+        candidate("end", 50_739, "strong:action_state:session_end:at"),
+    ]
+
+    selected = _select_context_evidence(candidates, 2)
+
+    assert [item.frame.frame_id for item in selected] == ["session", "sent"]
+
+
+def test_external_state_keeps_immediate_visual_completion_evidence() -> None:
+    np = pytest.importorskip("numpy")
+    gray = np.zeros((90, 160), dtype=np.uint8)
+
+    def candidate(frame_id: str, timestamp: int, score: float) -> _FrameCandidate:
+        frame = KeyFrame(frame_id, timestamp, f"{frame_id}.jpg", score, "strong:visual_change")
+        return _FrameCandidate(frame, "strong", gray, (0, 64))
+
+    candidates = [
+        candidate("before_send", 40_142, 0.1),
+        candidate("sent_file_card", 41_785, 0.8),
+        candidate("unrelated_later", 47_754, 0.9),
+    ]
+    window = AnalysisWindow(
+        0,
+        50_739,
+        "strong:external_session:chat",
+        priority="strong",
+        action_phases=((40_392, "external_state"),),
+    )
+
+    selected = _post_action_visual_evidence(candidates, window, 2)
+
+    assert [item.frame.frame_id for item in selected] == ["sent_file_card"]
+
+
 def test_window_budget_keeps_clipboard_paste_and_submitted_visual_states() -> None:
     np = pytest.importorskip("numpy")
     gray = np.zeros((90, 160), dtype=np.uint8)
@@ -2564,6 +2810,57 @@ def test_clipboard_with_downstream_paste_uses_recent_sensitive_signal() -> None:
     assert action.action_phases == ((10_000, "clipboard"), (20_000, "paste"))
 
 
+def test_clipboard_window_uses_full_semantic_horizon_and_keeps_prior_derivation_state() -> None:
+    sensitive = "C:/Users/alice/Desktop/merger_notes.docx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:00",
+                "event_type": "modified",
+                "file_path": sensitive,
+                "extra": {"relative_timestamp": 0.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:25",
+                "event_type": "renamed",
+                "file_path": "C:/Users/alice/Desktop/New Text Document.txt",
+                "destination_path": "C:/Users/alice/Desktop/draft.txt",
+                "extra": {"relative_timestamp": 25.0, "raw_operation": "renamed"},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:47",
+                "event_type": "clipboard_text",
+                "app_name": "WINWORD",
+                "content_preview": "copied merger terms",
+                "extra": {"relative_timestamp": 47.0, "raw_operation": "clipboard_text"},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:48",
+                "event_type": "modified",
+                "file_path": "C:/Users/alice/Desktop/draft.txt",
+                "window_info": {"window_title": "draft.txt - Notepad"},
+                "extra": {"relative_timestamp": 48.0, "raw_operation": "modified"},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:29",
+                "event_type": "created",
+                "file_path": "C:/Users/alice/Pictures/Screenshots/Screenshot.png",
+                "extra": {"relative_timestamp": 89.0, "raw_operation": "created"},
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [sensitive], VisionConfig())
+    clipboard = next(
+        window
+        for window in windows
+        if (47_000, "clipboard") in window.action_phases
+    )
+
+    assert clipboard.start_ms <= 17_000
+    assert clipboard.end_ms >= 77_000
+
+
 def test_global_dedupe_keeps_distant_anchor_frames_with_small_visual_changes() -> None:
     pytest.importorskip("cv2")
     np = pytest.importorskip("numpy")
@@ -2809,6 +3106,254 @@ def test_event_correlator_links_derived_upload_to_original() -> None:
     assert ":transfer" in leaks[0].full_path
 
 
+def test_event_correlator_builds_two_hop_clipboard_lineage_from_bounded_writes() -> None:
+    original = "C:/Users/alice/Desktop/merger_notes.docx"
+    draft = "C:/Users/alice/Desktop/draft.txt"
+    screenshot = "C:/Users/alice/Pictures/Screenshots/Screenshot 2026-06-05.png"
+    records = [
+        {
+            "timestamp": "2026-06-05T22:41:00",
+            "event_type": "modified",
+            "file_path": "C:/Users/alice/AppData/Roaming/Office/state.json",
+            "process_info": {"process_name": "wps.exe"},
+            "window_info": {"window_title": "merger_notes.docx - WPS Office"},
+            "extra": {"relative_timestamp": 0.0, "raw_operation": "modified"},
+        },
+        {
+            "timestamp": "2026-06-05T22:41:47",
+            "event_type": "clipboard_text",
+            "process_info": {"process_name": "wps.exe"},
+            "content_preview": "copied merger terms",
+            "extra": {"relative_timestamp": 47.0, "raw_operation": "clipboard_text"},
+        },
+        {
+            "timestamp": "2026-06-05T22:41:48.250",
+            "event_type": "modified",
+            "file_path": draft,
+            "process_info": {"process_name": "Notepad.exe"},
+            "window_info": {"window_title": "*draft.txt - Notepad"},
+            "extra": {"relative_timestamp": 48.25, "raw_operation": "modified"},
+        },
+        {
+            "timestamp": "2026-06-05T22:42:20",
+            "event_type": "clipboard_image",
+            "process_info": {"process_name": "Notepad.exe"},
+            "extra": {"relative_timestamp": 80.0, "raw_operation": "clipboard_image"},
+        },
+        {
+            "timestamp": "2026-06-05T22:42:29",
+            "event_type": "created",
+            "file_path": screenshot,
+            "process_info": {"process_name": "explorer.exe"},
+            "window_info": {"window_title": "Program Manager"},
+            "extra": {"relative_timestamp": 89.0, "raw_operation": "created"},
+        },
+    ]
+
+    observations = [
+        {
+            "observation_id": "vlm_upload",
+            "start_ms": 120_000,
+            "end_ms": 120_000,
+            "app_name": "QQ",
+            "operation_type": "external_sink_interaction",
+            "resource": Path(screenshot).name,
+            "related_resources": [Path(screenshot).name],
+            "description": "direct_leak: file_send. sink_type=chat_upload. action_status=submitted.",
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+    correlator = EventCorrelator()
+    bundle = correlator.run(
+        {
+            "case_id": "clipboard-lineage",
+            "log_events": records,
+            "frame_segments": observations,
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+    derived = correlator.derived_sensitive_files(normalize_logs(records), [original])
+
+    assert bundle["file_lineage"]["direct_file_mappings"] == {
+        draft: original,
+        screenshot: draft,
+    }
+    assert derived == [draft, screenshot]
+    assert bundle["upload_candidates"][0]["current_file"] == screenshot
+    engine = DatalogEngine(case_id="clipboard-lineage")
+    for fact in bundle["datalog_facts"]:
+        engine.add_fact(fact["relation"], *fact["args"], case_id=fact["case_id"])
+    leak = engine.query_leak()[0]
+    assert leak.file_chain == (original, draft, screenshot)
+    assert [
+        (item.get("source_file"), item.get("derived_file"))
+        for item in leak.flow_steps
+        if item["relation"] == "TransferFile"
+    ] == [(original, draft), (draft, screenshot)]
+
+
+def test_event_correlator_does_not_infer_same_app_family_clipboard_lineage() -> None:
+    original = "C:/Users/alice/Desktop/salary.xlsx"
+    presentation = "C:/Users/alice/Desktop/business_review.pptx"
+    records = [
+        {
+            "timestamp": "2026-06-05T22:41:00",
+            "event_type": "modified",
+            "file_path": original,
+            "process_info": {"process_name": "wps.exe"},
+        },
+        {
+            "timestamp": "2026-06-05T22:41:10",
+            "event_type": "clipboard_text",
+            "process_info": {"process_name": "wps.exe"},
+            "extra": {"raw_operation": "clipboard_text"},
+        },
+        {
+            "timestamp": "2026-06-05T22:41:11",
+            "event_type": "modified",
+            "file_path": presentation,
+            "process_info": {"process_name": "wpp.exe"},
+            "window_info": {"window_title": "business_review.pptx - WPS Office"},
+            "extra": {"raw_operation": "modified"},
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": [], "sensitive_files": [original]}
+    )
+
+    assert bundle["file_lineage"]["direct_file_mappings"] == {}
+
+
+def test_event_correlator_allows_same_process_screenshot_lineage() -> None:
+    original = "C:/Users/alice/Desktop/salary.xlsx"
+    screenshot = "C:/Users/alice/Pictures/Screenshots/Screenshot.png"
+    records = [
+        {
+            "timestamp": "2026-06-05T22:41:00",
+            "event_type": "modified",
+            "file_path": original,
+            "process_info": {"process_name": "wps.exe"},
+        },
+        {
+            "timestamp": "2026-06-05T22:41:10",
+            "event_type": "clipboard_image",
+            "process_info": {"process_name": "wps.exe"},
+            "extra": {"raw_operation": "clipboard_image"},
+        },
+        {
+            "timestamp": "2026-06-05T22:41:11",
+            "event_type": "created",
+            "file_path": screenshot,
+            "process_info": {"process_name": "wps.exe"},
+            "extra": {"raw_operation": "created"},
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": [], "sensitive_files": [original]}
+    )
+
+    assert bundle["file_lineage"]["direct_file_mappings"] == {screenshot: original}
+
+
+@pytest.mark.parametrize(
+    ("source_to_clipboard_seconds", "target_delay_seconds", "target", "window_title"),
+    [
+        (121.0, 1.0, "C:/Users/alice/Desktop/draft.txt", "draft.txt - Notepad"),
+        (10.0, 16.0, "C:/Users/alice/Desktop/draft.txt", "draft.txt - Notepad"),
+        (10.0, 1.0, "C:/Users/alice/Desktop/draft.txt", "notes.txt - Notepad"),
+        (
+            10.0,
+            1.0,
+            "C:/Users/alice/AppData/Local/Packages/Notepad/draft.txt",
+            "draft.txt - Notepad",
+        ),
+    ],
+)
+def test_event_correlator_rejects_unbounded_or_unverified_clipboard_targets(
+    source_to_clipboard_seconds: float,
+    target_delay_seconds: float,
+    target: str,
+    window_title: str,
+) -> None:
+    original = "C:/Users/alice/Desktop/merger_notes.docx"
+    target_time = source_to_clipboard_seconds + target_delay_seconds
+    records = [
+        {
+            "timestamp": "2026-06-05T22:41:00",
+            "event_type": "modified",
+            "file_path": "C:/Users/alice/AppData/Roaming/Office/state.json",
+            "process_info": {"process_name": "wps.exe"},
+            "window_info": {"window_title": "merger_notes.docx - WPS Office"},
+            "extra": {"relative_timestamp": 0.0, "raw_operation": "modified"},
+        },
+        {
+            "timestamp": "2026-06-05T22:43:01",
+            "event_type": "clipboard_text",
+            "process_info": {"process_name": "wps.exe"},
+            "extra": {
+                "relative_timestamp": source_to_clipboard_seconds,
+                "raw_operation": "clipboard_text",
+            },
+        },
+        {
+            "timestamp": "2026-06-05T22:43:02",
+            "event_type": "modified",
+            "file_path": target,
+            "process_info": {"process_name": "Notepad.exe"},
+            "window_info": {"window_title": window_title},
+            "extra": {"relative_timestamp": target_time, "raw_operation": "modified"},
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": [], "sensitive_files": [original]}
+    )
+
+    assert bundle["file_lineage"]["direct_file_mappings"] == {}
+
+
+def test_office_backup_with_sensitive_stem_is_not_a_derived_artifact() -> None:
+    original = "C:/Users/alice/Desktop/employee_salary_q4.xlsx"
+    visible_copy = "C:/Users/alice/Desktop/employee_salary_q4_part1.xlsx"
+    office_backup = (
+        "C:/Users/alice/AppData/Roaming/kingsoft/office6/backup/"
+        "employee_salary_q4_part1.xlsx.ABC123.20260603002354808.et"
+    )
+    records = [
+        {
+            "timestamp": "2026-06-03T00:00:00",
+            "event_type": "created",
+            "file_path": visible_copy,
+            "process_info": {"process_name": "wps.exe"},
+            "window_info": {"window_title": "employee_salary_q4_part1.xlsx - WPS Office"},
+            "extra": {"raw_operation": "created"},
+        },
+        {
+            "timestamp": "2026-06-03T00:01:00",
+            "event_type": "created",
+            "file_path": office_backup,
+            "process_info": {"process_name": "wps.exe"},
+            "window_info": {"window_title": "employee_salary_q4_part1.xlsx - WPS Office"},
+            "extra": {"raw_operation": "created"},
+            "upload_detection": {
+                "is_upload": True,
+                "upload_type": "File Access",
+                "original_file": office_backup,
+            },
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": [], "sensitive_files": [original]}
+    )
+
+    assert bundle["file_lineage"]["direct_file_mappings"] == {visible_copy: original}
+
+
 def test_datalog_path_preserves_every_multi_hop_derivation() -> None:
     original = "C:/Users/alice/Documents/customer_salary.xlsx"
     derived_pdf = "C:/Users/alice/Desktop/customer_salary.pdf"
@@ -2983,6 +3528,60 @@ def test_event_correlator_keeps_log_lineage_in_vlm_only_mode() -> None:
     assert bundle["file_lineage"]["direct_file_mappings"][derived] == original
     assert bundle["correlated_events"][0]["original_file"] == original
     assert bundle["correlated_events"][0]["current_file"] == derived
+
+
+def test_lineage_prefers_unique_full_path_over_duplicate_basename_mapping() -> None:
+    original = "C:/Users/alice/Documents/salary.xlsx"
+    derived = "C:/Users/alice/Pictures/Screenshots/salary.png"
+    lineage = Lineage()
+    lineage.add(derived, original)
+    lineage.add("salary.png", original)
+
+    assert lineage.resolve_artifact("salary.png") == derived
+
+
+def test_visual_upload_keeps_unique_full_derived_artifact_path() -> None:
+    original = "C:/Users/alice/Documents/salary.xlsx"
+    derived = "C:/Users/alice/Pictures/Screenshots/salary.png"
+    observations = [
+        {
+            "observation_id": "vlm_derived",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Snipping Tool",
+            "operation_type": "file_or_content_transfer",
+            "resource": derived,
+            "related_resources": [original, derived],
+            "description": "hidden_transfer: screenshot. action_status=completed.",
+            "confidence": 0.95,
+            "source": "vlm",
+        },
+        {
+            "observation_id": "vlm_upload",
+            "start_ms": 20_000,
+            "end_ms": 20_000,
+            "app_name": "Doubao",
+            "operation_type": "external_sink_interaction",
+            "resource": "salary.png",
+            "related_resources": ["salary.png"],
+            "description": "direct_leak: file_upload. sink_type=ai_chat. action_status=submitted.",
+            "confidence": 0.95,
+            "source": "vlm",
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": [],
+            "frame_segments": observations,
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert len(bundle["upload_candidates"]) == 1
+    assert bundle["upload_candidates"][0]["current_file"] == derived
+    assert "salary.png" not in bundle["file_lineage"]["direct_file_mappings"]
 
 
 def test_event_correlator_resolves_extensionless_upload_selection() -> None:
@@ -3350,6 +3949,80 @@ def test_event_correlator_does_not_promote_browser_cache_noise_to_upload() -> No
     assert not any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
 
 
+def test_event_correlator_keeps_real_file_inside_screenmonitor_tree_but_filters_capture_artifacts() -> None:
+    original = "D:/workspace/ScreenMonitor/windows_monitor/test_files/company_secret.docx"
+    capture_log = "D:/workspace/ScreenMonitor/windows_monitor/recordings/session_20260101/logs/logs.json"
+    observations = [
+        {
+            "observation_id": "vlm_real",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Cloud Drive",
+            "operation_type": "external_sink_interaction",
+            "resource": original,
+            "related_resources": [original],
+            "description": "direct_leak: upload completed. action_status=completed. sink_type=cloud_sync.",
+            "confidence": 0.95,
+            "source": "vlm",
+        },
+        {
+            "observation_id": "vlm_capture_log",
+            "start_ms": 20_000,
+            "end_ms": 20_000,
+            "app_name": "Cloud Drive",
+            "operation_type": "external_sink_interaction",
+            "resource": capture_log,
+            "related_resources": [original],
+            "description": "direct_leak: collector log upload completed. action_status=completed. sink_type=cloud_sync.",
+            "confidence": 0.95,
+            "source": "vlm",
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": [],
+            "frame_segments": observations,
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert [item["current_file"] for item in bundle["upload_candidates"]] == [original]
+
+
+def test_visual_sensitive_mention_prefers_longest_specific_filename() -> None:
+    shorter = "C:/Users/alice/Desktop/公司机密.docx"
+    specific = "D:/workspace/ScreenMonitor/windows_monitor/test_files/公司机密条款.docx"
+    derived = "公司机密条款.zip"
+    observations = [
+        {
+            "observation_id": "vlm_specific",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "File Explorer",
+            "operation_type": "file_or_content_transfer",
+            "resource": derived,
+            "related_resources": ["公司机密条款.docx", derived],
+            "description": "hidden_transfer: 公司机密条款.docx was compressed to 公司机密条款.zip.",
+            "confidence": 0.9,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": [],
+            "frame_segments": observations,
+            "sensitive_files": [shorter, specific],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert bundle["correlated_events"][0]["original_file"] == specific
+    assert bundle["file_lineage"]["direct_file_mappings"][derived] == specific
+
+
 def test_visual_upload_candidate_leaks_original_when_frame_only_has_basename() -> None:
     original = "C:/Users/alice/Desktop/secret.docx"
     observations = [
@@ -3427,6 +4100,88 @@ def test_unbound_visual_direct_leak_becomes_suspicious_behavior() -> None:
     assert len(suspicious) == 1
 
 
+def test_actionless_unknown_risk_does_not_inherit_prior_sensitive_identity() -> None:
+    original = "C:/Users/alice/Documents/salary.xlsx"
+    observations = [
+        {
+            "observation_id": "vlm_identity",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Excel",
+            "operation_type": "file_or_content_transfer",
+            "resource": original,
+            "related_resources": [original],
+            "description": "hidden_transfer: copy. action_status=completed.",
+            "confidence": 0.9,
+            "source": "vlm",
+        },
+        {
+            "observation_id": "vlm_unknown_app",
+            "start_ms": 20_000,
+            "end_ms": 20_000,
+            "app_name": "Doubao",
+            "operation_type": "external_sink_interaction",
+            "resource": "unknown",
+            "related_resources": [],
+            "description": "unknown_risk: ai_chat. action_status=unknown. No outbound action is visible.",
+            "confidence": 0.6,
+            "source": "vlm",
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": [],
+            "frame_segments": observations,
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert bundle["upload_candidates"] == []
+    assert not any(item["app_name"] == "Doubao" for item in bundle["correlated_events"])
+
+
+def test_visible_cloud_menu_is_preparation_not_confirmed_upload() -> None:
+    original = "C:/Users/alice/Documents/salary.xlsx"
+    parsed = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "evidence_frame_ids": ["frame_menu"],
+                        "timestamp_ms": 10_000,
+                        "app_name": "WPS Office",
+                        "behavior_category": "direct_leak",
+                        "operation_type": "cloud_upload",
+                        "original_filename": "salary.xlsx",
+                        "sink_type": "cloud_sync",
+                        "action_status": "selected",
+                        "description": (
+                            "The Upload to cloud document menu was opened, indicating an intent "
+                            "to sync the file. No upload progress is visible."
+                        ),
+                    }
+                ]
+            }
+        ),
+        keywords=[original],
+    )
+
+    assert len(parsed.events) == 1
+    assert parsed.events[0].behavior_category == "unknown_risk"
+    assert parsed.events[0].action_status == "unknown"
+    bundle = EventCorrelator().run(
+        {
+            "log_events": [],
+            "frame_segments": vision_events_to_observations(parsed.events),
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+    assert bundle["upload_candidates"] == []
+
+
 def test_vlm_removable_media_event_becomes_external_sink() -> None:
     response = json.dumps(
         {
@@ -3478,6 +4233,77 @@ def test_vlm_hidden_transfer_does_not_become_external_sink_from_menu_text() -> N
     assert observations[0].operation_type == "file_or_content_transfer"
 
 
+@pytest.mark.parametrize(
+    ("app_name", "operation_type", "action_status"),
+    [
+        ("Doubao AI", "copy_paste_to_ai", "completed"),
+        ("DeepSeek", "ai_prompt_paste", "submitted"),
+    ],
+)
+def test_vlm_structured_ai_chat_direct_leak_becomes_external_sink(
+    app_name: str,
+    operation_type: str,
+    action_status: str,
+) -> None:
+    event = ParsedVisionEvent(
+        start_ms=10_000,
+        end_ms=10_000,
+        app_name=app_name,
+        behavior_category="direct_leak",
+        operation_type=operation_type,
+        original_resource="company_strategy.txt",
+        modified_resource="unknown",
+        description="The model produced an answer to the submitted content.",
+        confidence=0.95,
+        sink_type="ai_chat",
+        action_status=action_status,
+    )
+
+    observations = vision_events_to_observations([event])
+
+    assert observations[0].operation_type == "external_sink_interaction"
+
+
+def test_vlm_direct_leak_with_explicit_outbound_action_becomes_external_sink_without_sink_type() -> None:
+    event = ParsedVisionEvent(
+        start_ms=10_000,
+        end_ms=10_000,
+        app_name="External service",
+        behavior_category="direct_leak",
+        operation_type="ai_prompt_paste",
+        original_resource="company_strategy.txt",
+        modified_resource="unknown",
+        description="The request was accepted.",
+        confidence=0.9,
+        sink_type="unknown",
+        action_status="submitted",
+    )
+
+    observations = vision_events_to_observations([event])
+
+    assert observations[0].operation_type == "external_sink_interaction"
+
+
+def test_vlm_hidden_selected_generic_send_panel_stays_content_transfer() -> None:
+    event = ParsedVisionEvent(
+        start_ms=10_000,
+        end_ms=10_000,
+        app_name="Generic transfer panel",
+        behavior_category="hidden_transfer",
+        operation_type="send_to_phone",
+        original_resource="company_strategy.txt",
+        modified_resource="unknown",
+        description="The panel is visible, but no destination or transfer queue is shown.",
+        confidence=0.8,
+        sink_type="chat_upload",
+        action_status="selected",
+    )
+
+    observations = vision_events_to_observations([event])
+
+    assert observations[0].operation_type == "file_or_content_transfer"
+
+
 def test_vlm_derived_lineage_links_later_upload_log_to_original() -> None:
     original = "C:/Users/alice/Documents/secret.docx"
     derived = "C:/Users/alice/Desktop/secret_screen.png"
@@ -3519,8 +4345,82 @@ def test_vlm_derived_lineage_links_later_upload_log_to_original() -> None:
     assert leaks
 
 
-def test_datalog_engine_finds_derived_file_leak() -> None:
+def test_source_named_split_directory_links_unique_wrapped_alias_to_later_upload() -> None:
+    original = "C:/Users/alice/WPSDrive/team/产品设计机密.ksheet"
+    derived = "C:/Users/alice/WPSDrive/team/产品设计机密/2.ksheet.wpsonline"
+    unrelated_parent = "C:/Users/alice/Downloads/产品设计机密/3.ksheet.wpsonline"
+    wrong_inner_type = "C:/Users/alice/WPSDrive/team/产品设计机密/notes.docx.wpsonline"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "opened",
+            "file_path": original,
+            "process_info": {"process_name": "wps.exe"},
+        },
+        {
+            "timestamp": "2026-01-01T00:01:00",
+            "event_type": "created",
+            "file_path": derived,
+            "process_info": {"process_name": "mailmaster.exe"},
+            "window_info": {"window_title": "New mail"},
+            "extra": {"raw_operation": "created"},
+        },
+        {
+            "timestamp": "2026-01-01T00:01:01",
+            "event_type": "created",
+            "file_path": unrelated_parent,
+            "process_info": {"process_name": "mailmaster.exe"},
+            "extra": {"raw_operation": "created"},
+        },
+        {
+            "timestamp": "2026-01-01T00:01:02",
+            "event_type": "created",
+            "file_path": wrong_inner_type,
+            "process_info": {"process_name": "mailmaster.exe"},
+            "extra": {"raw_operation": "created"},
+        },
+    ]
+    observations = [
+        {
+            "observation_id": "vlm_mail",
+            "start_ms": 1_767_225_720_000,
+            "end_ms": 1_767_225_720_000,
+            "app_name": "Mail Master",
+            "operation_type": "external_sink_interaction",
+            "resource": "2.ksheet",
+            "related_resources": ["2.ksheet"],
+            "description": "direct_leak: email attachment sent. action_status=completed. sink_type=mail_attachment.",
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": records,
+            "frame_segments": observations,
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+    mappings = bundle["file_lineage"]["direct_file_mappings"]
+    upload = bundle["upload_candidates"][0]
     engine = DatalogEngine()
+    for fact in bundle["datalog_facts"]:
+        engine.add_fact(fact["relation"], *fact["args"])
+
+    assert mappings[derived] == original
+    assert unrelated_parent not in mappings
+    assert wrong_inner_type not in mappings
+    assert upload["original_file"] == original
+    assert upload["current_file"] == derived
+    leaks = engine.query_leak()
+    assert len(leaks) == 1
+    assert leaks[0].leaked_file == derived
+
+
+def test_datalog_engine_finds_derived_file_leak() -> None:
+    engine = DatalogEngine(case_id="unit-case")
     engine.add_fact("OpenFile", "open_1", "excel.exe", "secret.xlsx", 1)
     engine.add_fact("TransferFile", "copy_1", "excel.exe", "secret.xlsx", "secret_copy.xlsx", 2)
     engine.add_fact("LeakFile", "upload_1", "excel.exe", "secret_copy.xlsx", "network", 3)
@@ -3529,6 +4429,65 @@ def test_datalog_engine_finds_derived_file_leak() -> None:
 
     assert len(leaks) == 1
     assert leaks[0].full_path == "open_1 -> copy_1 -> upload_1"
+    assert {fact.case_id for facts in engine.facts.values() for fact in facts} == {"unit-case"}
+    assert leaks[0].case_id == "unit-case"
+    assert leaks[0].source_file == "secret.xlsx"
+    assert leaks[0].file_chain == ("secret.xlsx", "secret_copy.xlsx")
+    assert [item["relation"] for item in leaks[0].flow_steps] == [
+        "OpenFile",
+        "TransferFile",
+        "LeakFile",
+    ]
+
+
+def test_datalog_engine_prefers_complete_lineage_over_earlier_shortcut() -> None:
+    engine = DatalogEngine(case_id="case-with-lineage")
+    engine.add_fact("OpenFile", "open_source", "case_lineage", "secret.docx", 100)
+    engine.add_fact("TransferFile", "to_draft", "case_lineage", "secret.docx", "draft.txt", 110)
+    engine.add_fact("TransferFile", "shortcut", "case_lineage", "secret.docx", "shot.png", 120)
+    engine.add_fact("TransferFile", "to_shot", "case_lineage", "draft.txt", "shot.png", 130)
+    engine.add_fact("CrossProcessTransfer", "sink_access", "case_lineage", "qq", "shot.png", 200)
+    engine.add_fact("LeakFile", "send_shot", "qq", "shot.png", "chat_upload", 210)
+
+    leak = engine.query_leak()[0]
+
+    assert leak.full_path == "open_source -> to_draft -> to_shot -> sink_access -> send_shot"
+    assert leak.file_chain == ("secret.docx", "draft.txt", "shot.png")
+    assert [
+        (item.get("source_file"), item.get("derived_file"))
+        for item in leak.flow_steps
+        if item["relation"] == "TransferFile"
+    ] == [("secret.docx", "draft.txt"), ("draft.txt", "shot.png")]
+
+
+def test_datalog_engine_enforces_forward_time_and_preserves_leak_timestamp() -> None:
+    engine = DatalogEngine()
+    engine.add_fact("OpenFile", "day1_open", "lineage", "secret.docx", 100)
+    engine.add_fact("TransferFile", "day2_convert", "lineage", "secret.docx", "secret.pdf", 200)
+    engine.add_fact("LeakFile", "day3_upload", "lineage", "secret.pdf", "network", 300)
+
+    leaks = engine.query_leak()
+
+    assert len(leaks) == 1
+    assert leaks[0].full_path == "day1_open -> day2_convert -> day3_upload"
+    assert leaks[0].leak_timestamp == 300
+
+    reverse = DatalogEngine()
+    reverse.add_fact("OpenFile", "day3_open", "lineage", "secret.docx", 300)
+    reverse.add_fact("TransferFile", "day2_convert", "lineage", "secret.docx", "secret.pdf", 200)
+    reverse.add_fact("LeakFile", "day1_upload", "lineage", "secret.pdf", "network", 100)
+
+    assert reverse.query_leak() == []
+
+
+def test_datalog_engine_binds_first_case_and_rejects_cross_case_facts() -> None:
+    engine = DatalogEngine()
+    engine.add_fact("OpenFile", "open_a", "proc", "secret.txt", 1, case_id="case-a")
+
+    assert engine.case_id == "case-a"
+    assert engine.facts["OpenFile"][0].case_id == "case-a"
+    with pytest.raises(ValueError, match="fact_case_mismatch"):
+        engine.add_fact("LeakFile", "leak_b", "proc", "secret.txt", "network", 2, case_id="case-b")
 
 
 def test_datalog_engine_derives_clipboard_cross_process_transfer() -> None:
@@ -3542,6 +4501,185 @@ def test_datalog_engine_derives_clipboard_cross_process_transfer() -> None:
 
     assert len(leaks) == 1
     assert leaks[0].leaking_proc == "browser.exe"
+
+
+def test_build_datalog_facts_rejects_upload_before_later_canonical_derivation() -> None:
+    source = "C:/Users/alice/Documents/secret.docx"
+    derived = "C:/Users/alice/Desktop/secret.pdf"
+    derive_timestamp = "2026-06-28T10:01:00.000"
+    upload_timestamp = "2026-06-28T10:00:00.000"
+    lineage = Lineage()
+    lineage.add(derived, source)
+    facts = build_datalog_facts(
+        [
+            CorrelatedEvent(
+                event_id="upload_before_derivation",
+                timestamp=upload_timestamp,
+                event_type="file_upload",
+                app_name="browser.exe",
+                original_file=source,
+                current_file=derived,
+                operation_type="external_sink_interaction",
+                behavior_category="data_exfiltration_candidate",
+                confidence=0.95,
+            ),
+            CorrelatedEvent(
+                event_id="derive_after_upload",
+                timestamp=derive_timestamp,
+                event_type="print_to_pdf",
+                app_name="wps.exe",
+                original_file=source,
+                current_file=derived,
+                operation_type="file_or_content_transfer",
+                behavior_category="hidden_transformation_candidate",
+                confidence=0.95,
+            )
+        ],
+        [
+            UploadCandidate(
+                candidate_id="early_upload",
+                timestamp=upload_timestamp,
+                app_name="browser.exe",
+                original_file=source,
+                current_file=derived,
+                sink_type="chat_upload",
+                risk_level="completed",
+                confidence=0.95,
+            )
+        ],
+        lineage,
+        case_id="time-order",
+    )
+
+    canonical_transfer = next(
+        fact
+        for fact in facts
+        if fact.relation == "TransferFile"
+        and fact.args[1] == "case_lineage"
+        and same_file(str(fact.args[2]), source)
+        and same_file(str(fact.args[3]), derived)
+    )
+    assert canonical_transfer.args[4] == parse_timestamp_ms(derive_timestamp)
+
+    engine = DatalogEngine(case_id="time-order")
+    for fact in facts:
+        engine.add_fact(fact.relation, *fact.args, case_id=fact.case_id)
+    assert engine.query_leak() == []
+
+
+def test_lineage_resolves_two_hops_across_windows_case_and_slash_variants() -> None:
+    source = r"C:\Users\Alice\Documents\Secret.DOCX"
+    draft = r"C:\Users\Alice\Desktop\Draft.TXT"
+    screenshot = r"C:\Users\Alice\Pictures\Screenshot.PNG"
+    lineage = Lineage()
+    lineage.add(draft, source)
+    lineage.add(
+        "c:/users/ALICE/pictures/screenshot.png",
+        "c:/users/ALICE/desktop/draft.txt",
+    )
+
+    chain = lineage.chain(r"c:\USERS\alice\PICTURES\SCREENSHOT.png")
+
+    assert len(chain) == 3
+    assert all(same_file(actual, expected) for actual, expected in zip(chain, [screenshot, draft, source], strict=True))
+
+
+def test_datalog_engine_upload_binding_selects_declared_source_at_merge() -> None:
+    source_a = "C:/source/declared-a.docx"
+    source_b = "C:/source/other-b.docx"
+    merged = "C:/derived/shared-screenshot.png"
+    engine = DatalogEngine(case_id="merged-sources")
+    # Lexical path ranking prefers B unless UploadBinding constrains this leak to A.
+    engine.add_fact("OpenFile", "z_open_a", "case_lineage", source_a, 10)
+    engine.add_fact("TransferFile", "z_merge_a", "case_lineage", source_a, merged, 20)
+    engine.add_fact("OpenFile", "a_open_b", "case_lineage", source_b, 10)
+    engine.add_fact("TransferFile", "a_merge_b", "case_lineage", source_b, merged, 20)
+    engine.add_fact("CrossProcessTransfer", "sink_access", "case_lineage", "qq.exe", merged, 30)
+    engine.add_fact("UploadBinding", "bind_a", "send_shared", source_a, merged, 30)
+    engine.add_fact("LeakFile", "send_shared", "qq.exe", merged, "chat_upload", 31)
+
+    leaks = engine.query_leak()
+
+    assert len(leaks) == 1
+    assert leaks[0].source_file == source_a
+    assert leaks[0].file_chain == (source_a, merged)
+    assert source_b not in leaks[0].file_chain
+
+
+def test_build_datalog_facts_assigns_unique_operation_ids() -> None:
+    source = "C:/Users/alice/Documents/secret.docx"
+    draft = "C:/Users/alice/Desktop/draft.txt"
+    screenshot = "C:/Users/alice/Pictures/screenshot.png"
+    lineage = Lineage()
+    lineage.add(draft, source)
+    lineage.add(screenshot, draft)
+    correlated = [
+        CorrelatedEvent(
+            event_id="derive_draft",
+            timestamp="2026-06-28T10:00:10.000",
+            event_type="modified",
+            app_name="notepad.exe",
+            original_file=source,
+            current_file=draft,
+            operation_type="file_or_content_transfer",
+            behavior_category="hidden_transformation_candidate",
+            confidence=0.9,
+        ),
+        CorrelatedEvent(
+            event_id="derive_screenshot",
+            timestamp="2026-06-28T10:00:20.000",
+            event_type="created",
+            app_name="screen_capture.exe",
+            original_file=draft,
+            current_file=screenshot,
+            operation_type="file_or_content_transfer",
+            behavior_category="hidden_transformation_candidate",
+            confidence=0.9,
+        ),
+    ]
+    uploads = [
+        UploadCandidate(
+            candidate_id="send_screenshot",
+            timestamp="2026-06-28T10:00:30.000",
+            app_name="qq.exe",
+            original_file=source,
+            current_file=screenshot,
+            sink_type="chat_upload",
+            risk_level="completed",
+            confidence=0.95,
+        )
+    ]
+
+    facts = build_datalog_facts(correlated, uploads, lineage, case_id="unique-ops")
+    operation_ids = [str(fact.args[0]) for fact in facts]
+
+    assert operation_ids
+    assert len(operation_ids) == len(set(operation_ids))
+
+
+def test_leak_path_with_structured_flow_steps_is_hashable() -> None:
+    leak = LeakPath(
+        start_op="open_secret",
+        end_op="send_secret",
+        leaking_proc="qq.exe",
+        leaked_file="C:/derived/secret.png",
+        leak_channel="chat_upload",
+        leak_timestamp=30,
+        full_path="open_secret -> derive_secret -> send_secret",
+        case_id="hashable-path",
+        source_file="C:/source/secret.docx",
+        file_chain=("C:/source/secret.docx", "C:/derived/secret.png"),
+        flow_steps=(
+            {
+                "relation": "TransferFile",
+                "source_file": "C:/source/secret.docx",
+                "derived_file": "C:/derived/secret.png",
+            },
+        ),
+    )
+
+    assert isinstance(hash(leak), int)
+    assert leak in {leak}
 
 
 def test_qwen_response_parser_keeps_risky_aliases_and_drops_normal_events() -> None:
@@ -4038,6 +5176,275 @@ def test_pipeline_passes_recursive_log_derived_context_to_log_and_vision(monkeyp
     assert report["event_correlator"]["file_lineage"]["direct_file_mappings"][second_derived] == first_derived
 
 
+def _write_composite_session(
+    case_dir: Path,
+    session_id: str,
+    recording_time: str,
+    records: list[dict],
+) -> Path:
+    session_dir = case_dir / session_id
+    (session_dir / "logs").mkdir(parents=True)
+    (session_dir / "video").mkdir()
+    (session_dir / "logs" / "keyevents.json").write_text(
+        json.dumps(records, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (session_dir / "video" / f"recording_{session_id.removeprefix('session_')}.mp4").write_bytes(b"video")
+    (session_dir / "INDEX.md").write_text(
+        f"**Session ID**: {session_id.removeprefix('session_')}\n**Recording Time**: {recording_time}\n",
+        encoding="utf-8",
+    )
+    return session_dir
+
+
+def test_dataset_discovery_groups_direct_sessions_as_one_case(tmp_path: Path) -> None:
+    root = tmp_path / "stage4"
+    case_dir = root / "e2e-1"
+    case_dir.mkdir(parents=True)
+    (case_dir / "groundtruth.json").write_text(json.dumps({"operations": []}), encoding="utf-8")
+    first = _write_composite_session(case_dir, "session_20260101_090000", "2026-01-01 09:00:00", [])
+    second = _write_composite_session(case_dir, "session_20260103_110000", "2026-01-03 11:00:00", [])
+
+    discovered = discover_data_case_directories(root)
+    case = discover_data_case(case_dir, case_root=root)
+    promoted = discover_data_case(first, case_root=root)
+
+    assert discovered == [case_dir]
+    assert first not in discovered and second not in discovered
+    assert case.case_id == "e2e-1"
+    assert promoted.case_dir == case_dir
+    assert promoted.case_id == "e2e-1"
+    assert [item.session_id for item in case.sessions] == [
+        "session_20260101_090000",
+        "session_20260103_110000",
+    ]
+    assert case.to_input_metadata()["session_count"] == 2
+
+
+def test_composite_case_merges_sessions_on_absolute_timeline_and_reasons_once(tmp_path: Path) -> None:
+    root = tmp_path / "stage4"
+    case_dir = root / "e2e-7"
+    case_dir.mkdir(parents=True)
+    original = "C:/work/company_strategy.docx"
+    derived = "C:/work/company_strategy.pdf"
+    _write_composite_session(
+        case_dir,
+        "session_20260101_090000",
+        "2026-01-01 09:00:00",
+        [
+            {
+                "timestamp": "2026-01-01T09:00:10",
+                "event_type": "print_to_pdf",
+                "file_path": derived,
+                "source_file": original,
+                "destination_path": derived,
+                "extra": {"raw_operation": "print_to_pdf", "relative_timestamp": 10.0},
+                "process_info": {"process_name": "wps.exe"},
+            }
+        ],
+    )
+    _write_composite_session(
+        case_dir,
+        "session_20260103_110000",
+        "2026-01-03 11:00:00",
+        [
+            {
+                "timestamp": "2026-01-03T11:00:10",
+                "event_type": "file_upload",
+                "file_path": derived,
+                "extra": {"raw_operation": "file_upload", "category": "upload", "relative_timestamp": 10.0},
+                "process_info": {"process_name": "mail.exe"},
+            }
+        ],
+    )
+    (case_dir / "groundtruth.json").write_text(
+        json.dumps({"operations": [{"operation": "direct leak", "sensitive_file_path": derived}]}),
+        encoding="utf-8",
+    )
+    sensitive_config = tmp_path / "sensitive_files.json"
+    sensitive_config.write_text(json.dumps({"sensitive_files": [original]}), encoding="utf-8")
+
+    report = run_data_case(
+        case_dir,
+        case_root=root,
+        sensitive_files_config=sensitive_config,
+        vision_enabled=False,
+        neo4j_log_miner=False,
+        output_dir=tmp_path / "out",
+    )
+
+    assert report["input"]["case_id"] == "e2e-7"
+    assert report["input"]["session_count"] == 2
+    assert report["summary"]["sessions"] == 2
+    assert report["summary"]["logs"] == 2
+    assert report["event_correlator"]["session_id"] == "e2e-7"
+    assert report["event_correlator"]["case_id"] == "e2e-7"
+    assert {item["_dld_session_id"] for item in report["event_correlator"]["raw_log_events"]} == {
+        "session_20260101_090000",
+        "session_20260103_110000",
+    }
+    assert {
+        item["event_id"].split(":", 1)[0]
+        for item in report["event_correlator"]["raw_log_events"]
+    } == {
+        "session_20260101_090000",
+        "session_20260103_110000",
+    }
+    assert {item["case_id"] for item in report["event_correlator"]["datalog_facts"]} == {"e2e-7"}
+    assert report["event_correlator"]["file_lineage"]["direct_file_mappings"][derived] == original
+    observations = report["frame_analyzer"]["observations"]
+    assert len({item["observation_id"] for item in observations}) == len(observations)
+    assert max(item["start_ms"] for item in observations) - min(item["start_ms"] for item in observations) > 2 * 86_400_000
+    leak = report["leak_reasoner"]["leak_paths"][0]
+    assert report["leak_reasoner"]["case_id"] == "e2e-7"
+    assert leak["case_id"] == "e2e-7"
+    assert leak["start_op"] == "corr_0:open"
+    assert ":transfer:lineage" in leak["full_path"]
+    assert ":access" in leak["full_path"]
+    assert leak["leak_timestamp"] == 1_767_438_010_000
+    event_details = json.loads(Path(report["detail_files"]["event_correlator_details"]).read_text(encoding="utf-8"))
+    assert len(event_details["raw_log_events_sources"]) == 2
+    assert {item["case_id"] for item in event_details["datalog_facts"]} == {"e2e-7"}
+    persisted_leaks = json.loads(Path(report["detail_files"]["leak_paths"]).read_text(encoding="utf-8"))
+    assert {item["case_id"] for item in persisted_leaks} == {"e2e-7"}
+    readable_report = json.loads(Path(report["report_file"]).read_text(encoding="utf-8"))
+    assert readable_report["event_correlator"]["case_id"] == "e2e-7"
+    assert readable_report["leak_reasoner"]["case_id"] == "e2e-7"
+
+
+def test_release_full_flow_keeps_facts_and_leak_paths_scoped_to_composite_cases(tmp_path: Path) -> None:
+    root = tmp_path / "stage4"
+    cases = {
+        "case-a": {
+            "original": "C:/work/case_a_secret.docx",
+            "derived": "C:/work/case_a_secret.pdf",
+            "sessions": ("session_20260101_090000", "session_20260103_110000"),
+            "times": ("2026-01-01 09:00:00", "2026-01-03 11:00:00"),
+        },
+        "case-b": {
+            "original": "C:/work/case_b_secret.xlsx",
+            "derived": "C:/work/case_b_secret.csv",
+            "sessions": ("session_20260201_090000", "session_20260203_110000"),
+            "times": ("2026-02-01 09:00:00", "2026-02-03 11:00:00"),
+        },
+    }
+    for case_id, expected in cases.items():
+        case_dir = root / case_id
+        case_dir.mkdir(parents=True)
+        first_session, second_session = expected["sessions"]
+        first_time, second_time = expected["times"]
+        original = expected["original"]
+        derived = expected["derived"]
+        _write_composite_session(
+            case_dir,
+            first_session,
+            first_time,
+            [
+                {
+                    "event_id": f"{case_id}:derive",
+                    "timestamp": first_time.replace(" ", "T"),
+                    "event_type": "print_to_pdf",
+                    "file_path": derived,
+                    "source_file": original,
+                    "destination_path": derived,
+                    "extra": {"raw_operation": "print_to_pdf", "relative_timestamp": 0.0},
+                    "process_info": {"process_name": "office.exe"},
+                }
+            ],
+        )
+        _write_composite_session(
+            case_dir,
+            second_session,
+            second_time,
+            [
+                {
+                    "event_id": f"{case_id}:upload",
+                    "timestamp": second_time.replace(" ", "T"),
+                    "event_type": "file_upload",
+                    "file_path": derived,
+                    "extra": {"raw_operation": "file_upload", "category": "upload", "relative_timestamp": 0.0},
+                    "process_info": {"process_name": "browser.exe"},
+                }
+            ],
+        )
+        (case_dir / "groundtruth.json").write_text(
+            json.dumps({"operations": [{"operation": "direct leak", "sensitive_file_path": derived}]}),
+            encoding="utf-8",
+        )
+
+    sensitive_config = tmp_path / "sensitive_files.json"
+    sensitive_config.write_text(
+        json.dumps({"sensitive_files": [expected["original"] for expected in cases.values()]}),
+        encoding="utf-8",
+    )
+
+    result = run_e2e_module._run_case_root(
+        str(root),
+        common_args={
+            "sensitive_files_config": sensitive_config,
+            "vision_enabled": False,
+            "neo4j_log_miner": False,
+        },
+        output_dir=str(tmp_path / "release"),
+        workers=2,
+        release=True,
+    )
+
+    release_report = result["release_report"]
+    assert release_report["batch"]["case_count"] == 2
+    assert release_report["batch"]["completed_cases"] == 2
+    reports_by_case = {item["case_id"]: item for item in release_report["cases"]}
+    assert set(reports_by_case) == set(cases)
+
+    for case_id, expected in cases.items():
+        case_report = reports_by_case[case_id]
+        facts = case_report["event_correlator"]["datalog_facts"]
+        leak_paths = case_report["leak_reasoner"]["leak_paths"]
+        first_time, second_time = (parse_timestamp_ms(item) for item in expected["times"])
+        other_case = next(item for item in cases.values() if item is not expected)
+
+        assert case_report["event_correlator"]["case_id"] == case_id
+        assert case_report["event_correlator"]["session_id"] == case_id
+        assert case_report["leak_reasoner"]["case_id"] == case_id
+        assert case_report["summary"]["sessions"] == 2
+        assert case_report["summary"]["datalog_facts"] == len(facts)
+        assert case_report["summary"]["leak_paths"] == len(leak_paths) == 1
+        assert {item["relation"] for item in facts} >= {
+            "OpenFile",
+            "TransferFile",
+            "CrossProcessTransfer",
+            "LeakFile",
+        }
+        assert {item["case_id"] for item in facts} == {case_id}
+
+        serialized_facts = json.dumps(facts, ensure_ascii=False)
+        assert expected["original"] in serialized_facts
+        assert expected["derived"] in serialized_facts
+        assert other_case["original"] not in serialized_facts
+        assert other_case["derived"] not in serialized_facts
+
+        source_fact = next(
+            item
+            for item in facts
+            if item["relation"] == "OpenFile" and expected["original"] in item["args"]
+        )
+        leak_fact = next(
+            item
+            for item in facts
+            if item["relation"] == "LeakFile" and expected["derived"] in item["args"]
+        )
+        assert source_fact["args"][-1] == first_time
+        assert leak_fact["args"][-1] == second_time
+
+        leak = leak_paths[0]
+        assert leak["case_id"] == case_id
+        assert leak["leaked_file"] == expected["derived"]
+        assert source_fact["args"][0] in leak["full_path"]
+        assert leak_fact["args"][0] in leak["full_path"]
+        assert leak["leak_timestamp"] == second_time
+        assert other_case["derived"] not in json.dumps(leak, ensure_ascii=False)
+
+
 def test_dataset_case_discovery_uses_real_data_layout(tmp_path: Path) -> None:
     case_dir = tmp_path / "case"
     logs_dir = case_dir / "logs"
@@ -4101,6 +5508,20 @@ def test_dataset_case_discovery_prefers_indexed_video(tmp_path: Path) -> None:
     assert case.video_file and case.video_file.name == "recording_20240102_000000.mp4"
 
 
+def test_dataset_case_discovery_uses_timestamped_video_when_index_is_missing(tmp_path: Path) -> None:
+    case_dir = tmp_path / "case"
+    logs_dir = case_dir / "logs"
+    video_dir = case_dir / "video"
+    logs_dir.mkdir(parents=True)
+    video_dir.mkdir()
+    (logs_dir / "keyevents.json").write_text(json.dumps(_records()), encoding="utf-8")
+    (video_dir / "recording_20260602_234649.mp4").write_bytes(b"not a real video")
+
+    case = discover_data_case(case_dir)
+
+    assert case.recording_start_ms == parse_timestamp_ms("2026-06-02 23:46:49")
+
+
 def test_dataset_case_discovery_uses_relative_case_id_and_marks_missing_child_groundtruth(tmp_path: Path) -> None:
     root = tmp_path / "stage1"
     parent = root / "1-email-QQemail-1"
@@ -4122,7 +5543,7 @@ def test_dataset_case_discovery_uses_relative_case_id_and_marks_missing_child_gr
     assert case.nearest_ancestor_groundtruth_file == parent / "groundtruth.json"
 
 
-def test_dataset_case_discovery_can_inherit_ancestor_groundtruth(tmp_path: Path) -> None:
+def test_dataset_case_discovery_promotes_single_session_to_parent_case(tmp_path: Path) -> None:
     root = tmp_path / "stage1"
     parent = root / "3-Messaging-TIM-5"
     child = parent / "session_20260420_222538"
@@ -4143,17 +5564,18 @@ def test_dataset_case_discovery_can_inherit_ancestor_groundtruth(tmp_path: Path)
 
     sensitive_config = tmp_path / "sensitive_files.json"
     sensitive_config.write_text(json.dumps({"sensitive_files": ["C:/secret.docx"]}), encoding="utf-8")
-    case = discover_data_case(
-        child,
-        case_root=root,
-        inherit_ancestor_groundtruth=True,
-        sensitive_files_config=sensitive_config,
-    )
+    discovered = discover_data_case_directories(root)
+    case = discover_data_case(child, case_root=root, sensitive_files_config=sensitive_config)
 
-    assert case.case_id == "3-Messaging-TIM-5/session_20260420_222538"
+    assert discovered == [parent]
+    assert child not in discovered
+    assert case.case_dir == parent
+    assert case.case_id == "3-Messaging-TIM-5"
     assert case.groundtruth_file == parent / "groundtruth.json"
-    assert case.groundtruth_status == "inherited_from_ancestor"
-    assert case.nearest_ancestor_groundtruth_file == parent / "groundtruth.json"
+    assert case.groundtruth_status == "available"
+    assert case.nearest_ancestor_groundtruth_file is None
+    assert [session.session_dir for session in case.sessions] == [child]
+    assert case.to_input_metadata()["session_count"] == 1
     assert case.sensitive_files == ("C:/secret.docx",)
     assert case.recording_start_ms == 1776723938000
 
@@ -4667,6 +6089,30 @@ def test_groundtruth_verdict_does_not_treat_monitor_name_as_leak(tmp_path: Path)
     assert verdict.conclusion == "no_confirmed_data_leak"
     assert len(verdict.leak_operations) == 0
     assert len(verdict.non_leak_operations) == 1
+
+
+def test_groundtruth_english_leak_token_uses_word_boundaries_and_reads_plural_paths(tmp_path: Path) -> None:
+    groundtruth = tmp_path / "groundtruth.json"
+    paths = ["C:/derived/2.ksheet", "C:/derived/3.ksheet"]
+    groundtruth.write_text(
+        json.dumps(
+            {
+                "operations": [
+                    {
+                        "operation": "潜在隐藏行为-手动录入-D:/DataLeakDetector/output.txt",
+                        "sensitive_file_paths": paths,
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    verdict = evaluate_groundtruth(groundtruth)
+
+    assert verdict.conclusion == "suspicious_behavior_detected"
+    assert verdict.unknown_risk_operations[0].sensitive_file == "; ".join(paths)
 
 
 def test_pipeline_conclusion_keeps_detector_result_when_groundtruth_available(tmp_path: Path) -> None:

@@ -151,7 +151,7 @@ def _extract_operations(payload: Any, policy: GroundTruthPolicy) -> tuple[Ground
             GroundTruthOperation(
                 index=index,
                 timestamp=str(item.get("operation_time") or item.get("timestamp") or item.get("time") or ""),
-                sensitive_file=str(item.get("sensitive_file_path") or item.get("sensitive_file") or item.get("source_file") or ""),
+                sensitive_file=_sensitive_file_text(item),
                 operation=operation_text,
                 label=_label_operation(operation_text, policy),
             )
@@ -244,7 +244,26 @@ def _walk_path(value: Any, parts: tuple[str, ...]) -> list[Any]:
 
 
 def _contains_any(text: str, tokens: tuple[str, ...]) -> bool:
-    return any(normalize_text(token) in text for token in tokens if normalize_text(token))
+    for token in tokens:
+        normalized_token = normalize_text(token)
+        if not normalized_token:
+            continue
+        if re.fullmatch(r"[a-z0-9 ]+", normalized_token):
+            if re.search(rf"(?<![a-z0-9]){re.escape(normalized_token)}(?![a-z0-9])", text):
+                return True
+        elif normalized_token in text:
+            return True
+    return False
+
+
+def _sensitive_file_text(item: dict[str, Any]) -> str:
+    singular = item.get("sensitive_file_path") or item.get("sensitive_file") or item.get("source_file")
+    if singular:
+        return str(singular)
+    plural = item.get("sensitive_file_paths")
+    if isinstance(plural, list | tuple):
+        return "; ".join(str(path) for path in plural if str(path).strip())
+    return str(plural or "")
 
 
 def _tokens(raw: dict[str, Any], key: str, env_name: str) -> tuple[str, ...]:

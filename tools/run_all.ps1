@@ -2,10 +2,11 @@ param(
   [string]$CaseRoot = "spec\data\nas_samples",
   [string]$RunDir = "",
   [int]$PrecomputeWorkers = 8,
-  [int]$VlmCaseWorkers = 20,
-  [int]$VlmWorkers = 4,
+  [int]$VlmCaseWorkers = 2,
+  [int]$VlmWorkers = 2,
   [string]$VlmGridLayout = "4x1",
-  [int]$VlmRetryAttempts = 6,
+  [int]$VlmTimeoutSeconds = 300,
+  [int]$VlmRetryAttempts = 3,
   [double]$VlmRetryBackoffSeconds = 2,
   [string]$CaseList = "",
   [string]$VisionPrecomputeRoot = "",
@@ -134,6 +135,7 @@ if ($VlmGridLayout -notmatch '^\d+x\d+$') {
 
 $env:DLD_VLM_RETRY_ATTEMPTS = "$VlmRetryAttempts"
 $env:DLD_VLM_RETRY_BACKOFF_SECONDS = "$VlmRetryBackoffSeconds"
+$env:DLD_VLM_TIMEOUT_SECONDS = "$VlmTimeoutSeconds"
 $env:DLD_VLM_WORKERS = "$VlmWorkers"
 $env:DLD_VLM_GRID_LAYOUT = $VlmGridLayout
 $env:DLD_VLM_TOKEN_BASE_URL = $VlmTokenBaseUrl
@@ -148,6 +150,7 @@ $vlmPreflightLog = Join-Path $RunDir "vlm_preflight.log"
 Write-Host "Run directory: $RunDir"
 Write-Host "Case root: $CaseRoot"
 Write-Host "VLM grid layout: $VlmGridLayout"
+Write-Host "VLM timeout: ${VlmTimeoutSeconds}s"
 Write-Host "Case list: $(if ($CaseList) { $CaseList } else { 'all discovered cases' })"
 Write-Host "VLM endpoint plan: token-plan ($VlmTokenBaseUrl)"
 

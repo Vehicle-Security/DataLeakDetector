@@ -100,9 +100,10 @@ class DatalogFact:
 
     relation: str
     args: tuple[Any, ...]
+    case_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {"relation": self.relation, "args": list(self.args)}
+        return {"case_id": self.case_id, "relation": self.relation, "args": list(self.args)}
 
 
 @dataclass(frozen=True)
@@ -116,9 +117,14 @@ class LeakPath:
     leak_channel: str
     leak_timestamp: int
     full_path: str
+    case_id: str = ""
+    source_file: str = ""
+    file_chain: tuple[str, ...] = ()
+    flow_steps: tuple[dict[str, Any], ...] = field(default=(), hash=False)
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "case_id": self.case_id,
             "start_op": self.start_op,
             "end_op": self.end_op,
             "leaking_proc": self.leaking_proc,
@@ -127,6 +133,9 @@ class LeakPath:
             "leak_timestamp": self.leak_timestamp,
             "full_path": self.full_path,
             "path_steps": self.full_path.split(" -> ") if self.full_path else [],
+            "source_file": self.source_file,
+            "file_chain": list(self.file_chain),
+            "flow_steps": [dict(item) for item in self.flow_steps],
         }
 
 

@@ -10,9 +10,10 @@ CASE_ROOT="spec/data/nas_samples"
 RUN_DIR=""
 PRECOMPUTE_WORKERS=2
 VLM_CASE_WORKERS=20
-VLM_WORKERS=4
+VLM_WORKERS=20
 VLM_GRID_LAYOUT="4x1"
-VLM_RETRY_ATTEMPTS=6
+VLM_TIMEOUT_SECONDS=300
+VLM_RETRY_ATTEMPTS=3
 VLM_RETRY_BACKOFF_SECONDS=2
 CASE_LIST=""
 VISION_PRECOMPUTE_ROOT=""
@@ -28,10 +29,11 @@ Options:
   --case-root PATH                         Case root (default: spec/data/nas_samples)
   --run-dir PATH                           Output directory (default: timestamped artifacts directory)
   --precompute-workers N                   Precompute case workers (default: 2)
-  --vlm-case-workers N                     VLM case workers (default: 2)
-  --vlm-workers N                          VLM workers per API key (default: 4)
+  --vlm-case-workers N                     VLM case workers (default: 20)
+  --vlm-workers N                          Shared VLM requests per API key (default: 20)
   --vlm-grid-layout ROWSxCOLUMNS           VLM grid layout (default: 4x1)
-  --vlm-retry-attempts N                   VLM retry attempts (default: 6)
+  --vlm-timeout-seconds SECONDS            VLM response timeout (default: 300)
+  --vlm-retry-attempts N                   VLM retry attempts (default: 3)
   --vlm-retry-backoff-seconds SECONDS      Initial retry backoff (default: 2)
   --case-list PATH                         Optional UTF-8 case ID list
   --vision-precompute-root PATH            Existing precompute cache root
@@ -58,6 +60,7 @@ while (($#)); do
     --vlm-case-workers) require_value "$@"; VLM_CASE_WORKERS=$2; shift 2 ;;
     --vlm-workers) require_value "$@"; VLM_WORKERS=$2; shift 2 ;;
     --vlm-grid-layout) require_value "$@"; VLM_GRID_LAYOUT=$2; shift 2 ;;
+    --vlm-timeout-seconds) require_value "$@"; VLM_TIMEOUT_SECONDS=$2; shift 2 ;;
     --vlm-retry-attempts) require_value "$@"; VLM_RETRY_ATTEMPTS=$2; shift 2 ;;
     --vlm-retry-backoff-seconds) require_value "$@"; VLM_RETRY_BACKOFF_SECONDS=$2; shift 2 ;;
     --case-list) require_value "$@"; CASE_LIST=$2; shift 2 ;;
@@ -98,6 +101,7 @@ mkdir -p "$RUN_DIR"
 
 export DLD_VLM_RETRY_ATTEMPTS="$VLM_RETRY_ATTEMPTS"
 export DLD_VLM_RETRY_BACKOFF_SECONDS="$VLM_RETRY_BACKOFF_SECONDS"
+export DLD_VLM_TIMEOUT_SECONDS="$VLM_TIMEOUT_SECONDS"
 export DLD_VLM_WORKERS="$VLM_WORKERS"
 export DLD_VLM_GRID_LAYOUT="$VLM_GRID_LAYOUT"
 export DLD_VLM_TOKEN_BASE_URL="$VLM_TOKEN_BASE_URL"
@@ -113,6 +117,9 @@ VLM_LOG="$RUN_DIR/vlm.log"
 echo "Run directory: $RUN_DIR"
 echo "Case root: $CASE_ROOT"
 echo "VLM grid layout: $VLM_GRID_LAYOUT"
+echo "VLM timeout: ${VLM_TIMEOUT_SECONDS}s"
+echo "VLM case workers: $VLM_CASE_WORKERS"
+echo "VLM request workers per API key: $VLM_WORKERS"
 echo "Case list: ${CASE_LIST:-all discovered cases}"
 echo "VLM endpoint plan: token-plan ($VLM_TOKEN_BASE_URL)"
 

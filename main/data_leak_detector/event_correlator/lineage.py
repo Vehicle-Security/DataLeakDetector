@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from ..io import normalize_path
 
@@ -19,31 +20,77 @@ class Lineage:
 
     def add(self, derived: str, source: str) -> None:
         derived = normalize_path(derived)
-        source = normalize_path(source)
-        if not derived or not source or _same_artifact_path(derived, source) or derived in self.direct:
+        source = self.resolve_artifact(source)
+        if (
+            not derived
+            or not source
+            or _same_artifact_path(derived, source)
+            or any(_same_artifact_path(derived, existing) for existing in self.direct)
+        ):
             return
         if any(_same_artifact_path(derived, item) for item in self.chain(source)):
             return
         self.direct[derived] = source
 
     def root(self, file_path: str) -> str:
-        current = normalize_path(file_path)
+        current = self.resolve_artifact(file_path)
         seen: set[str] = set()
         while current in self.direct and current not in seen:
             seen.add(current)
-            current = self.direct[current]
+            current = self.resolve_artifact(self.direct[current])
         return current
 
     def chain(self, file_path: str) -> list[str]:
-        current = normalize_path(file_path)
+        current = self.resolve_artifact(file_path)
         parts = [current] if current else []
         seen: set[str] = set()
         while current in self.direct and current not in seen:
             seen.add(current)
-            current = self.direct[current]
+            current = self.resolve_artifact(self.direct[current])
             parts.append(current)
         return parts
+
+    def resolve_artifact(self, file_path: str) -> str:
+        """Resolve a path or basename reference to one canonical known artifact."""
+
+        reference = normalize_path(file_path)
+        if not reference:
+            return reference
+        if "/" in reference:
+            reference_key = reference.lower()
+            matches = {
+                derived
+                for derived in self.direct
+                if normalize_path(derived).lower() == reference_key
+            }
+            if len(matches) == 1:
+                return next(iter(matches))
+            return reference
+        reference_key = reference.lower()
+        matches = {
+            derived
+            for derived in self.direct
+            if reference_key in _artifact_aliases(derived)
+        }
+        full_path_matches = {item for item in matches if "/" in normalize_path(item)}
+        if len(full_path_matches) == 1:
+            return next(iter(full_path_matches))
+        if reference in self.direct:
+            return reference
+        return next(iter(matches)) if len(matches) == 1 else reference
 
 
 def _same_artifact_path(left: str, right: str) -> bool:
     return normalize_path(left).lower() == normalize_path(right).lower()
+
+
+def _artifact_aliases(file_path: str) -> set[str]:
+    name = Path(normalize_path(file_path)).name.lower()
+    aliases = {name} if name else set()
+    wrapped_name = Path(name).stem
+    # Only unwrap container-style names such as ``2.ksheet.wpsonline``. A
+    # regular document like ``secret.pdf`` must not acquire the vague alias
+    # ``secret``.
+    if Path(wrapped_name).suffix:
+        aliases.add(wrapped_name)
+    return aliases

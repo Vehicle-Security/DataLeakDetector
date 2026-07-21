@@ -214,6 +214,8 @@ def parse_timestamp_ms(value: object) -> int:
     text = str(value or "").strip()
     if not text:
         return 0
+    if re.fullmatch(r"\d{11,}", text):
+        return int(text)
     try:
         if text.endswith("Z"):
             text = text[:-1] + "+00:00"

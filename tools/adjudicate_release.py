@@ -85,13 +85,20 @@ def _case_evidence(case: dict[str, Any], debug_root: Path) -> dict[str, Any]:
     artifacts = _find_debug_artifacts(debug_root / Path(case_id))
     groundtruth = _read_json(artifacts["groundtruth"]) if artifacts.get("groundtruth") else {}
     parsed = _read_json(artifacts["parsed"]) if artifacts.get("parsed") else {}
+    observations = _read_json(artifacts["observations"]) if artifacts.get("observations") else []
     correlator = _read_json(artifacts["correlator"]) if artifacts.get("correlator") else {}
+    if isinstance(observations, list):
+        visual_events = [item for item in observations if isinstance(item, dict) and item.get("source") == "vlm"]
+    else:
+        visual_events = []
+    if not visual_events and isinstance(parsed, dict):
+        visual_events = list(parsed.get("events", []))
     return {
         "case": case_id,
         "expected_conclusion": str(evaluation.get("expected_conclusion") or ""),
         "detector_conclusion": str(evaluation.get("detector_conclusion") or case.get("conclusion") or ""),
         "groundtruth_operations": list(groundtruth.get("operations", [])),
-        "vlm_events": list(parsed.get("events", [])),
+        "vlm_events": visual_events,
         "correlated_events": list(correlator.get("correlated_events", [])),
         "upload_candidates": list(correlator.get("upload_candidates", [])),
         "evidence_refs": artifacts,
@@ -102,6 +109,7 @@ def _find_debug_artifacts(case_root: Path) -> dict[str, str]:
     names = {
         "groundtruth": "groundtruth.json",
         "parsed": "vlm_parse_result.json",
+        "observations": "frame_observations.json",
         "correlator": "event_correlator_details.json",
     }
     result: dict[str, str] = {}
@@ -179,7 +187,7 @@ def _summary(results: list[dict[str, Any]]) -> dict[str, int | float | None]:
     return summary
 
 
-def _read_json(path: str | Path) -> dict[str, Any]:
+def _read_json(path: str | Path) -> Any:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 

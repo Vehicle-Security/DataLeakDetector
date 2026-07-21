@@ -13,6 +13,32 @@ from ..models import FrameObservation
 from ..policy import SENSITIVE_TOKENS, SINK_TOKENS, TRANSFER_TOKENS, contains_any, is_normal_only_context, semantic_sensitive_match
 
 
+_UNKNOWN_STRUCTURED_VALUES = {"", "unknown", "none", "null", "n/a", "na", "unspecified", "未知"}
+_EXPLICIT_OUTBOUND_ACTIONS = {
+    "ai_chat_upload",
+    "ai_prompt_input",
+    "ai_prompt_paste",
+    "chat_paste",
+    "chat_send",
+    "cloud_sync",
+    "cloud_upload",
+    "copy_paste_to_ai",
+    "copy_to_removable_media",
+    "email_send",
+    "file_send",
+    "file_upload",
+    "http_post",
+    "network_upload",
+    "paste_exfiltration",
+    "screen_share",
+    "send",
+    "send_click",
+    "share_screen",
+    "upload",
+    "upload_complete",
+}
+
+
 @dataclass(frozen=True)
 class ParsedVisionEvent:
     start_ms: int
@@ -155,6 +181,10 @@ def _normalize_event(item: dict[str, Any]) -> ParsedVisionEvent:
         _first_text(item, "action_status", "status", "transfer_status"),
         context=f"{operation} {behavior} {description}",
     )
+    if action_status == "selected" and _is_preparation_only_context(description):
+        action_status = "unknown"
+        if _structured_value(behavior) == "direct_leak":
+            behavior = "unknown_risk"
     return ParsedVisionEvent(
         start_ms=start_ms,
         end_ms=end_ms or start_ms,
@@ -281,6 +311,48 @@ def _action_status(value: str, *, context: str = "") -> str:
     return "unknown"
 
 
+def _is_preparation_only_context(value: str) -> bool:
+    text = value.strip().lower()
+    if not text:
+        return False
+    concrete_action_markers = (
+        "file was selected",
+        "selected file",
+        "attached file",
+        "transfer queue",
+        "已选择文件",
+        "已添加附件",
+        "传输队列",
+    )
+    if any(marker in text for marker in concrete_action_markers):
+        return False
+    if (
+        "upload progress is visible" in text
+        and "no upload progress is visible" not in text
+    ) or (
+        "send progress is visible" in text
+        and "no send progress is visible" not in text
+    ):
+        return False
+    return any(
+        marker in text
+        for marker in (
+            "indicating an intent",
+            "suggesting potential",
+            "no later action",
+            "not confirmed",
+            "merely visible",
+            "menu was opened",
+            "menu is visible",
+            "capability is visible",
+            "仅显示",
+            "尚未确认",
+            "未确认",
+            "意图",
+        )
+    )
+
+
 def _is_relevant(event: ParsedVisionEvent, keywords: list[str]) -> bool:
     text = " ".join(
         [
@@ -332,17 +404,33 @@ def _is_normal_only(text: str) -> bool:
 
 
 def _operation_to_pipeline(event: ParsedVisionEvent) -> str:
-    behavior = (event.behavior_category or "").lower()
+    behavior = _structured_value(event.behavior_category)
     if behavior == "hidden_transfer":
         return "file_or_content_transfer"
     text = f"{event.behavior_category} {event.operation_type} {event.description} {event.sink_type}".lower()
     if _is_suspicious_content_transform(event, text):
         return "file_or_content_transfer"
+    if behavior == "direct_leak" and (
+        _has_explicit_sink(event.sink_type) or _is_explicit_outbound_action(event.operation_type)
+    ):
+        return "external_sink_interaction"
     if contains_any(text, SINK_TOKENS):
         return "external_sink_interaction"
     if contains_any(text, TRANSFER_TOKENS):
         return "file_or_content_transfer"
     return event.operation_type or "visual_review"
+
+
+def _structured_value(value: str) -> str:
+    return re.sub(r"[\s-]+", "_", (value or "").strip().lower())
+
+
+def _has_explicit_sink(sink_type: str) -> bool:
+    return _structured_value(sink_type) not in _UNKNOWN_STRUCTURED_VALUES
+
+
+def _is_explicit_outbound_action(operation_type: str) -> bool:
+    return _structured_value(operation_type) in _EXPLICIT_OUTBOUND_ACTIONS
 
 
 def _is_suspicious_content_transform(event: ParsedVisionEvent, text: str) -> bool:
