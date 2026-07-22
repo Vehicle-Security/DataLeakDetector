@@ -368,6 +368,10 @@ def build_analysis_window_for_event(
         after_ms = config.strong_window_after_ms
         if action == "capture":
             before_ms = max(before_ms, 15_000)
+        if action == "derive":
+            # Archive extraction and document export logs are often emitted only
+            # after the UI operation completes. Keep the visible source action.
+            before_ms = max(before_ms, 20_000)
         if action == "clipboard":
             before_ms = max(before_ms, 30_000)
         if action in {"file_selected", "upload", "send", "removable", "screen_share", "clipboard"}:

@@ -15,6 +15,7 @@ from ..policy import SENSITIVE_TOKENS, SINK_TOKENS, TRANSFER_TOKENS, contains_an
 
 _UNKNOWN_STRUCTURED_VALUES = {"", "unknown", "none", "null", "n/a", "na", "unspecified", "未知"}
 _EXPLICIT_OUTBOUND_ACTIONS = {
+    "attach_file",
     "ai_chat_upload",
     "ai_prompt_input",
     "ai_prompt_paste",
@@ -25,14 +26,18 @@ _EXPLICIT_OUTBOUND_ACTIONS = {
     "commit",
     "copy_paste_to_ai",
     "copy_to_removable_media",
+    "document_translation_upload",
     "email_send",
     "file_send",
     "file_upload",
     "http_post",
     "network_upload",
+    "article_publish",
     "paste_exfiltration",
     "paste_to_ai",
     "paste_to_web",
+    "publish",
+    "post_question",
     "screen_share",
     "send",
     "send_click",
@@ -40,7 +45,11 @@ _EXPLICIT_OUTBOUND_ACTIONS = {
     "upload",
     "upload_complete",
     "upload_file_to_ai",
+    "screenshot_paste_to_chat",
+    "screenshot_to_chat",
+    "web_form_composition",
     "web_upload",
+    "folder_sync",
 }
 
 
@@ -186,10 +195,44 @@ def _normalize_event(item: dict[str, Any]) -> ParsedVisionEvent:
         _first_text(item, "action_status", "status", "transfer_status"),
         context=f"{operation} {behavior} {description}",
     )
-    if action_status == "selected" and _is_preparation_only_context(description):
+    if action_status == "selected" and _is_preparation_only_context(
+        f"{operation} {app_name} {description}"
+    ):
         action_status = "unknown"
         if _structured_value(behavior) == "direct_leak":
             behavior = "unknown_risk"
+    if (
+        _structured_value(behavior) == "hidden_transfer"
+        and action_status in {"submitted", "in_progress", "completed"}
+        and _is_external_web_content_submission(app_name, operation, description)
+    ):
+        behavior = "direct_leak"
+        operation = "paste_to_web"
+        sink_type = "network_upload"
+    else:
+        sink_type = _normalize_sink_type(
+            _first_text(item, "sink_type", "sink", "channel"),
+            app_name=app_name,
+            operation=operation,
+        )
+    monitoring_log_only_claim = _is_monitoring_log_only_claim(description)
+    inferred_recording_attachment = _is_inferred_recording_attachment(description, status=action_status)
+    if (
+        _is_passive_local_preview(app_name, operation, description)
+        or _is_inferred_toolbar_upload(description)
+        or monitoring_log_only_claim
+        or inferred_recording_attachment
+    ):
+        behavior = "unknown_risk"
+        operation = (
+            "monitoring_log_claim"
+            if monitoring_log_only_claim
+            else "recording_attachment_inference"
+            if inferred_recording_attachment
+            else "local_preview"
+        )
+        sink_type = "unknown"
+        action_status = "unknown"
     return ParsedVisionEvent(
         start_ms=start_ms,
         end_ms=end_ms or start_ms,
@@ -201,11 +244,7 @@ def _normalize_event(item: dict[str, Any]) -> ParsedVisionEvent:
         description=description,
         confidence=_confidence(item.get("confidence")),
         evidence_frame_ids=evidence_frame_ids,
-        sink_type=_normalize_sink_type(
-            _first_text(item, "sink_type", "sink", "channel"),
-            app_name=app_name,
-            operation=operation,
-        ),
+        sink_type=sink_type,
         action_status=action_status,
     )
 
@@ -218,7 +257,152 @@ def _normalize_sink_type(sink_type: str, *, app_name: str, operation: str) -> st
     meeting_apps = ("tencent meeting", "wemeet", "腾讯会议")
     if sink == "screen_share" and action in meeting_document_actions and any(token in app for token in meeting_apps):
         return "chat_upload"
+    if (
+        sink == "cloud_sync"
+        and any(token in app for token in ("github", "gitlab", "gitee", "jihulab", "codeberg"))
+        and any(token in action for token in ("commit", "push", "upload", "paste"))
+    ):
+        return "network_upload"
     return sink_type
+
+
+def _is_external_web_content_submission(app_name: str, operation: str, description: str) -> bool:
+    text = f"{app_name} {operation} {description}".lower()
+    submitted_content = bool(re.search(r"\bpasted\b.{0,100}\binto\b", text)) or any(
+        marker in text
+        for marker in (
+            "pasted into",
+            "pasted to",
+            "pasted the content",
+            "submitted to",
+            "粘贴到",
+            "提交到",
+        )
+    )
+    web_destination = bool(
+        re.search(r"\b[a-z0-9-]+\.(?:com|cn|net|org|io|ai)\b", text)
+        or any(
+            marker in text
+            for marker in (
+                "web-based",
+                "online tool",
+                "online service",
+                "third-party tool",
+                "browser",
+                "在线工具",
+                "在线服务",
+                "第三方工具",
+            )
+        )
+    )
+    return submitted_content and web_destination
+
+
+def _is_passive_local_preview(app_name: str, operation: str, description: str) -> bool:
+    text = f"{app_name} {operation} {description}".lower()
+    local_shell = any(marker in text for marker in ("file explorer", "windows explorer", "资源管理器"))
+    preview = any(marker in text for marker in ("preview pane", "preview panel", "预览窗格", "预览栏"))
+    ai_summary = any(marker in text for marker in ("ai summary", "ai public document", "ai 公文", "ai公文"))
+    explicit_invocation = any(
+        marker in text
+        for marker in (
+            "clicked ai",
+            "opened ai",
+            "submitted to ai",
+            "uploaded to ai",
+            "点击ai",
+            "提交到ai",
+            "上传到ai",
+        )
+    )
+    return local_shell and preview and ai_summary and not explicit_invocation
+
+
+def _is_inferred_toolbar_upload(description: str) -> bool:
+    text = description.lower()
+    passive_display = any(marker in text for marker in ("is displayed in", "is visible in", "显示在", "可见于"))
+    toolbar_only = any(marker in text for marker in ("toolbar shows", "toolbar contains", "工具栏显示", "工具栏包含"))
+    inferred_upload = any(
+        marker in text
+        for marker in (
+            "implying the file was uploaded",
+            "suggesting the file was uploaded",
+            "therefore it was uploaded",
+            "由此推断文件已上传",
+            "暗示文件已上传",
+        )
+    )
+    return passive_display and toolbar_only and inferred_upload
+
+
+def _is_monitoring_log_only_claim(description: str) -> bool:
+    text = description.lower()
+    monitoring = any(
+        marker in text
+        for marker in (
+            "monitoring logs",
+            "monitor log",
+            "powershell log",
+            "logs in powershell",
+            "监控日志",
+            "powershell 日志",
+        )
+    )
+    inferred_from_log = any(
+        marker in text
+        for marker in (
+            "log confirms",
+            "logs explicitly record",
+            "log explicitly records",
+            "based on the log",
+            "日志确认",
+            "日志表明",
+        )
+    )
+    direct_ui_evidence = any(
+        marker in text
+        for marker in (
+            "attachment card is visible",
+            "upload progress is visible",
+            "send confirmation is visible",
+            "generated answer is visible",
+            "上传进度可见",
+            "附件卡片可见",
+            "发送确认可见",
+        )
+    )
+    return monitoring and inferred_from_log and not direct_ui_evidence
+
+
+def _is_inferred_recording_attachment(description: str, *, status: str) -> bool:
+    if status != "selected":
+        return False
+    text = description.lower()
+    recording = any(marker in text for marker in ("screen recording", "screenshot", "recording mp4", "录屏", "截图"))
+    attachment = any(marker in text for marker in ("attachment", "staged", "thumbnail", "附件", "待发送", "缩略图"))
+    inferred = any(
+        marker in text
+        for marker in (
+            "likely the screen recording",
+            "likely a screen recording",
+            "likely a screenshot",
+            "given the dark thumbnail",
+            "appears to contain the recording",
+            "可能是录屏",
+            "可能是截图",
+        )
+    )
+    clearly_identified = any(
+        marker in text
+        for marker in (
+            "attachment card is visible",
+            "identified attachment card",
+            "clearly identified screenshot",
+            "明确的截图附件",
+        )
+    )
+    completed = any(marker in text for marker in ("was sent", "sent successfully", "发送成功", "已发送"))
+    return recording and attachment and inferred and not clearly_identified and not completed
 
 
 def _parse_time_range(value: str) -> tuple[int, int]:
@@ -320,6 +504,47 @@ def _is_preparation_only_context(value: str) -> bool:
     text = value.strip().lower()
     if not text:
         return False
+    separate_upload_not_started = (
+        any(marker in text for marker in ("upload button is visible", "上传按钮可见", "显示上传按钮"))
+        and any(
+            marker in text
+            for marker in (
+                "no upload progress",
+                "upload has not started",
+                "button was not clicked",
+                "button is not clicked",
+                "未开始上传",
+                "未点击上传",
+                "没有上传进度",
+            )
+        )
+    )
+    local_recording_preview = (
+        any(marker in text for marker in ("screen recording preview", "recording preview", "录屏预览"))
+        and any(marker in text for marker in ("send to", "发送到"))
+        and any(marker in text for marker in ("button", "按钮", "staged", "待发送"))
+        and not any(
+            marker in text
+            for marker in (
+                "button was clicked",
+                "clicked the send",
+                "was sent",
+                "sent successfully",
+                "attached to the chat",
+                "点击发送",
+                "发送成功",
+                "已发送",
+                "已附加到聊天",
+            )
+        )
+    )
+    staged_web_form = (
+        any(marker in text for marker in ("staged in the upload area", "ready for upload", "已进入上传区域", "等待上传"))
+        and ("upload progress" not in text or "no upload progress" in text)
+        and not any(marker in text for marker in ("upload completed", "upload succeeded", "was uploaded", "上传完成", "上传成功", "已上传"))
+    )
+    if separate_upload_not_started or local_recording_preview or staged_web_form:
+        return True
     concrete_action_markers = (
         "file was selected",
         "selected file",
@@ -410,6 +635,8 @@ def _is_normal_only(text: str) -> bool:
 
 def _operation_to_pipeline(event: ParsedVisionEvent) -> str:
     behavior = _structured_value(event.behavior_category)
+    if _is_confirmed_external_submission(event):
+        return "external_sink_interaction"
     if behavior == "hidden_transfer":
         return "file_or_content_transfer"
     text = f"{event.behavior_category} {event.operation_type} {event.description} {event.sink_type}".lower()
@@ -436,7 +663,41 @@ def _has_explicit_sink(sink_type: str) -> bool:
 
 
 def _is_explicit_outbound_action(operation_type: str) -> bool:
-    return _structured_value(operation_type) in _EXPLICIT_OUTBOUND_ACTIONS
+    action = _structured_value(operation_type)
+    if action in _EXPLICIT_OUTBOUND_ACTIONS:
+        return True
+    if not action or "processing" in action or "transform" in action:
+        return False
+    return action.startswith(("publish_", "article_publish_", "folder_sync_"))
+
+
+def _is_confirmed_external_submission(event: ParsedVisionEvent) -> bool:
+    if event.action_status not in {"submitted", "in_progress", "completed"}:
+        return False
+    if not _has_explicit_sink(event.sink_type):
+        return False
+    if _is_explicit_outbound_action(event.operation_type):
+        return True
+    text = f"{event.operation_type} {event.description}".lower()
+    return any(
+        marker in text
+        for marker in (
+            "pasted into",
+            "pasted to",
+            "sends it to",
+            "sent it to",
+            "submitted to",
+            "uploaded to",
+            "sent to",
+            "synced to",
+            "transferring sensitive data to",
+            "粘贴到",
+            "提交到",
+            "上传到",
+            "发送到",
+            "同步到",
+        )
+    )
 
 
 def _is_suspicious_content_transform(event: ParsedVisionEvent, text: str) -> bool:
@@ -498,9 +759,12 @@ def _event_to_dict(event: ParsedVisionEvent) -> dict[str, Any]:
 
 
 def _dedupe(events: list[ParsedVisionEvent]) -> list[ParsedVisionEvent]:
+    local_recordings = [event for event in events if _is_local_screen_recording(event)]
     seen: set[tuple[object, ...]] = set()
     result: list[ParsedVisionEvent] = []
     for event in events:
+        if _is_screen_share_conflicted_by_local_recording(event, local_recordings):
+            continue
         key = (
             event.start_ms,
             event.app_name,
@@ -516,3 +780,52 @@ def _dedupe(events: list[ParsedVisionEvent]) -> list[ParsedVisionEvent]:
         seen.add(key)
         result.append(event)
     return result
+
+
+def _is_local_screen_recording(event: ParsedVisionEvent) -> bool:
+    action = _structured_value(event.operation_type)
+    text = f"{event.modified_resource} {event.description}".lower()
+    return action in {"screen_recording", "screen_record", "record_screen"} and any(
+        marker in text for marker in ("mp4", "screen recording", "录屏", "屏幕录制")
+    )
+
+
+def _is_screen_share_conflicted_by_local_recording(
+    event: ParsedVisionEvent,
+    local_recordings: list[ParsedVisionEvent],
+) -> bool:
+    if _structured_value(event.operation_type) not in {"screen_share", "share_screen"}:
+        return False
+    text = f"{event.modified_resource} {event.description}".lower()
+    if not any(marker in text for marker in ("mp4", "screen recording", "录屏", "屏幕录制")):
+        return False
+    if _has_independent_screen_share_evidence(text):
+        return False
+    event_name = Path(normalize_path(event.original_resource)).stem.lower()
+    return any(
+        abs(recording.start_ms - event.start_ms) <= 10_000
+        and (
+            not event_name
+            or event_name in {"unknown", "未知"}
+            or Path(normalize_path(recording.original_resource)).stem.lower() == event_name
+        )
+        for recording in local_recordings
+    )
+
+
+def _has_independent_screen_share_evidence(text: str) -> bool:
+    return any(
+        marker in text
+        for marker in (
+            "sharing toolbar",
+            "share toolbar",
+            "sharing banner",
+            "share banner",
+            "active share indicator",
+            "remote participant",
+            "共享工具栏",
+            "共享横幅",
+            "正在共享",
+            "远端参会者",
+        )
+    )

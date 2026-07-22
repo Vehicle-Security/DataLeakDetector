@@ -510,6 +510,11 @@ def _is_transient_vlm_error(exc: Exception) -> bool:
         or "connection reset" in text
         or "eof occurred" in text
         or "http_error: 5" in text
+        or (
+            "400" in text
+            and "invalid_parameter_error" in text
+            and "provided url does not appear to be valid" in text
+        )
     )
 
 

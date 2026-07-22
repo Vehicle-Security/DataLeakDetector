@@ -20,7 +20,7 @@ from .artifacts import (
     write_vision_precompute,
 )
 from .config import VisionConfig
-from .frames import AnalysisWindow, KeyFrameSelection, build_video_coverage_windows, select_keyframes_detailed
+from .frames import AnalysisWindow, KeyFrameSelection, augment_with_video_coverage, select_keyframes_detailed
 from .parser import vision_events_to_observations
 from .vlm_client import choose_keyframes_for_vlm
 from .vlm_dispatch import (
@@ -281,8 +281,7 @@ def _load_or_select_keyframes(
 
     windows_started = time.perf_counter()
     windows = analysis_windows if analysis_windows is not None else build_analysis_windows(logs, sensitive_files, config)
-    if not windows:
-        windows = build_video_coverage_windows(video_path, config)
+    windows = augment_with_video_coverage(video_path, windows, config)
     windows_seconds = time.perf_counter() - windows_started
 
     keyframes_started = time.perf_counter()

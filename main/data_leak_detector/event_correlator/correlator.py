@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ..frame_analyzer.apps import identify_frontend_app
-from ..io import normalize_logs, normalize_path, same_file
+from ..io import normalize_logs, normalize_path, parse_timestamp_ms, same_file
 from ..models import CorrelatedEvent
 from ..policy import RISKY_APP_CATEGORIES, SINK_TOKENS, TRANSFER_TOKENS, contains_any
 from .candidates import build_upload_candidates
@@ -23,6 +23,7 @@ from .output import lineage_payload, operation_record
 
 _CLIPBOARD_SOURCE_HORIZON_MS = 120_000
 _CLIPBOARD_TARGET_HORIZON_MS = 15_000
+_DOCUMENT_TITLE_SOURCE_HORIZON_MS = 300_000
 _CLIPBOARD_TARGET_EVENTS = {"created", "modified", "file_created", "file_modified"}
 _CLIPBOARD_DOCUMENT_EXTENSIONS = {
     ".bmp",
@@ -53,6 +54,7 @@ _CLIPBOARD_HIDDEN_PATH_MARKERS = (
     "/windows/",
 )
 _DECLARED_VISUAL_OUTBOUND_ACTIONS = {
+    "attach_file",
     "ai_chat_upload",
     "ai_prompt_input",
     "ai_prompt_paste",
@@ -63,14 +65,18 @@ _DECLARED_VISUAL_OUTBOUND_ACTIONS = {
     "commit",
     "copy_paste_to_ai",
     "copy_to_removable_media",
+    "document_translation_upload",
     "email_send",
     "file_send",
     "file_upload",
     "http_post",
     "network_upload",
+    "article_publish",
     "paste_exfiltration",
     "paste_to_ai",
     "paste_to_web",
+    "publish",
+    "post_question",
     "screen_share",
     "send",
     "send_click",
@@ -78,7 +84,11 @@ _DECLARED_VISUAL_OUTBOUND_ACTIONS = {
     "upload",
     "upload_complete",
     "upload_file_to_ai",
+    "screenshot_paste_to_chat",
+    "screenshot_to_chat",
+    "web_form_composition",
     "web_upload",
+    "folder_sync",
 }
 _OUTBOUND_SOURCE_OBJECT_ACTIONS = {
     "ai_chat_upload",
@@ -86,8 +96,10 @@ _OUTBOUND_SOURCE_OBJECT_ACTIONS = {
     "ai_prompt_paste",
     "chat_paste",
     "chat_send",
+    "chat_upload",
     "copy_paste_to_ai",
     "email_send",
+    "file_send",
     "file_upload",
     "paste_exfiltration",
     "paste_to_ai",
@@ -120,13 +132,15 @@ class EventCorrelator:
             0,
         )
         observations = normalize_observations(payload.get("frame_segments") or [])
+        observations = [_normalize_cached_observation_semantics(item) for item in observations]
+        observations = _suppress_conflicting_screen_share_observations(observations)
         if not config.non_vlm_enabled:
             observations = [item for item in observations if item.source == "vlm"]
         sensitive_files = self._collect_sensitive_files(payload.get("sensitive_files") or [])
         # Log lineage is binding context for VLM evidence as well as deterministic
         # log evidence, so it must remain available in VLM-only runs.
         lineage = self._build_lineage(logs, sensitive_files)
-        self._add_visual_lineage(observations, sensitive_files, lineage)
+        self._add_visual_lineage(observations, sensitive_files, lineage, logs=logs)
         observations = self._fuse_visual_evidence(
             logs,
             observations,
@@ -134,7 +148,8 @@ class EventCorrelator:
             lineage,
             horizon_ms=config.visual_evidence_horizon_ms,
         )
-        self._add_visual_lineage(observations, sensitive_files, lineage)
+        self._add_visual_lineage(observations, sensitive_files, lineage, logs=logs)
+        self._bind_log_lineage_aliases(logs, sensitive_files, lineage)
         correlated = self._correlate(
             logs,
             observations,
@@ -143,6 +158,7 @@ class EventCorrelator:
             config=config,
             recording_start_ms=visual_recording_start_ms,
         )
+        correlated = _suppress_redundant_cloud_sync_source_events(correlated, lineage)
         uploads = build_upload_candidates(correlated, default_confidence=config.upload_confidence)
         case_id = str(payload.get("case_id") or "case")
         facts = build_datalog_facts(correlated, uploads, lineage, case_id=case_id)
@@ -204,6 +220,7 @@ class EventCorrelator:
         last_sensitive_by_process: dict[str, str] = {}
         recent_artifact_by_process: dict[str, tuple[str, int]] = {}
         recent_sensitive_contexts: list[tuple[str, int, str, str]] = []
+        recent_document_titles: list[tuple[int, str]] = []
         active_clipboard: tuple[str, int, str, str] | None = None
 
         for event in sorted(logs, key=lambda item: item.timestamp_ms):
@@ -212,6 +229,11 @@ class EventCorrelator:
             original = original_file_from_metadata(event.raw)
             target = target_file_from_metadata(event.raw) or event.file_path
             event_time_ms = _lineage_event_time_ms(event)
+            if event.window_title and any(
+                _mentions_exact_filename(event.window_title, sensitive)
+                for sensitive in sensitive_files
+            ):
+                recent_document_titles.append((event_time_ms, event.window_title))
 
             contextual_artifact = _event_sensitive_artifact(event, known, sensitive_files, lineage)
             if contextual_artifact and process_key:
@@ -260,6 +282,12 @@ class EventCorrelator:
                         active_clipboard = None
 
             parent_inferred_source = _source_from_derived_parent_alias(target, sensitive_files)
+            title_inferred_source = _source_from_recent_title_context(
+                event,
+                target,
+                recent_document_titles,
+                sensitive_files,
+            )
             recent_inferred_source = _source_from_recent_document_context(
                 event,
                 target,
@@ -269,22 +297,26 @@ class EventCorrelator:
             )
             if (
                 not parent_inferred_source
+                and not title_inferred_source
                 and not recent_inferred_source
                 and not _may_contribute_lineage(event, original, target, known_keys, known_stems)
             ):
                 continue
             text = _event_search_text(event)
-            if original and self._resolve_original(original, sensitive_files, lineage):
-                lineage.add(target, original)
+            metadata_source = original if original and not _same_exact_file_path(original, target) else ""
+            if metadata_source and self._resolve_original(metadata_source, sensitive_files, lineage):
+                lineage.add(target, metadata_source)
                 _remember_known(target, known, known_keys, known_stems)
             elif target:
                 inferred_source = (
                     parent_inferred_source
+                    or title_inferred_source
                     or _source_from_derived_filename(target, sensitive_files)
                     or recent_inferred_source
                 )
                 if inferred_source and (
                     parent_inferred_source
+                    or title_inferred_source
                     or _has_derived_transfer_evidence(event, text, target)
                     or _is_recent_document_save_as(event, target, inferred_source, recent_sensitive_contexts)
                 ):
@@ -379,7 +411,9 @@ class EventCorrelator:
                 ]
             )
             removable_transfer = _is_removable_media_transfer(log, observation, text)
-            confirmed_external_transfer = removable_transfer or clipboard_sink
+            log_target = target_file_from_metadata(log.raw) or log.file_path
+            cloud_sync_transfer = _is_cloud_sync_directory_transfer(log, log_target, original, lineage)
+            confirmed_external_transfer = removable_transfer or clipboard_sink or cloud_sync_transfer
             behavior = "data_exfiltration_candidate" if confirmed_external_transfer else behavior_category(text)
             behavior = _behavior_with_action_status(observation, behavior)
             confidence = self.config.upload_confidence if behavior == "data_exfiltration_candidate" else 0.68
@@ -407,6 +441,17 @@ class EventCorrelator:
                 )
             ):
                 current_file = original
+            if (
+                observation
+                and original
+                and _observation_sink_type(observation) == "screen_share"
+                and not _looks_like_absolute_path(normalize_path(current_file))
+                and lineage.resolve_artifact(current_file) == normalize_path(current_file)
+            ):
+                # Screen sharing exposes an existing file or derived artifact;
+                # a heading/OCR label from the document body is not a file in
+                # the leak path.
+                current_file = original
 
             join_reasons = self._join_reasons(log, observation, original, sensitive_files, lineage)
             if clipboard_sink:
@@ -416,6 +461,8 @@ class EventCorrelator:
                     join_reasons.append(f"sink_type:{contextual_sink_type}")
                 if contextual_sink_type == "virtual_machine":
                     join_reasons.append("virtual_machine_sink")
+            if cloud_sync_transfer:
+                join_reasons.extend(("explicit_sink_log", "cloud_sync_directory_transfer", "sink_type:cloud_sync"))
             correlated.append(
                 CorrelatedEvent(
                     event_id=f"corr_{len(correlated)}",
@@ -532,6 +579,8 @@ class EventCorrelator:
             declared = _declared_visual_behavior(observation)
             if declared:
                 reasons.append(f"visual_declared_behavior:{declared}")
+            if _is_unexecuted_visual_preparation(observation):
+                reasons.append("visual_unexecuted_preparation")
             if _is_unproven_cloud_folder_claim(observation):
                 reasons.append("visual_unproven_cloud_folder")
         joined_text = " ".join(
@@ -569,6 +618,12 @@ class EventCorrelator:
         # stem fallback. Generic names such as ``普通文件`` can otherwise bind
         # to an unrelated same-named catalog entry.
         normalized_file = normalize_path(file_path).lower()
+        artifact = lineage.resolve_artifact(file_path)
+        root = lineage.root(artifact)
+        if root and normalize_path(root).lower() != normalized_file:
+            bound = _lookup_sensitive_source(root, lookup, allow_stem_reference=False)
+            if bound:
+                return bound
         sensitive = lookup[0].get(normalized_file, "")
         if not sensitive and "/screenmonitor/winows_monitor/" in normalized_file:
             sensitive = lookup[0].get(
@@ -577,12 +632,6 @@ class EventCorrelator:
             )
         if sensitive:
             return sensitive
-        artifact = lineage.resolve_artifact(file_path)
-        root = lineage.root(artifact)
-        if root and normalize_path(root).lower() != normalize_path(file_path).lower():
-            bound = _lookup_sensitive_source(root, lookup, allow_stem_reference=False)
-            if bound:
-                return bound
         return _lookup_sensitive_source(file_path, lookup, allow_stem_reference=True)
 
     def _resolve_log_original(self, log, logs, sensitive_files: list[str], lineage: Lineage) -> str:
@@ -616,7 +665,7 @@ class EventCorrelator:
                 sensitive
                 for sensitive in unique_title_matches
                 if any(
-                    Path(normalize_path(sensitive)).parent.name.lower() in nearby_title
+                    _mentions_source_directory(nearby_title, sensitive)
                     for nearby_title in nearby_titles
                 )
             ]
@@ -648,7 +697,7 @@ class EventCorrelator:
                 narrowed = [
                     sensitive
                     for sensitive in unique_future_matches
-                    if any(Path(normalize_path(sensitive)).parent.name.lower() in title for title in future_titles)
+                    if any(_mentions_source_directory(title, sensitive) for title in future_titles)
                 ]
                 unique_narrowed = _dedupe_paths(narrowed)
                 if len(unique_narrowed) == 1:
@@ -768,7 +817,9 @@ class EventCorrelator:
         time_mode = self._observation_time_mode(observations)
         fused = []
         for sink in observations:
-            if sink.source == "log_anchored" or self._resolve_observation_original(sink, sensitive_files, lineage):
+            resolved_sink = self._resolve_observation_original(sink, sensitive_files, lineage)
+            ambiguous_sink = _has_ambiguous_sensitive_label(sink, sensitive_files)
+            if sink.source == "log_anchored" or (resolved_sink and not ambiguous_sink):
                 fused.append(sink)
                 continue
             sink_text = _observation_search_text(sink)
@@ -788,6 +839,20 @@ class EventCorrelator:
 
             sink_time = self._observation_center(sink)
             bindings: list[tuple[int, int, str, str, Any]] = []
+            if ambiguous_sink:
+                explicit_log_identity = self._unique_explicit_session_log_identity(
+                    sink,
+                    logs,
+                    sensitive_files,
+                    lineage,
+                )
+                if explicit_log_identity:
+                    original, identity_log = explicit_log_identity
+                    # An exact path emitted by this session is stronger identity
+                    # evidence than a nearby title containing only a common
+                    # basename. This also covers VLM events timestamped at a
+                    # terminal/result frame long after the identity frame.
+                    bindings.append((-1_000_000, -1, original, "log", identity_log))
             for identity in observations:
                 if identity is sink or identity.source == "log_anchored":
                     continue
@@ -847,10 +912,70 @@ class EventCorrelator:
             )
         return fused
 
-    def _add_visual_lineage(self, observations, sensitive_files: list[str], lineage: Lineage) -> None:
+    def _unique_explicit_session_log_identity(
+        self,
+        observation,
+        logs,
+        sensitive_files: list[str],
+        lineage: Lineage,
+    ):
+        """Resolve a basename-only observation from unique exact session paths."""
+
+        labels = {
+            Path(normalize_path(reference)).name.lower()
+            for reference in (observation.resource, *observation.related_resources)
+            if normalize_path(reference) and not _looks_like_absolute_path(normalize_path(reference))
+        }
+        if not labels:
+            return None
+
+        matches: list[tuple[str, Any]] = []
+        for log in logs:
+            candidates = (
+                log.file_path,
+                original_file_from_metadata(log.raw),
+                target_file_from_metadata(log.raw),
+            )
+            for candidate in candidates:
+                normalized = normalize_path(candidate)
+                if not _looks_like_absolute_path(normalized):
+                    continue
+                original = self._resolve_original(normalized, sensitive_files, lineage)
+                if not original:
+                    continue
+                candidate_names = {
+                    Path(normalized).name.lower(),
+                    Path(normalize_path(original)).name.lower(),
+                }
+                if labels.isdisjoint(candidate_names):
+                    continue
+                matches.append((original, log))
+                break
+
+        unique_sources = _dedupe_paths([original for original, _ in matches])
+        if len(unique_sources) != 1:
+            return None
+        source = unique_sources[0]
+        identity_log = next(log for original, log in matches if same_file(original, source))
+        return source, identity_log
+
+    def _add_visual_lineage(self, observations, sensitive_files: list[str], lineage: Lineage, *, logs=None) -> None:
         for observation in observations:
             if observation.source == "log_anchored":
                 continue
+            explicit_derivation = _explicit_visual_derivation(
+                observation,
+                logs or [],
+                sensitive_files,
+                lineage,
+            )
+            if explicit_derivation:
+                derived, source = explicit_derivation
+                lineage.add(derived, source, replace_existing=True)
+                self._lineage_artifact_times.setdefault(
+                    normalize_path(derived).lower(),
+                    self._observation_center(observation),
+                )
             declared_behavior = _declared_visual_behavior(observation)
             if declared_behavior and declared_behavior != "hidden_transfer":
                 continue
@@ -868,6 +993,28 @@ class EventCorrelator:
                 derived = lineage.resolve_artifact(normalize_path(candidate))
                 if _is_visual_derived_candidate(derived, original):
                     lineage.add(derived, original)
+                    self._lineage_artifact_times.setdefault(
+                        normalize_path(derived).lower(),
+                        self._observation_center(observation),
+                    )
+
+    def _bind_log_lineage_aliases(self, logs, sensitive_files: list[str], lineage: Lineage) -> None:
+        """Bind a VLM basename-only derivative to its unique absolute log path."""
+
+        for log in logs:
+            target = normalize_path(target_file_from_metadata(log.raw) or log.file_path)
+            if not _looks_like_absolute_path(target) or lineage.root(target) != target:
+                continue
+            name = Path(target).name.lower()
+            aliases = [artifact for artifact in lineage.direct if Path(normalize_path(artifact)).name.lower() == name]
+            sources = _dedupe_paths(
+                self._resolve_original(alias, sensitive_files, lineage)
+                for alias in aliases
+            )
+            if len(sources) != 1:
+                continue
+            lineage.add(target, sources[0])
+            self._lineage_artifact_times.setdefault(target.lower(), _lineage_event_time_ms(log))
 
     def _resolve_visual_original_without_lineage(self, observation, sensitive_files: list[str]) -> str:
         candidates = [observation.resource, *observation.related_resources, observation.description]
@@ -897,6 +1044,12 @@ class EventCorrelator:
                 sensitive_files,
                 lineage,
             )
+            if not original:
+                original = _partial_visual_filename_identity(
+                    observation,
+                    logs or [],
+                    sensitive_files,
+                )
             text = f"{observation.description} {observation.operation_type} {observation.resource} {' '.join(observation.related_resources)}"
             if not (_is_external_observation(observation) or _is_transfer_observation(observation)):
                 continue
@@ -947,10 +1100,18 @@ class EventCorrelator:
             if distance > _CLIPBOARD_SOURCE_HORIZON_MS:
                 continue
             contextual_sink = _contextual_sink_type(log)
+            cloud_sync_result = (
+                observation_sink == "cloud_sync"
+                and log.event_type.lower()
+                in {"created", "modified", "renamed", "copied", "file_created", "file_modified", "file_renamed"}
+                and _is_cloud_sync_user_path(log.file_path)
+                and _is_user_visible_lineage_target(log.file_path)
+            )
             if not (
                 _is_sink_log(log)
                 or log.event_type in {"file_selected", "file_upload", "upload", "uploaded"}
                 or (contextual_sink and (not observation_sink or contextual_sink == observation_sink))
+                or cloud_sync_result
             ):
                 continue
             original = self._resolve_log_original(log, logs, sensitive_files, lineage)
@@ -966,14 +1127,30 @@ class EventCorrelator:
                 current = lineage.resolve_artifact(log.file_path)
             if not current or current == normalize_path(log.file_path):
                 current = _lineage_artifact_mention(log.window_title, lineage) or current
-            candidates.append((distance, original, current))
+            if _is_source_label_only(current, original):
+                current = original
+            if current:
+                current_root = lineage.root(lineage.resolve_artifact(current))
+                if not (
+                    _same_exact_file_path(current, original)
+                    or _same_exact_file_path(current_root, original)
+                ):
+                    continue
+            artifact_rank = 1
+            if (
+                observation_sink == "cloud_sync"
+                and current
+                and not _same_exact_file_path(current, original)
+            ):
+                artifact_rank = 0
+            candidates.append((artifact_rank, distance, original, current))
         if not candidates:
             return None
-        candidates.sort(key=lambda item: item[0])
-        best_distance = candidates[0][0]
-        best = [item for item in candidates if item[0] == best_distance]
-        roots = _dedupe_paths([item[1] for item in best])
-        return (best[0][1], best[0][2]) if len(roots) == 1 else None
+        candidates.sort(key=lambda item: item[:2])
+        best_score = candidates[0][:2]
+        best = [item for item in candidates if item[:2] == best_score]
+        roots = _dedupe_paths([item[2] for item in best])
+        return (best[0][2], best[0][3]) if len(roots) == 1 else None
 
     def _visual_current_file(
         self,
@@ -983,11 +1160,25 @@ class EventCorrelator:
         lineage: Lineage,
     ) -> str:
         current_file = observation.resource or original
+        if normalize_path(current_file).strip().lower() in {"unknown", "none", "null", "n/a", "na", "未知"}:
+            current_file = original
         if not current_file:
             return original
-        action = _declared_visual_action(observation)
-        if original and (same_file(current_file, original) or _matches_sensitive_file_reference(current_file, original)):
+        removable_destination = _visual_removable_destination(observation, original)
+        if removable_destination:
+            return removable_destination
+        distinct_remote_output = _is_explicit_remote_output(observation, current_file, original)
+        if original and _is_source_label_only(current_file, original) and not distinct_remote_output:
             current_file = original
+        action = _declared_visual_action(observation)
+        if (
+            original
+            and not distinct_remote_output
+            and (same_file(current_file, original) or _matches_sensitive_file_reference(current_file, original))
+        ):
+            current_file = original
+        if original and action == "chat_upload" and _mentions_exact_filename(observation.description, original):
+            return original
         if original and action in _OUTBOUND_SOURCE_OBJECT_ACTIONS and _mentions_exact_filename(observation.description, original):
             derived = self._latest_visible_descendant_before(original, observation, lineage)
             return derived or original
@@ -1028,7 +1219,7 @@ class EventCorrelator:
         candidates = []
         for artifact in lineage.direct:
             normalized = normalize_path(artifact)
-            if same_file(normalized, original) or lineage.root(normalized) != lineage.root(original):
+            if _same_exact_file_path(normalized, original) or lineage.root(normalized) != lineage.root(original):
                 continue
             if not _is_user_visible_lineage_target(normalized):
                 continue
@@ -1094,6 +1285,215 @@ def _observation_search_text(observation) -> str:
         )
         if item
     )
+
+
+def _normalize_cached_observation_semantics(observation):
+    """Reapply deterministic semantics to observations loaded from older caches."""
+
+    text = observation.description.lower()
+    declared = _declared_visual_behavior(observation)
+    status = _observation_action_status(observation)
+    submitted_to_web = (
+        declared == "hidden_transfer"
+        and status in {"submitted", "in_progress", "completed"}
+        and (
+            bool(re.search(r"\bpasted\b.{0,100}\binto\b", text))
+            or any(
+            marker in text
+            for marker in ("pasted into", "pasted to", "pasted the content", "submitted to", "粘贴到", "提交到")
+            )
+        )
+        and (
+            bool(re.search(r"\b[a-z0-9-]+\.(?:com|cn|net|org|io|ai)\b", text))
+            or any(
+                marker in text
+                for marker in ("web-based", "online tool", "online service", "third-party tool", "在线工具", "第三方工具")
+            )
+        )
+    )
+    if submitted_to_web:
+        description = re.sub(
+            r"^\s*hidden_transfer\s*:\s*[^.]+",
+            "direct_leak: paste_to_web",
+            observation.description,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        description = re.sub(
+            r"\bsink_type=unknown\b",
+            "sink_type=network_upload",
+            description,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        return replace(
+            observation,
+            operation_type="external_sink_interaction",
+            description=description,
+        )
+
+    passive_local_preview = (
+        any(marker in text for marker in ("file explorer", "windows explorer", "资源管理器"))
+        and any(marker in text for marker in ("preview pane", "preview panel", "预览窗格", "预览栏"))
+        and any(marker in text for marker in ("ai summary", "ai public document", "ai 公文", "ai公文"))
+        and not any(marker in text for marker in ("clicked ai", "submitted to ai", "uploaded to ai", "点击ai", "提交到ai"))
+    )
+    inferred_toolbar_upload = (
+        any(marker in text for marker in ("is displayed in", "is visible in", "显示在", "可见于"))
+        and any(marker in text for marker in ("toolbar shows", "toolbar contains", "工具栏显示", "工具栏包含"))
+        and any(
+            marker in text
+            for marker in (
+                "implying the file was uploaded",
+                "suggesting the file was uploaded",
+                "therefore it was uploaded",
+                "由此推断文件已上传",
+                "暗示文件已上传",
+            )
+        )
+    )
+    monitoring_log_only_claim = _is_monitoring_log_only_claim(text)
+    inferred_recording_attachment = _is_inferred_recording_attachment(text, status=status)
+    if declared == "direct_leak" and (
+        passive_local_preview
+        or inferred_toolbar_upload
+        or monitoring_log_only_claim
+        or inferred_recording_attachment
+    ):
+        downgraded_action = (
+            "monitoring_log_claim"
+            if monitoring_log_only_claim
+            else "recording_attachment_inference"
+            if inferred_recording_attachment
+            else "local_preview"
+        )
+        description = re.sub(
+            r"^\s*direct_leak\s*:\s*[^.]+",
+            f"unknown_risk: {downgraded_action}",
+            observation.description,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        description = re.sub(r"\bsink_type=[a-z_]+\b", "sink_type=unknown", description, count=1, flags=re.IGNORECASE)
+        description = re.sub(
+            r"\baction_status=(?:selected|submitted|in_progress|completed|failed)\b",
+            "action_status=unknown",
+            description,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        return replace(observation, operation_type="file_or_content_transfer", description=description)
+
+    separate_upload_not_started = (
+        status == "selected"
+        and (
+            (
+                any(marker in text for marker in ("upload button is visible", "上传按钮可见", "显示上传按钮"))
+                and any(marker in text for marker in ("no upload progress", "upload has not started", "未开始上传", "没有上传进度"))
+            )
+            or (
+                any(marker in text for marker in ("staged in the upload area", "ready for upload", "已进入上传区域", "等待上传"))
+                and ("upload progress" not in text or "no upload progress" in text)
+                and not any(marker in text for marker in ("upload completed", "was uploaded", "上传完成", "已上传"))
+            )
+        )
+    )
+    local_recording_preview = (
+        status == "selected"
+        and any(marker in text for marker in ("screen recording preview", "recording preview", "录屏预览"))
+        and any(marker in text for marker in ("send to", "发送到"))
+        and any(marker in text for marker in ("button", "按钮", "staged", "待发送"))
+        and not any(marker in text for marker in ("was sent", "sent successfully", "点击发送", "发送成功", "已发送"))
+    )
+    if declared == "direct_leak" and (separate_upload_not_started or local_recording_preview):
+        description = re.sub(
+            r"^\s*direct_leak\s*:\s*[^.]+",
+            "unknown_risk: preparation",
+            observation.description,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        description = re.sub(
+            r"\baction_status=selected\b",
+            "action_status=unknown",
+            description,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        return replace(
+            observation,
+            operation_type="file_or_content_transfer",
+            description=description,
+        )
+    return observation
+
+
+def _is_monitoring_log_only_claim(text: str) -> bool:
+    monitoring = any(
+        marker in text
+        for marker in (
+            "monitoring logs",
+            "monitor log",
+            "powershell log",
+            "logs in powershell",
+            "监控日志",
+            "powershell 日志",
+        )
+    )
+    inferred_from_log = any(
+        marker in text
+        for marker in (
+            "log confirms",
+            "logs explicitly record",
+            "log explicitly records",
+            "based on the log",
+            "日志确认",
+            "日志表明",
+        )
+    )
+    direct_ui_evidence = any(
+        marker in text
+        for marker in (
+            "attachment card is visible",
+            "upload progress is visible",
+            "send confirmation is visible",
+            "generated answer is visible",
+            "上传进度可见",
+            "附件卡片可见",
+            "发送确认可见",
+        )
+    )
+    return monitoring and inferred_from_log and not direct_ui_evidence
+
+
+def _is_inferred_recording_attachment(text: str, *, status: str) -> bool:
+    if status != "selected":
+        return False
+    recording = any(marker in text for marker in ("screen recording", "screenshot", "recording mp4", "录屏", "截图"))
+    attachment = any(marker in text for marker in ("attachment", "staged", "thumbnail", "附件", "待发送", "缩略图"))
+    inferred = any(
+        marker in text
+        for marker in (
+            "likely the screen recording",
+            "likely a screen recording",
+            "likely a screenshot",
+            "given the dark thumbnail",
+            "appears to contain the recording",
+            "可能是录屏",
+            "可能是截图",
+        )
+    )
+    clearly_identified = any(
+        marker in text
+        for marker in (
+            "attachment card is visible",
+            "identified attachment card",
+            "clearly identified screenshot",
+            "明确的截图附件",
+        )
+    )
+    completed = any(marker in text for marker in ("was sent", "sent successfully", "发送成功", "已发送"))
+    return recording and attachment and inferred and not clearly_identified and not completed
 
 
 def _is_external_observation(observation) -> bool:
@@ -1368,7 +1768,7 @@ def _event_sensitive_artifact(event, known: list[str], sensitive_files: list[str
         artifact = normalize_path(candidate)
         if artifact and _artifact_has_sensitive_root(artifact, sensitive_files, lineage):
             return artifact
-    return _unique_known_artifact_mention(event.window_title, known, sensitive_files, lineage)
+    return _unique_known_artifact_mention(_event_search_text(event), known, sensitive_files, lineage)
 
 
 def _artifact_has_sensitive_root(artifact: str, sensitive_files: list[str], lineage: Lineage) -> bool:
@@ -1472,6 +1872,30 @@ def _is_user_visible_lineage_target(file_path: str) -> bool:
     )
 
 
+def _is_cloud_sync_directory_transfer(log, target: str, original: str, lineage: Lineage) -> bool:
+    if log.event_type.lower() not in {
+        "created",
+        "renamed",
+        "moved",
+        "copied",
+        "file_created",
+        "file_renamed",
+        "file_moved",
+        "file_copied",
+    }:
+        return False
+    normalized_target = normalize_path(target)
+    lowered_target = normalized_target.lower()
+    if not _is_user_visible_lineage_target(normalized_target):
+        return False
+    if not any(marker in lowered_target for marker in ("/onedrive/", "/wpsdrive/")):
+        return False
+    if _same_exact_file_path(normalized_target, original):
+        return False
+    root = lineage.root(lineage.resolve_artifact(normalized_target))
+    return bool(root and same_file(root, original))
+
+
 def _is_recent_document_save_as(
     event,
     target: str,
@@ -1482,7 +1906,9 @@ def _is_recent_document_save_as(
         return False
     target_path = Path(normalize_path(target))
     source_path = Path(normalize_path(source))
-    if not target_path.name or not source_path.name or target_path.name.lower() == source_path.name.lower():
+    same_name = target_path.name.lower() == source_path.name.lower()
+    cloud_sync_copy = same_name and _is_cloud_sync_user_path(target) and not _same_exact_file_path(target, source)
+    if not target_path.name or not source_path.name or (same_name and not cloud_sync_copy):
         return False
     if target_path.suffix.lower() not in _CLIPBOARD_DOCUMENT_EXTENSIONS:
         return False
@@ -1536,9 +1962,11 @@ def _source_from_recent_document_context(
     target_path = Path(normalize_path(target))
     candidates: list[tuple[int, int, str, str]] = []
     event_process = (event.process_name or event.app_name or "").lower()
+    explicit_copy_context = contains_any(_event_search_text(event), ("copy", "copied", "复制"))
     for source, source_time, title, process in reversed(recent_contexts):
         elapsed = event_time - source_time
-        if elapsed < 0 or elapsed > _CLIPBOARD_SOURCE_HORIZON_MS:
+        horizon = _DOCUMENT_TITLE_SOURCE_HORIZON_MS if explicit_copy_context else _CLIPBOARD_SOURCE_HORIZON_MS
+        if elapsed < 0 or elapsed > horizon:
             continue
         root = lineage.root(source) or source
         sensitive_root = _lookup_sensitive_source(
@@ -1549,7 +1977,18 @@ def _source_from_recent_document_context(
         if not sensitive_root:
             continue
         source_path = Path(normalize_path(source))
-        if source_path.name.lower() == target_path.name.lower():
+        if _same_exact_file_path(source, target):
+            continue
+        same_name = source_path.name.lower() == target_path.name.lower()
+        explicit_copy = (
+            event.event_type.lower() in {"created", "copied", "file_created", "file_copied"}
+            and source_path.parent != target_path.parent
+            and explicit_copy_context
+        )
+        if same_name and not (
+            _is_cloud_sync_user_path(target)
+            and _is_user_visible_lineage_target(source)
+        ) and not explicit_copy:
             continue
         title_text = normalize_path(title).lower()
         same_parent = (
@@ -1578,6 +2017,15 @@ def _source_from_recent_document_context(
     best = [item for item in ordered if item[:2] == best_score]
     unique_roots = _dedupe_paths([item[3] for item in best])
     return best[0][2] if len(unique_roots) == 1 else ""
+
+
+def _is_cloud_sync_user_path(file_path: str) -> bool:
+    lowered = normalize_path(file_path).lower()
+    return any(marker in lowered for marker in ("/onedrive/", "/wpsdrive/"))
+
+
+def _same_exact_file_path(left: str, right: str) -> bool:
+    return bool(left and right and normalize_path(left).lower() == normalize_path(right).lower())
 
 
 def _is_save_as_context(event) -> bool:
@@ -1622,6 +2070,43 @@ def _source_from_derived_filename(file_path: str, sensitive_files: list[str]) ->
     return matches[0] if len(matches) == 1 else ""
 
 
+def _source_from_recent_title_context(
+    event,
+    target: str,
+    recent_titles: list[tuple[int, str]],
+    sensitive_files: list[str],
+) -> str:
+    """Combine a recent exact title with a same-directory derived target."""
+
+    normalized_target = normalize_path(target)
+    if not _is_user_visible_lineage_target(normalized_target):
+        return ""
+    target_path = Path(normalized_target)
+    event_time = _lineage_event_time_ms(event)
+    matches: list[tuple[int, str]] = []
+    for title_time, title in reversed(recent_titles):
+        elapsed = event_time - title_time
+        if elapsed < 0 or elapsed > _DOCUMENT_TITLE_SOURCE_HORIZON_MS:
+            continue
+        for sensitive in sensitive_files:
+            source_path = Path(normalize_path(sensitive))
+            if (
+                source_path.parent.as_posix().lower() != target_path.parent.as_posix().lower()
+                or not _mentions_exact_filename(title, sensitive)
+                or not _is_generated_descendant_name(
+                    target_path.stem.lower(),
+                    source_path.stem.lower(),
+                )
+            ):
+                continue
+            matches.append((elapsed, sensitive))
+    if not matches:
+        return ""
+    best_elapsed = min(elapsed for elapsed, _ in matches)
+    best_sources = _dedupe_paths([source for elapsed, source in matches if elapsed == best_elapsed])
+    return best_sources[0] if len(best_sources) == 1 else ""
+
+
 def _source_from_derived_parent_alias(file_path: str, sensitive_files: list[str]) -> str:
     """Infer wrapped split outputs stored beside a source-named directory."""
 
@@ -1649,7 +2134,11 @@ def _source_from_derived_parent_alias(file_path: str, sensitive_files: list[str]
 def _is_generated_descendant_name(candidate_stem: str, source_stem: str) -> bool:
     if not source_stem or candidate_stem == source_stem:
         return False
-    return candidate_stem.startswith(f"{source_stem}_") or candidate_stem.startswith(f"{source_stem} (")
+    return (
+        candidate_stem.startswith(f"{source_stem}_")
+        or candidate_stem.startswith(f"{source_stem} (")
+        or candidate_stem.endswith(source_stem)
+    )
 
 
 def _correlated_operation_type(log, observation, text: str) -> str:
@@ -1724,6 +2213,8 @@ def _visual_join_reasons(observation, original: str) -> list[str]:
     declared = _declared_visual_behavior(observation)
     if declared:
         reasons.append(f"visual_declared_behavior:{declared}")
+    if _is_unexecuted_visual_preparation(observation):
+        reasons.append("visual_unexecuted_preparation")
     if _is_unproven_cloud_folder_claim(observation):
         reasons.append("visual_unproven_cloud_folder")
     return reasons
@@ -1780,6 +2271,27 @@ def _declared_visual_behavior(observation) -> str:
     return match.group(1) if match else ""
 
 
+def _is_unexecuted_visual_preparation(observation) -> bool:
+    if (
+        _declared_visual_behavior(observation) != "hidden_transfer"
+        or _observation_action_status(observation) != "unknown"
+    ):
+        return False
+    text = _observation_search_text(observation).lower()
+    return any(
+        marker in text
+        for marker in (
+            "context_menu",
+            "not confirmed",
+            "not executed",
+            "preparation",
+            "仅准备",
+            "未确认",
+            "未执行",
+        )
+    )
+
+
 def _declared_visual_action(observation) -> str:
     match = re.match(r"\s*(?:normal|direct_leak|hidden_transfer|unknown_risk)\s*:\s*([^.]+)", observation.description.lower())
     if not match:
@@ -1788,12 +2300,143 @@ def _declared_visual_action(observation) -> str:
 
 
 def _effective_visual_operation_type(observation) -> str:
+    if _is_confirmed_external_observation(observation):
+        return "external_sink_interaction"
     if _declared_visual_behavior(observation) == "direct_leak":
+        if (
+            observation.operation_type == "external_sink_interaction"
+            and _observation_action_status(observation) in {"submitted", "in_progress", "completed"}
+            and _observation_sink_type(observation) not in {"", "unknown", "none", "null", "n/a", "na"}
+        ):
+            # The parser has already normalized the structured VLM event. Do
+            # not downgrade it merely because the model used a novel action
+            # label such as "git push upload" or "文件上传/导入".
+            return "external_sink_interaction"
         action = _declared_visual_action(observation)
         if action in _DECLARED_VISUAL_OUTBOUND_ACTIONS or _is_explicit_declared_outbound_action(action):
             return "external_sink_interaction"
         return "file_or_content_transfer"
     return observation.operation_type
+
+
+def _is_confirmed_external_observation(observation) -> bool:
+    if _observation_action_status(observation) not in {"submitted", "in_progress", "completed"}:
+        return False
+    if _observation_sink_type(observation) in {"", "unknown", "none", "null", "n/a", "na"}:
+        return False
+    action = _declared_visual_action(observation)
+    if action in _DECLARED_VISUAL_OUTBOUND_ACTIONS or _is_explicit_declared_outbound_action(action):
+        return True
+    text = observation.description.lower()
+    return any(
+        marker in text
+        for marker in (
+            "pasted into",
+            "pasted to",
+            "sends it to",
+            "sent it to",
+            "submitted to",
+            "uploaded to",
+            "sent to",
+            "synced to",
+            "transferring sensitive data to",
+            "粘贴到",
+            "提交到",
+            "上传到",
+            "发送到",
+            "同步到",
+        )
+    )
+
+
+def _suppress_conflicting_screen_share_observations(observations):
+    local_recordings = [
+        observation
+        for observation in observations
+        if _declared_visual_action(observation) in {"screen_recording", "screen_record", "record_screen"}
+        and any(
+            marker in observation.description.lower()
+            for marker in ("mp4", "screen recording", "录屏", "屏幕录制")
+        )
+    ]
+    if not local_recordings:
+        return observations
+    result = []
+    for observation in observations:
+        action = _declared_visual_action(observation)
+        text = observation.description.lower()
+        resource_names = _observation_resource_stems(observation)
+        conflicted = (
+            action in {"screen_share", "share_screen"}
+            and any(marker in text for marker in ("mp4", "screen recording", "录屏", "屏幕录制"))
+            and not _has_independent_screen_share_evidence(text)
+            and any(
+                abs(recording.start_ms - observation.start_ms) <= 10_000
+                and (
+                    not resource_names
+                    or bool(resource_names & _observation_resource_stems(recording))
+                )
+                for recording in local_recordings
+            )
+        )
+        if not conflicted:
+            result.append(observation)
+    return result
+
+
+def _suppress_redundant_cloud_sync_source_events(events, lineage: Lineage):
+    explicit_targets = [
+        event
+        for event in events
+        if "cloud_sync_directory_transfer" in event.join_reasons
+        and event.original_file
+        and event.current_file
+        and not _same_exact_file_path(event.original_file, event.current_file)
+    ]
+    if not explicit_targets:
+        return events
+    result = []
+    for event in events:
+        redundant = (
+            event.event_type == "visual_observation"
+            and "sink_type:cloud_sync" in event.join_reasons
+            and _same_exact_file_path(event.original_file, event.current_file)
+            and any(
+                _same_exact_file_path(target.original_file, event.original_file)
+                and _same_exact_file_path(lineage.root(target.current_file), event.original_file)
+                and abs(parse_timestamp_ms(target.timestamp) - parse_timestamp_ms(event.timestamp)) <= 60_000
+                for target in explicit_targets
+            )
+        )
+        if not redundant:
+            result.append(event)
+    return result
+
+
+def _has_independent_screen_share_evidence(text: str) -> bool:
+    return any(
+        marker in text
+        for marker in (
+            "sharing toolbar",
+            "share toolbar",
+            "sharing banner",
+            "share banner",
+            "active share indicator",
+            "remote participant",
+            "共享工具栏",
+            "共享横幅",
+            "正在共享",
+            "远端参会者",
+        )
+    )
+
+
+def _observation_resource_stems(observation) -> set[str]:
+    return {
+        stem
+        for resource in (observation.resource, *observation.related_resources)
+        if (stem := Path(normalize_path(resource)).stem.lower()) not in {"", "unknown", "未知"}
+    }
 
 
 def _is_explicit_declared_outbound_action(action: str) -> bool:
@@ -1813,6 +2456,9 @@ def _is_explicit_declared_outbound_action(action: str) -> bool:
             "http_",
             "copy_",
             "paste_",
+            "publish_",
+            "article_publish_",
+            "folder_sync_",
             "ai_prompt_",
             "ai_chat_",
             "cloud_",
@@ -1838,21 +2484,23 @@ def _is_unproven_cloud_folder_claim(observation) -> bool:
             "automatically synced",
             "automatically sync",
             "files in the onedrive folder",
+            "visible in file explorer within a onedrive",
+            "within a onedrive synced folder",
+            "onedrive synced folder path",
+            "showing sync status icons",
             "位于onedrive",
             "位于 onedrive",
             "同步目录中的文件会自动",
         )
     )
-    explicit_status = any(
+    dynamic_status = any(
         marker in text
         for marker in (
             "upload progress",
             "sync progress",
-            "sync status",
             "sync completed",
             "syncing",
             "同步进度",
-            "同步状态",
             "同步完成",
             "正在同步",
         )
@@ -1867,8 +2515,8 @@ def _is_unproven_cloud_folder_claim(observation) -> bool:
             "没有同步状态",
         )
     ):
-        explicit_status = False
-    return membership_claim and not explicit_status
+        dynamic_status = False
+    return membership_claim and not dynamic_status
 
 
 def _behavior_with_action_status(observation, fallback: str) -> str:
@@ -1915,6 +2563,17 @@ def _mentions_exact_filename(text: str, file_path: str) -> bool:
     return bool(name and Path(name).suffix and name in normalized_text)
 
 
+def _mentions_source_directory(text: str, file_path: str) -> bool:
+    """Match a parent folder as a token, not as a filename extension."""
+
+    normalized_text = normalize_path(text).lower()
+    directory = Path(normalize_path(file_path)).parent.name.lower()
+    suffix = Path(normalize_path(file_path)).suffix.lower().lstrip(".")
+    if not normalized_text or not directory or directory == suffix:
+        return False
+    return bool(re.search(rf"(?<![\w.]){re.escape(directory)}(?![\w.])", normalized_text))
+
+
 def _best_sensitive_mention(text: str, sensitive_files: list[str]) -> str:
     best = ""
     best_score = (0, 0, 0)
@@ -1933,7 +2592,11 @@ def _best_sensitive_mention(text: str, sensitive_files: list[str]) -> str:
             strength = 3
         elif name and name in normalized_text:
             strength = 2
-        elif len(stem) >= 4 and stem in normalized_text:
+        elif len(stem) >= 4 and stem in normalized_text and not stem.isascii():
+            # An ASCII stem such as ``customer`` or ``secret`` commonly
+            # appears as prose or as a VLM translation. Without the extension
+            # or an exact path it is not file identity. Non-ASCII stems retain
+            # their literal screen text value (for example 客户联系方式).
             strength = 1
         else:
             continue
@@ -1943,6 +2606,44 @@ def _best_sensitive_mention(text: str, sensitive_files: list[str]) -> str:
             best = sensitive
             best_score = score
     return best
+
+
+def _partial_visual_filename_identity(observation, logs, sensitive_files: list[str]) -> str:
+    """Resolve a visibly truncated filename only within a unique user scope."""
+
+    text = normalize_path(observation.description).lower()
+    partial_match = re.search(
+        r"(?:partial text|filename (?:starts? with|prefix)|部分文字|文件名前缀)\s*[`'\"]([^`'\"]+?)(?:\.\.\.|\u2026)[`'\"]",
+        text,
+    )
+    extension_match = re.search(r"(?<![\w])\.(docx?|pdf|xlsx?|pptx?|txt|sql|zip|rar)(?![\w])", text)
+    if not partial_match or not extension_match:
+        return ""
+    prefix = partial_match.group(1).strip().lower()
+    extension = f".{extension_match.group(1).lower()}"
+    if len(prefix) < 2:
+        return ""
+
+    usernames = {
+        str((getattr(log, "raw", {}) or {}).get("user_info", {}).get("username", "")).strip().lower()
+        for log in logs
+    }
+    usernames.discard("")
+    if not usernames:
+        return ""
+
+    matches = []
+    for sensitive in sensitive_files:
+        normalized = normalize_path(sensitive)
+        lowered = normalized.lower()
+        name = Path(normalized).name
+        if Path(name).suffix.lower() != extension or not Path(name).stem.lower().startswith(prefix):
+            continue
+        if not any(f"/users/{username}/" in lowered for username in usernames):
+            continue
+        matches.append(normalized)
+    unique = _dedupe_paths(matches)
+    return unique[0] if len(unique) == 1 else ""
 
 
 def _source_context_score(text: str, sensitive: str) -> int:
@@ -1989,6 +2690,136 @@ def _matches_sensitive_file_reference(file_path: str, sensitive_file: str) -> bo
     if Path(ref_name).suffix:
         return False
     return len(ref_name) >= 4 and ref_name == sensitive_stem
+
+
+def _is_source_label_only(candidate: str, original: str) -> bool:
+    normalized = normalize_path(candidate)
+    if not normalized or _looks_like_absolute_path(normalized) or "/" in normalized:
+        return False
+    label = Path(normalized).name.lower()
+    source_name = Path(normalize_path(original)).name.lower()
+    return bool(label and source_name and label in {source_name, Path(source_name).stem.lower()})
+
+
+def _is_explicit_remote_output(observation, candidate: str, original: str) -> bool:
+    if not candidate or not original or not _is_source_label_only(candidate, original):
+        return False
+    action = _declared_visual_action(observation)
+    text = observation.description.lower()
+    remote_context = any(
+        marker in text
+        for marker in ("web ide", "web repository", "remote repository", "gitlab", "github", "jihulab")
+    )
+    created_output = any(
+        marker in text
+        for marker in ("created it as file", "created as file", "pasted/created", "pasted into a new file")
+    )
+    return remote_context and created_output and action.startswith(("copy_", "paste_", "commit", "upload_"))
+
+
+def _visual_removable_destination(observation, original: str) -> str:
+    if not original or _observation_sink_type(observation) != "removable_media":
+        return ""
+    if _observation_action_status(observation) != "completed":
+        return ""
+    text = observation.description.lower()
+    if not any(marker in text for marker in ("usb", "removable", "u 盘", "u盘", "移动存储")):
+        return ""
+    if not any(marker in text for marker in ("copied to", "appears in the destination", "复制到", "目标目录")):
+        return ""
+    source_match = re.match(r"^([a-z]):/", normalize_path(original).lower())
+    source_drive = source_match.group(1) if source_match else ""
+    drives = [match.lower() for match in re.findall(r"(?<![a-z0-9])([a-z]):", text)]
+    targets = [drive for drive in drives if drive != source_drive]
+    if len(set(targets)) != 1:
+        return ""
+    return f"{targets[0].upper()}:/{Path(normalize_path(original)).name}"
+
+
+def _explicit_visual_derivation(
+    observation,
+    logs,
+    sensitive_files: list[str],
+    lineage: Lineage,
+) -> tuple[str, str] | None:
+    text = observation.description.lower()
+    extracted_save = (
+        any(marker in text for marker in ("extracted sensitive text", "extracted text", "提取的敏感文本", "提取文字"))
+        and any(marker in text for marker in ("save as", "saved as", "being saved", "另存为", "保存为"))
+    )
+    explicit_source_derivation = any(
+        marker in text
+        for marker in ("derived file", "derived from", "screenshot of", "源自", "派生文件", "截图来自")
+    )
+    if not explicit_source_derivation and not extracted_save:
+        return None
+    target_name = Path(normalize_path(observation.resource)).name.lower()
+    if not target_name or target_name in {"unknown", "未知"}:
+        return None
+    target_path = Path(target_name)
+    targets = _dedupe_paths([
+        log.file_path
+        for log in logs
+        if _looks_like_absolute_path(normalize_path(log.file_path))
+        and (
+            Path(normalize_path(log.file_path)).name.lower() == target_name
+            or (
+                extracted_save
+                and target_path.suffix
+                and Path(normalize_path(log.file_path)).suffix.lower() == target_path.suffix.lower()
+                and Path(normalize_path(log.file_path)).stem.lower().startswith(target_path.stem.lower())
+                and _is_cloud_sync_user_path(log.file_path)
+            )
+        )
+    ])
+    if len(targets) != 1:
+        return None
+    target = targets[0]
+    if extracted_save:
+        source_artifacts = _dedupe_paths([
+            lineage.resolve_artifact(reference)
+            for reference in observation.related_resources
+            if normalize_path(reference)
+            and not _same_exact_file_path(reference, observation.resource)
+            and lineage.root(lineage.resolve_artifact(reference)) != lineage.resolve_artifact(reference)
+        ])
+        if len(source_artifacts) == 1:
+            return target, source_artifacts[0]
+    mentioned_sources = _dedupe_paths(
+        [
+            sensitive
+            for sensitive in sensitive_files
+            if not same_file(sensitive, target) and _mentions_exact_filename(observation.description, sensitive)
+        ]
+    )
+    same_parent_sources = [
+        source
+        for source in mentioned_sources
+        if Path(normalize_path(source)).parent == Path(normalize_path(target)).parent
+    ]
+    sources = same_parent_sources or mentioned_sources
+    if sources:
+        longest_name = max(len(Path(normalize_path(source)).name) for source in sources)
+        sources = [source for source in sources if len(Path(normalize_path(source)).name) == longest_name]
+    return (target, sources[0]) if len(sources) == 1 else None
+
+
+def _has_ambiguous_sensitive_label(observation, sensitive_files: list[str]) -> bool:
+    references = [observation.resource, *observation.related_resources]
+    if any(_looks_like_absolute_path(normalize_path(reference)) for reference in references):
+        return False
+    matches = {
+        normalize_path(sensitive).lower()
+        for reference in references
+        for sensitive in sensitive_files
+        if normalize_path(reference)
+        and Path(normalize_path(reference)).name.lower()
+        in {
+            Path(normalize_path(sensitive)).name.lower(),
+            Path(normalize_path(sensitive)).stem.lower(),
+        }
+    }
+    return len(matches) > 1
 
 
 def _is_unbound_visual_risk(observation, text: str) -> bool:
@@ -2149,6 +2980,8 @@ def _lookup_sensitive_source(
         matched = exact.get(normalized.replace("/screenmonitor/winows_monitor/", "/screenmonitor/windows_monitor/"))
     if matched:
         return matched
+    if _looks_like_absolute_path(normalized) or "/" in normalized:
+        return ""
     name = Path(normalized).name
     path = Path(name)
     if path.suffix and len(path.stem) >= 2:

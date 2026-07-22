@@ -41,7 +41,10 @@ def build_datalog_facts(
         if (
             current_key
             and not _same_artifact_path(event.original_file, event.current_file)
-            and _is_lineage_transfer_event(event)
+            and (
+                _is_lineage_transfer_event(event)
+                or "cloud_sync_directory_transfer" in event.join_reasons
+            )
         ):
             candidate = (timestamp, index, event)
             current = lineage_events.get(current_key)

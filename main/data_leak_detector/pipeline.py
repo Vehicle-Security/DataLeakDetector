@@ -1000,12 +1000,42 @@ def _is_transfer_supplement(record: dict[str, Any], known_resources: set[str]) -
     }:
         return True
     path = normalize_path(record.get("file_path") or record.get("path") or "").lower()
+    if _is_external_app_document_access(record, event_type=event_type, path=path):
+        # File-dialog monitors often emit ``file_selected`` without a path,
+        # while the adjacent filesystem event from the chat/mail client has
+        # the exact document path. Keep that event as identity evidence so an
+        # OCR-shortened filename can still bind to the source seen in logs.
+        return True
     if path and path in known_resources and event_type in {"opened", "read"} and "browser_file_access" in operation:
         return True
     if event_type not in {"created", "modified", "renamed"} or not _is_document_path(path):
         return False
     parent = str(Path(path).parent).lower()
     return any(parent == str(Path(resource).parent).lower() for resource in known_resources)
+
+
+def _is_external_app_document_access(record: dict[str, Any], *, event_type: str, path: str) -> bool:
+    if event_type not in {"opened", "read", "modified"} or not _is_document_path(path):
+        return False
+    process = record.get("process_info") if isinstance(record.get("process_info"), dict) else {}
+    window = record.get("window_info") if isinstance(record.get("window_info"), dict) else {}
+    context = normalize_path(
+        " ".join(
+            (
+                str(record.get("app_name") or ""),
+                str(process.get("process_name") or ""),
+                str(window.get("window_title") or record.get("window_title") or ""),
+            )
+        )
+    ).lower()
+    if any(marker in context for marker in ("微信", "飞书", "钉钉")):
+        return True
+    return bool(
+        re.search(
+            r"(?:^|[\s/\\_.-])(?:weixin|wechat|qq|tim|feishu|lark|dingtalk|teams|outlook|thunderbird)(?:\.exe)?(?:$|[\s/\\_.-])",
+            context,
+        )
+    )
 
 
 def _is_identity_window_supplement(record: dict[str, Any]) -> bool:
@@ -1134,7 +1164,20 @@ def _vlm_file_context(logs: list[Any], analysis_sensitive_files: list[str]) -> l
         path = normalize_path(getattr(event, "file_path", ""))
         if path and any(same_file(path, sensitive) for sensitive in analysis_sensitive_files):
             observed.append(path)
-    return _dedupe_paths(observed)
+    if observed:
+        return _dedupe_paths(observed)
+
+    usernames = {
+        str((getattr(event, "raw", {}) or {}).get("user_info", {}).get("username", "")).strip().lower()
+        for event in logs
+    }
+    usernames.discard("")
+    user_scoped = [
+        sensitive
+        for sensitive in analysis_sensitive_files
+        if any(f"/users/{username}/" in normalize_path(sensitive).lower() for username in usernames)
+    ]
+    return _dedupe_paths(user_scoped)
 
 
 

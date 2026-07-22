@@ -97,10 +97,8 @@ def discover_data_case_directories(root: str | Path) -> list[Path]:
         for case_dir in composite_cases
         for session in _direct_session_directories(case_dir)
     }
-    return sorted(
-        [*composite_cases, *(atomic_cases - grouped_sessions)],
-        key=lambda path: str(path).lower(),
-    )
+    logical_cases = composite_cases | (atomic_cases - grouped_sessions)
+    return sorted(logical_cases, key=lambda path: str(path).lower())
 
 
 def discover_data_case(

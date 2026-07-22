@@ -100,6 +100,18 @@ def _is_explicit_upload_event(event: CorrelatedEvent, text: str) -> bool:
         return False
     if "visual_unproven_cloud_folder" in reasons and "explicit_sink_log" not in reasons:
         return False
+    vm_sink_overrides_visual = {
+        "virtual_machine_sink",
+        "clipboard_to_external_app",
+    }.issubset(reasons)
+    if "visual_unexecuted_preparation" in reasons and not vm_sink_overrides_visual:
+        # A generic file_selected log can accompany a context menu or local
+        # shell selection. If the visual evidence explicitly says the outbound
+        # action was not executed, that selection is not an upload candidate.
+        # Deterministic VMware evidence requires both the VM sink and a
+        # sensitive clipboard transition; a generic file_selected log is not
+        # enough to override the visual preparation warning.
+        return False
     if (
         event.behavior_category == "unknown_risk"
         and "visual_only" in reasons
@@ -148,6 +160,11 @@ def _upload_sink_type(event: CorrelatedEvent, current_file: str, text: str) -> s
                 "network_upload",
                 "virtual_machine",
             }:
+                if declared == "cloud_sync" and contains_any(
+                    f"{event.app_name} {text}",
+                    ("github", "gitlab", "gitee", "jihulab", "codeberg", "代码仓库", "代码托管"),
+                ):
+                    return "network_upload"
                 return declared
     app_text = normalize_path(event.app_name).lower()
     if contains_any(app_text, ("doubao", "豆包", "chatgpt", "deepseek", "kimi", "claude", "gemini")):

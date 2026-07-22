@@ -16,7 +16,20 @@ from .config import VisionConfig
 
 
 _ACTION_OFFSETS_MS = (-1_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000)
-_DERIVATION_OFFSETS_MS = (-5_000, -2_000, -1_000, -250, 0, 500, 2_000, 5_000, 10_000)
+_DERIVATION_OFFSETS_MS = (
+    -20_000,
+    -15_000,
+    -10_000,
+    -5_000,
+    -2_000,
+    -1_000,
+    -250,
+    0,
+    500,
+    2_000,
+    5_000,
+    10_000,
+)
 _FILE_SELECTION_OFFSETS_MS = (-2_000, -1_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000)
 _OUTBOUND_OFFSETS_MS = (-2_000, -1_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000, 10_000)
 _CLIPBOARD_OFFSETS_MS = (-1_000, -250, 0, 500, 2_000, 5_000, 10_000, 15_000, 25_000, 30_000)
@@ -204,7 +217,7 @@ def build_video_coverage_windows(video_path: str | Path, config: VisionConfig) -
         sorted(
             {
                 min(duration_ms, max(0, round(duration_ms * fraction)))
-                for fraction in (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
+                for fraction in (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
             }
         )
     )
@@ -215,11 +228,29 @@ def build_video_coverage_windows(video_path: str | Path, config: VisionConfig) -
             "medium:video_coverage_fallback",
             priority="medium",
             step_ms=config.frame_step_ms,
-            max_keyframes=max(12, len(anchors)),
+            max_keyframes=max(18, len(anchors)),
             diff_threshold=min(config.frame_diff_threshold, 0.02),
             anchor_ms=anchors,
         )
     ]
+
+
+def augment_with_video_coverage(
+    video_path: str | Path,
+    windows: list[AnalysisWindow],
+    config: VisionConfig,
+) -> list[AnalysisWindow]:
+    """Add sparse full-video evidence only when logs have no result action."""
+
+    result_actions = {
+        action.split(":", 1)[0]
+        for window in windows
+        for _, action in window.action_phases
+    } & _RESULT_BEARING_ACTIONS
+    if result_actions or any("video_coverage_fallback" in window.reason for window in windows):
+        return windows
+    coverage = build_video_coverage_windows(video_path, config)
+    return [*windows, *coverage]
 
 
 def _activity_context_window(
@@ -1155,6 +1186,7 @@ __all__ = [
     "KeyFrameDuplicate",
     "KeyFrameSelection",
     "build_video_coverage_windows",
+    "augment_with_video_coverage",
     "merge_analysis_windows",
     "select_keyframes",
     "select_keyframes_detailed",

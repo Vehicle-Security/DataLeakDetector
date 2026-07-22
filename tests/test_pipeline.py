@@ -19,6 +19,7 @@ from data_leak_detector.frame_analyzer import analyze_video_behavior
 from data_leak_detector.frame_analyzer.artifacts import export_vision_artifacts
 from data_leak_detector.frame_analyzer.vlm_dispatch import (
     _combine_vlm_usage,
+    _is_transient_vlm_error,
     _shared_vlm_dispatcher,
     _shared_vlm_endpoint_locks,
     _validate_vlm_evidence,
@@ -55,6 +56,7 @@ from data_leak_detector.frame_analyzer.frames import (
     _should_keep_frame,
     _timestamp_groups,
     _trim_mandatory_evidence,
+    augment_with_video_coverage,
     build_video_coverage_windows,
     merge_analysis_windows,
     select_keyframes_detailed,
@@ -72,7 +74,7 @@ from data_leak_detector.models import CorrelatedEvent, LeakPath, UploadCandidate
 from data_leak_detector.policy import contains_any, load_policy_config
 from data_leak_detector.policy import classify_sink
 from data_leak_detector.sensitivity import load_sensitive_files_config
-from data_leak_detector.pipeline import _build_report_id, _load_pipeline_records
+from data_leak_detector.pipeline import _build_report_id, _load_pipeline_records, _vlm_file_context
 
 
 def _records() -> list[dict]:
@@ -152,6 +154,9 @@ def test_vlm_prompt_requires_executed_transfer_evidence() -> None:
     assert "merely visible as an executed leak" in prompt
     assert "unselected context-menu" in prompt
     assert "hidden_transfer rather than direct_leak" in prompt
+    assert "screenshot preview inserted into a chat composer" in prompt
+    assert "sensitive-file card staged" in prompt
+    assert "local screen recorder" in prompt
 
 
 def test_reusable_precompute_baseline_excludes_nested_session_cache(tmp_path: Path) -> None:
@@ -403,6 +408,32 @@ def test_analysis_windows_sample_strong_upload_events_more_densely() -> None:
     assert windows[0].end_ms == 90_000
     assert windows[0].step_ms == 250
     assert windows[0].max_keyframes == VisionConfig().max_keyframes_per_strong_window
+
+
+def test_derivation_window_keeps_long_pre_action_source_state() -> None:
+    archive = "C:/Users/alice/Desktop/company_secret.zip"
+    extracted = "C:/Users/alice/Desktop/company_secret/report.docx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:33",
+                "event_type": "created",
+                "file_path": extracted,
+                "extra": {"relative_timestamp": 33.0},
+                "process_info": {"process_name": "explorer.exe"},
+            }
+        ]
+    )
+
+    window = next(
+        window
+        for window in build_analysis_windows(logs, [archive], VisionConfig())
+        if (33_000, "derive") in window.action_phases
+    )
+
+    assert window.start_ms == 13_000
+    probes = _probe_timestamps(window, VisionConfig())
+    assert {13_000, 18_000, 23_000}.issubset(probes)
 
 
 def test_analysis_windows_keep_derived_transfer_anchor_when_upload_exists() -> None:
@@ -2223,8 +2254,45 @@ def test_video_coverage_fallback_produces_nonempty_keyframes(tmp_path: Path) -> 
 
     assert len(windows) == 1
     assert windows[0].reason == "medium:video_coverage_fallback"
-    assert len(windows[0].anchor_ms) == 6
+    assert len(windows[0].anchor_ms) == 11
+    assert windows[0].max_keyframes == 18
     assert selection.keyframes
+
+
+def test_context_only_windows_add_video_coverage_without_replacing_existing_windows(tmp_path: Path) -> None:
+    cv2 = pytest.importorskip("cv2")
+    np = pytest.importorskip("numpy")
+    video = tmp_path / "context_only.avi"
+    writer = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"MJPG"), 10.0, (160, 90))
+    assert writer.isOpened()
+    for index in range(30):
+        writer.write(np.full((90, 160, 3), index * 8, dtype=np.uint8))
+    writer.release()
+    context = AnalysisWindow(
+        500,
+        1_500,
+        "strong:external_session:chat",
+        priority="strong",
+        action_phases=((500, "external_session"), (1_500, "session_end")),
+    )
+
+    windows = augment_with_video_coverage(video, [context], VisionConfig())
+
+    assert windows[0] is context
+    assert len(windows) == 2
+    assert windows[1].reason == "medium:video_coverage_fallback"
+
+
+def test_result_action_window_does_not_add_video_coverage() -> None:
+    result = AnalysisWindow(
+        0,
+        10_000,
+        "strong:file_selected",
+        priority="strong",
+        action_phases=((5_000, "file_selected"),),
+    )
+
+    assert augment_with_video_coverage("unused.mp4", [result], VisionConfig()) == [result]
 
 
 def test_frame_hash_distance_can_detect_near_duplicates() -> None:
@@ -2705,6 +2773,126 @@ def test_pipeline_records_prefer_all_keyevents_over_raw_logs(tmp_path: Path) -> 
         ("t2", "file_upload"),
         ("t3", "app_switch"),
     ]
+
+
+def test_pipeline_records_keep_exact_document_identity_from_chat_client(tmp_path: Path) -> None:
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    logs_file = logs_dir / "logs.json"
+    keyevents_file = logs_dir / "keyevents.json"
+    source = "D:/gdata/documents_1/产品设计方案.docx"
+    keyevents_file.write_text(
+        json.dumps(
+            [
+                {
+                    "timestamp": "2026-06-01T15:50:05.330",
+                    "event_type": "file_selected",
+                    "file_path": "",
+                    "app_name": "微信",
+                    "process_info": {"process_name": "Weixin.exe"},
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    logs_file.write_text(
+        json.dumps(
+            [
+                {
+                    "timestamp": "2026-06-01T15:50:05.329",
+                    "event_type": "modified",
+                    "file_path": source,
+                    "app_name": "Weixin",
+                    "process_info": {"process_name": "Weixin.exe"},
+                    "window_info": {"window_title": "微信"},
+                },
+                {
+                    "timestamp": "2026-06-01T15:50:05.329",
+                    "event_type": "modified",
+                    "file_path": "D:/gdata/documents_1/unrelated.docx",
+                    "app_name": "Runtime Broker",
+                    "process_info": {"process_name": "RuntimeBroker.exe"},
+                },
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    records = _load_pipeline_records(logs_file)
+
+    assert any(normalize_path(item.get("file_path", "")) == source for item in records)
+    assert not any("unrelated.docx" in str(item.get("file_path", "")) for item in records)
+
+
+def test_exact_chat_log_identity_repairs_ocr_shortened_filename() -> None:
+    original = "D:/gdata/documents_1/产品设计方案.docx"
+    timestamp = parse_timestamp_ms("2026-06-01T15:50:05.329")
+    observations = [
+        {
+            "observation_id": "vlm_chat_send",
+            "start_ms": timestamp,
+            "end_ms": timestamp,
+            "app_name": "微信",
+            "operation_type": "external_sink_interaction",
+            "resource": "产品设计方.docx",
+            "related_resources": ["产品设计方.docx"],
+            "description": (
+                "direct_leak: chat_file_send. sink_type=chat_upload. action_status=completed. "
+                "The file 产品设计方.docx was sent in chat."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+    records = [
+        {
+            "timestamp": "2026-06-01T15:50:05.329",
+            "event_type": "modified",
+            "file_path": original,
+            "app_name": "Weixin",
+            "process_info": {"process_name": "Weixin.exe"},
+            "window_info": {"window_title": "微信"},
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"][0]["original_file"] == original
+    assert bundle["upload_candidates"][0]["current_file"] == original
+    assert any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
+
+
+def test_translated_generic_ascii_stem_does_not_override_literal_filename_stem() -> None:
+    expected = "C:/Users/alice/Desktop/客户联系方式.pdf"
+    generic = "D:/sensitive/customer.txt"
+    observations = [
+        {
+            "observation_id": "vlm_web_form",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Chrome",
+            "operation_type": "external_sink_interaction",
+            "resource": "unknown",
+            "related_resources": [],
+            "description": (
+                "direct_leak: web_form_composition. sink_type=network_upload. action_status=in_progress. "
+                "The title is 客户联系方式分享文件 (Customer contact info sharing file)."
+            ),
+            "confidence": 0.9,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [generic, expected]}
+    )
+
+    assert bundle["upload_candidates"][0]["original_file"] == expected
+    assert bundle["upload_candidates"][0]["current_file"] == expected
 
 
 def test_unresolved_sink_context_survives_when_dedupe_kept_activity_frames() -> None:
@@ -4048,6 +4236,46 @@ def test_failed_visual_upload_still_creates_leak_fact_for_attempted_upload() -> 
     assert leaks[0].leaked_file == original
 
 
+@pytest.mark.parametrize(
+    ("action", "sink", "status"),
+    [
+        ("post_question", "network_upload", "failed"),
+        ("web_form_composition", "network_upload", "in_progress"),
+        ("screenshot_to_chat", "chat_upload", "selected"),
+        ("screenshot_paste_to_chat", "chat_upload", "selected"),
+    ],
+)
+def test_cached_direct_leak_actions_remain_external_attempts(action: str, sink: str, status: str) -> None:
+    original = "C:/Users/alice/Desktop/secret.docx"
+    observations = [
+        {
+            "observation_id": "vlm_cached_action",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "QQ" if sink == "chat_upload" else "Chrome",
+            "operation_type": "file_or_content_transfer",
+            "resource": "secret.docx",
+            "related_resources": ["secret.docx"],
+            "description": (
+                f"direct_leak: {action}. sink_type={sink}. action_status={status}. "
+                "The sensitive content reached the external destination."
+            ),
+            "confidence": 0.9,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"][0]["risk_level"] in {
+        "selected_or_attached",
+        "in_progress",
+    }
+    assert any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
+
+
 def test_event_correlator_treats_removable_media_copy_as_leak() -> None:
     original = "C:/Users/alice/Desktop/company_contract.docx"
     target = "E:/USB/company_contract.docx"
@@ -4520,6 +4748,354 @@ def test_cloud_folder_membership_without_file_sync_status_is_not_upload() -> Non
     assert not any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
 
 
+def test_static_onedrive_sync_icons_do_not_prove_a_new_transfer() -> None:
+    original = "C:/Users/alice/OneDrive/Desktop/product_secret.png"
+    observations = [
+        {
+            "observation_id": "vlm_static_sync_icons",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "explorer",
+            "operation_type": "external_sink_interaction",
+            "resource": "product_secret.png",
+            "related_resources": ["product_secret.png"],
+            "description": (
+                "direct_leak: cloud_sync. sink_type=cloud_sync. action_status=completed. "
+                "The file is visible in File Explorer within a OneDrive synced folder path, "
+                "showing sync status icons, indicating historical cloud synchronization."
+            ),
+            "confidence": 0.9,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"] == []
+    assert not any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
+
+
+@pytest.mark.parametrize(
+    ("app_name", "operation_type", "description"),
+    [
+        (
+            "File Explorer",
+            "AI summary/preview",
+            "The preview pane displays an AI Public Document summary after the file is selected.",
+        ),
+        (
+            "Browser / Online Tool",
+            "upload",
+            "The file is displayed in a viewer; the toolbar shows AI and OCR features, implying the file was uploaded.",
+        ),
+    ],
+)
+def test_vlm_parser_downgrades_passive_local_preview_claims(
+    app_name: str,
+    operation_type: str,
+    description: str,
+) -> None:
+    result = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "timestamp_ms": 10_000,
+                        "app_name": app_name,
+                        "behavior_category": "direct_leak",
+                        "operation_type": operation_type,
+                        "original_filename": "secret.docx",
+                        "sink_type": "ai_chat" if "Explorer" in app_name else "network_upload",
+                        "action_status": "completed",
+                        "description": description,
+                    }
+                ]
+            }
+        ),
+        keywords=["secret.docx"],
+    )
+
+    event = result.events[0]
+    assert event.behavior_category == "unknown_risk"
+    assert event.operation_type == "local_preview"
+    assert event.sink_type == "unknown"
+    assert event.action_status == "unknown"
+
+
+@pytest.mark.parametrize("event_type", ["renamed", "created"])
+def test_sensitive_derivative_created_in_sync_directory_is_cloud_upload(event_type: str) -> None:
+    original = "C:/Users/alice/OneDrive/Desktop/product_plan.docx"
+    derived = "C:/Users/alice/OneDrive/exports/database_product_plan.docx"
+    record = {
+        "timestamp": "2026-01-01T00:00:10",
+        "event_type": event_type,
+        "file_path": original if event_type == "renamed" else derived,
+        "source_file": original,
+        "destination_path": derived,
+        "process_info": {"process_name": "explorer.exe"},
+        "extra": {"raw_operation": event_type},
+    }
+
+    bundle = EventCorrelator().run(
+        {"log_events": [record], "frame_segments": [], "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"][0]["original_file"] == original
+    assert bundle["upload_candidates"][0]["current_file"] == derived
+    assert bundle["upload_candidates"][0]["sink_type"] == "cloud_sync"
+    engine = DatalogEngine()
+    for fact in bundle["datalog_facts"]:
+        engine.add_fact(fact["relation"], *fact["args"])
+    assert engine.query_leak()[0].file_chain == (original, derived)
+
+
+def test_same_named_sensitive_file_uses_recent_full_path_log_identity() -> None:
+    wrong = "C:/Users/bob/Desktop/draft.pdf"
+    expected = "C:/Users/alice/Desktop/draft.pdf"
+    observations = [
+        {
+            "observation_id": "web_submit",
+            "start_ms": 30_000,
+            "end_ms": 30_000,
+            "app_name": "Browser",
+            "operation_type": "external_sink_interaction",
+            "resource": "draft.pdf",
+            "related_resources": ["draft.pdf"],
+            "description": (
+                "direct_leak: copy_paste_to_web_tool. sink_type=network_upload. "
+                "action_status=completed. Content from 'draft.pdf' was submitted."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+    logs = [
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "modified",
+            "file_path": expected,
+            "app_name": "WPS",
+            "extra": {"relative_timestamp": 10.0},
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": logs, "frame_segments": observations, "sensitive_files": [wrong, expected]}
+    )
+
+    assert bundle["upload_candidates"][0]["original_file"] == expected
+    assert bundle["upload_candidates"][0]["current_file"] == expected
+
+
+def test_unknown_absolute_path_does_not_bind_by_sensitive_basename() -> None:
+    sensitive = "C:/Users/alice/Desktop/contract.docx"
+    unrelated = "D:/other/contract.docx"
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": [
+                {
+                    "timestamp": "2026-01-01T00:00:10",
+                    "event_type": "modified",
+                    "file_path": unrelated,
+                    "process_info": {"process_name": "wps.exe"},
+                }
+            ],
+            "frame_segments": [],
+            "sensitive_files": [sensitive],
+        }
+    )
+
+    assert bundle["correlated_events"] == []
+
+
+def test_same_named_save_to_sync_directory_keeps_source_target_chain() -> None:
+    unrelated = "C:/cache/product_plan.docx"
+    original = "C:/Users/alice/OneDrive/product_plan.docx"
+    target = "C:/Users/alice/OneDrive/Desktop/product_plan.docx"
+    logs = [
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "modified",
+            "file_path": original,
+            "app_name": "WPS",
+            "process_info": {"process_name": "wps.exe"},
+            "extra": {"relative_timestamp": 10.0},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:20",
+            "event_type": "created",
+            "file_path": target,
+            "app_name": "WPS",
+            "process_info": {"process_name": "wps.exe"},
+            "extra": {"relative_timestamp": 20.0},
+        },
+    ]
+    observations = [
+        {
+            "observation_id": "cloud_sync",
+            "start_ms": 30_000,
+            "end_ms": 30_000,
+            "app_name": "OneDrive",
+            "operation_type": "external_sink_interaction",
+            "resource": "product_plan.docx",
+            "related_resources": ["product_plan.docx"],
+            "description": (
+                "direct_leak: cloud_sync. sink_type=cloud_sync. action_status=completed. "
+                "The file was saved into the OneDrive Desktop folder and synced."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": logs,
+            "frame_segments": observations,
+            "sensitive_files": [unrelated, original, target],
+        }
+    )
+
+    assert {item["current_file"] for item in bundle["upload_candidates"]} == {target}
+    upload = bundle["upload_candidates"][0]
+    assert upload["original_file"] == original
+    engine = DatalogEngine()
+    for fact in bundle["datalog_facts"]:
+        engine.add_fact(fact["relation"], *fact["args"])
+    assert any(leak.file_chain == (original, target) for leak in engine.query_leak())
+
+
+def test_visual_derivative_basename_binds_to_exact_sync_log_target() -> None:
+    original = "C:/Users/alice/OneDrive/Desktop/product_plan.pdf"
+    derived = "C:/Users/alice/OneDrive/product_plan/product_plan_1.pdf"
+    observations = [
+        {
+            "observation_id": "split_result",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "WPS PDF",
+            "operation_type": "file_or_content_transfer",
+            "resource": "product_plan_1.pdf",
+            "related_resources": ["product_plan.pdf", "product_plan_1.pdf"],
+            "description": (
+                "hidden_transfer: pdf_split. sink_type=unknown. action_status=completed. "
+                "The file 'product_plan.pdf' was split into 'product_plan_1.pdf'."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "created",
+            "file_path": derived,
+            "process_info": {"process_name": "wps.exe"},
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"][0]["current_file"] == derived
+    engine = DatalogEngine()
+    for fact in bundle["datalog_facts"]:
+        engine.add_fact(fact["relation"], *fact["args"])
+    assert engine.query_leak()[0].file_chain == (original, derived)
+
+
+def test_ocr_screenshot_and_saved_text_keep_original_document_lineage() -> None:
+    original = "C:/Users/alice/OneDrive/Desktop/product_plan.docx"
+    screenshot = "C:/Users/alice/OneDrive/Desktop/product_secret.png"
+    text_file = "C:/Users/alice/OneDrive/Desktop/1.0_product_plan.txt"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "modified",
+            "file_path": screenshot,
+            "process_info": {"process_name": "explorer.exe"},
+            "extra": {"relative_timestamp": 10.0},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:40",
+            "event_type": "created",
+            "file_path": text_file,
+            "process_info": {"process_name": "photolaunch.exe"},
+            "window_info": {"window_title": "product_secret.png - OCR"},
+            "extra": {"relative_timestamp": 40.0},
+        },
+    ]
+    observations = [
+        {
+            "observation_id": "screenshot_identity",
+            "start_ms": 15_000,
+            "end_ms": 15_000,
+            "app_name": "OneDrive",
+            "operation_type": "external_sink_interaction",
+            "resource": "product_secret.png",
+            "related_resources": ["product_secret.png"],
+            "description": (
+                "direct_leak: cloud_sync. sink_type=cloud_sync. action_status=in_progress. "
+                "product_secret.png is a screenshot of product_plan.docx and is a derived file."
+            ),
+            "confidence": 0.9,
+            "source": "vlm",
+        },
+        {
+            "observation_id": "save_text",
+            "start_ms": 35_000,
+            "end_ms": 35_000,
+            "app_name": "Notepad",
+            "operation_type": "external_sink_interaction",
+            "resource": "1.0.txt",
+            "related_resources": ["product_secret.png", "1.0.txt"],
+            "description": (
+                "direct_leak: save_file. sink_type=cloud_sync. action_status=submitted. "
+                "The extracted sensitive text was pasted and is being saved as 1.0.txt in OneDrive."
+            ),
+            "confidence": 0.9,
+            "source": "vlm",
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": records,
+            "frame_segments": observations,
+            "sensitive_files": [original, screenshot],
+        }
+    )
+
+    assert bundle["file_lineage"]["direct_file_mappings"][screenshot] == original
+    assert bundle["file_lineage"]["direct_file_mappings"][text_file] == screenshot
+    text_upload = next(item for item in bundle["upload_candidates"] if item["current_file"] == text_file)
+    assert text_upload["original_file"] == original
+    engine = DatalogEngine()
+    for fact in bundle["datalog_facts"]:
+        engine.add_fact(fact["relation"], *fact["args"])
+    assert any(leak.file_chain == (original, screenshot, text_file) for leak in engine.query_leak())
+
+
+def test_opening_sensitive_file_already_in_sync_directory_is_not_cloud_upload() -> None:
+    original = "C:/Users/alice/OneDrive/Desktop/product_plan.docx"
+    record = {
+        "timestamp": "2026-01-01T00:00:10",
+        "event_type": "opened",
+        "file_path": original,
+        "process_info": {"process_name": "winword.exe"},
+    }
+
+    bundle = EventCorrelator().run(
+        {"log_events": [record], "frame_segments": [], "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"] == []
+
+
 def test_declared_ai_chat_sink_is_not_reclassified_as_generic_chat() -> None:
     original = "C:/Users/alice/Documents/secret.docx"
     observations = [
@@ -4545,6 +5121,89 @@ def test_declared_ai_chat_sink_is_not_reclassified_as_generic_chat() -> None:
     )
 
     assert bundle["upload_candidates"][0]["sink_type"] == "ai_chat"
+
+
+def test_chat_upload_exact_filename_is_not_replaced_by_future_visual_derivative() -> None:
+    original = "C:/Users/alice/Documents/product_plan.docx"
+    observations = [
+        {
+            "observation_id": "chat_send",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Tencent Meeting",
+            "operation_type": "external_sink_interaction",
+            "resource": "product_plan.docx",
+            "related_resources": ["product_plan.docx"],
+            "description": (
+                "direct_leak: chat_upload. sink_type=chat_upload. action_status=completed. "
+                "The file 'product_plan.docx' was sent to everyone in the meeting."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        },
+        {
+            "observation_id": "later_compression",
+            "start_ms": 20_000,
+            "end_ms": 20_000,
+            "app_name": "Explorer",
+            "operation_type": "file_or_content_transfer",
+            "resource": "product_plan.zip",
+            "related_resources": ["product_plan.docx", "product_plan.zip"],
+            "description": (
+                "hidden_transfer: compression. sink_type=unknown. action_status=completed. "
+                "The file 'product_plan.docx' was compressed to 'product_plan.zip'."
+            ),
+            "confidence": 0.9,
+            "source": "vlm",
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"][0]["original_file"] == original
+    assert bundle["upload_candidates"][0]["current_file"] == original
+
+
+def test_visual_file_send_basename_keeps_full_sensitive_source_path() -> None:
+    original = "C:/Users/alice/Documents/financial_report.docx"
+    observations = [
+        {
+            "observation_id": "file_send",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "WeChat",
+            "operation_type": "external_sink_interaction",
+            "resource": "financial_report.docx",
+            "related_resources": ["financial_report.docx"],
+            "description": (
+                "direct_leak: file_send. sink_type=chat_upload. action_status=completed. "
+                "The file 'financial_report.docx' was sent in the chat."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    logs = [
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "file_selected",
+            "file_path": "financial_report.docx",
+            "app_name": "WeChat",
+            "extra": {"relative_timestamp": 10.0},
+        }
+    ]
+    bundle = EventCorrelator().run(
+        {"log_events": logs, "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"][0]["current_file"] == original
+    engine = DatalogEngine()
+    for fact in bundle["datalog_facts"]:
+        engine.add_fact(fact["relation"], *fact["args"])
+    assert engine.query_leak()[0].file_chain == (original,)
 
 
 def test_explicit_ai_prompt_paste_remains_external_when_response_translates_content() -> None:
@@ -4633,6 +5292,150 @@ def test_vlm_removable_media_event_becomes_external_sink() -> None:
 
     assert observations[0].operation_type == "external_sink_interaction"
     assert "sink_type=removable_media" in observations[0].description
+
+
+def test_visual_removable_copy_keeps_destination_drive_in_leak_path() -> None:
+    original = "C:/Users/alice/Desktop/company_contract.docx"
+    observations = [
+        {
+            "observation_id": "usb_result",
+            "start_ms": 50_000,
+            "end_ms": 50_000,
+            "app_name": "Windows Explorer",
+            "operation_type": "external_sink_interaction",
+            "resource": "company_contract",
+            "related_resources": ["company_contract"],
+            "description": (
+                "direct_leak: copy_to_removable_media. sink_type=removable_media. "
+                "action_status=completed. The DOCX was copied to USB drive F: and "
+                "appears in the destination directory."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"][0]["current_file"] == "F:/company_contract.docx"
+    engine = DatalogEngine()
+    for fact in bundle["datalog_facts"]:
+        engine.add_fact(fact["relation"], *fact["args"])
+    assert engine.query_leak()[0].file_chain == (original, "F:/company_contract.docx")
+
+
+def test_normalized_direct_leak_with_novel_action_name_is_not_downgraded() -> None:
+    original = "C:/Users/alice/Desktop/financial_report.docx"
+    observations = [
+        {
+            "observation_id": "import_result",
+            "start_ms": 20_000,
+            "end_ms": 20_000,
+            "app_name": "Feishu Drive",
+            "operation_type": "external_sink_interaction",
+            "resource": "financial_report",
+            "related_resources": ["financial_report"],
+            "description": (
+                "direct_leak: 文件上传/导入. sink_type=cloud_sync. action_status=completed. "
+                "The upload completed successfully."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"][0]["original_file"] == original
+    assert bundle["upload_candidates"][0]["sink_type"] == "cloud_sync"
+
+
+def test_git_copy_context_binds_exact_source_and_repository_derivative() -> None:
+    original = "D:/DataLeakTest/docx/company_contract.docx"
+    repository_copy = "D:/DataLeakTest/docx/repo/company_contract.docx"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:05",
+            "event_type": "clipboard_text",
+            "content_preview": original,
+            "process_info": {"process_name": "explorer.exe"},
+            "extra": {"raw_operation": "clipboard_text"},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "created",
+            "file_path": repository_copy,
+            "process_info": {"process_name": "WindowsTerminal.exe"},
+            "window_info": {"window_title": 'cmd.exe - copy "company_contract.docx" "repo\\"'},
+            "extra": {"raw_operation": "created"},
+        },
+    ]
+    observations = [
+        {
+            "observation_id": "push_result",
+            "start_ms": parse_timestamp_ms("2026-01-01T00:00:20"),
+            "end_ms": parse_timestamp_ms("2026-01-01T00:00:20"),
+            "app_name": "GitHub",
+            "operation_type": "external_sink_interaction",
+            "resource": "company_contract.docx",
+            "related_resources": ["company_contract.docx"],
+            "description": (
+                "direct_leak: git push upload. sink_type=network_upload. action_status=completed. "
+                "The file is confirmed visible in the remote repository."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["file_lineage"]["direct_file_mappings"][repository_copy] == original
+    assert bundle["upload_candidates"][0]["original_file"] == original
+    assert bundle["upload_candidates"][0]["current_file"] == repository_copy
+
+
+def test_web_ide_paste_keeps_remote_same_stem_object() -> None:
+    original = "D:/LENOVO/Documents/code1.cpp"
+    event = ParsedVisionEvent(
+        start_ms=20_000,
+        end_ms=20_000,
+        app_name="GitLab Web IDE",
+        behavior_category="direct_leak",
+        operation_type="copy_paste_upload",
+        original_resource="code1.cpp",
+        modified_resource="code1",
+        description=(
+            "The content from code1.cpp was pasted/created as file code1 in the GitLab Web IDE "
+            "under the public directory."
+        ),
+        confidence=0.95,
+        sink_type="cloud_sync",
+        action_status="completed",
+    )
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": [],
+            "frame_segments": vision_events_to_observations([event]),
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    upload = bundle["upload_candidates"][0]
+    assert upload["current_file"] == "code1"
+    assert upload["sink_type"] == "network_upload"
+    engine = DatalogEngine()
+    for fact in bundle["datalog_facts"]:
+        engine.add_fact(fact["relation"], *fact["args"])
+    assert engine.query_leak()[0].file_chain == (original, "code1")
 
 
 def test_vlm_hidden_transfer_does_not_become_external_sink_from_menu_text() -> None:
@@ -5217,6 +6020,93 @@ def test_vlm_parser_normalizes_tencent_meeting_document_import_channel() -> None
     assert result.events[0].sink_type == "chat_upload"
 
 
+def test_vlm_parser_upgrades_sensitive_text_pasted_into_online_tool() -> None:
+    result = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "timestamp_ms": 10_000,
+                        "app_name": "Browser (toolshu.com/base64)",
+                        "behavior_category": "hidden_transfer",
+                        "operation_type": "copy_and_encode",
+                        "original_filename": "customer_contacts.pdf",
+                        "sink_type": "unknown",
+                        "action_status": "completed",
+                        "description": (
+                            "Sensitive content was copied and pasted into a web-based "
+                            "Base64 encoding tool at toolshu.com."
+                        ),
+                    }
+                ]
+            }
+        ),
+        keywords=["customer_contacts.pdf"],
+    )
+
+    event = result.events[0]
+    assert event.behavior_category == "direct_leak"
+    assert event.operation_type == "paste_to_web"
+    assert event.sink_type == "network_upload"
+    assert vision_events_to_observations([event])[0].operation_type == "external_sink_interaction"
+
+
+@pytest.mark.parametrize(
+    ("operation_type", "description"),
+    [
+        (
+            "file_upload",
+            "The file is staged in the form. The upload button is visible, but no upload progress is visible.",
+        ),
+        (
+            "screen_recording_send",
+            "A screen recording preview shows a Send to DingTalk button; the recording is only staged.",
+        ),
+        (
+            "file_upload",
+            "The file is staged in the upload area and is ready for upload to a public web platform.",
+        ),
+    ],
+)
+def test_vlm_parser_downgrades_local_preparation_with_unpressed_send_control(
+    operation_type: str,
+    description: str,
+) -> None:
+    result = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "timestamp_ms": 10_000,
+                        "app_name": "Browser / DingTalk recorder",
+                        "behavior_category": "direct_leak",
+                        "operation_type": operation_type,
+                        "original_filename": "financial_report.docx",
+                        "sink_type": "chat_upload",
+                        "action_status": "selected",
+                        "description": description,
+                    }
+                ]
+            }
+        ),
+        keywords=["financial_report.docx"],
+    )
+
+    event = result.events[0]
+    assert event.behavior_category == "unknown_risk"
+    assert event.action_status == "unknown"
+    bundle = EventCorrelator().run(
+        {
+            "log_events": [],
+            "frame_segments": vision_events_to_observations([event]),
+            "sensitive_files": ["C:/Users/alice/Desktop/financial_report.docx"],
+            "non_vlm_enabled": False,
+        }
+    )
+    assert bundle["upload_candidates"] == []
+    assert any(fact["relation"] == "SuspiciousBehavior" for fact in bundle["datalog_facts"])
+
+
 def test_vlm_parser_accepts_top_level_array_and_keeps_distinct_resources() -> None:
     result = parse_vlm_response_detailed(
         json.dumps(
@@ -5357,6 +6247,167 @@ def test_vlm_content_transform_observation_is_not_external_sink() -> None:
 
     assert observations[0].operation_type == "file_or_content_transfer"
     assert "AI translation" in observations[0].description
+
+
+@pytest.mark.parametrize(
+    ("operation_type", "sink_type", "status"),
+    [
+        ("Publish post with sensitive link", "network_upload", "completed"),
+        ("article_publish", "network_upload", "submitted"),
+        ("folder_sync", "cloud_sync", "completed"),
+        ("document translation upload", "network_upload", "completed"),
+    ],
+)
+def test_vlm_explicit_outbound_action_variants_are_external_sinks(
+    operation_type: str,
+    sink_type: str,
+    status: str,
+) -> None:
+    event = ParsedVisionEvent(
+        start_ms=12_000,
+        end_ms=12_000,
+        app_name="Browser",
+        behavior_category="direct_leak",
+        operation_type=operation_type,
+        original_resource="secret.docx",
+        modified_resource="unknown",
+        description="The sensitive resource reached the external service.",
+        sink_type=sink_type,
+        action_status=status,
+    )
+
+    observations = vision_events_to_observations([event])
+
+    assert observations[0].operation_type == "external_sink_interaction"
+
+
+def test_vlm_completed_web_base64_submission_is_external_sink() -> None:
+    original = "C:/Users/alice/Documents/strategy.docx"
+    event = ParsedVisionEvent(
+        start_ms=12_000,
+        end_ms=12_000,
+        app_name="Browser",
+        behavior_category="hidden_transfer",
+        operation_type="base64_encode",
+        original_resource="strategy.docx",
+        modified_resource="unknown",
+        description="Sensitive text was pasted into a third-party web Base64 tool.",
+        sink_type="network_upload",
+        action_status="completed",
+    )
+    observations = vision_events_to_observations([event])
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": [],
+            "frame_segments": observations,
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert observations[0].operation_type == "external_sink_interaction"
+    assert bundle["upload_candidates"][0]["original_file"] == original
+
+
+def test_vlm_parser_recognizes_intervening_words_in_web_base64_paste() -> None:
+    result = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "timestamp_ms": 56_437,
+                        "app_name": "Microsoft Word",
+                        "behavior_category": "hidden_transfer",
+                        "operation_type": "copy_and_encode",
+                        "original_filename": "strategy.docx",
+                        "sink_type": "unknown",
+                        "action_status": "completed",
+                        "description": (
+                            "User navigated to a web-based Base64 encoding tool at jyshare.com, "
+                            "pasted the sensitive text into the tool, and copied the encoded result."
+                        ),
+                    }
+                ]
+            }
+        ),
+        keywords=["strategy.docx"],
+    )
+
+    event = result.events[0]
+    assert event.behavior_category == "direct_leak"
+    assert event.operation_type == "paste_to_web"
+    assert event.sink_type == "network_upload"
+    assert vision_events_to_observations([event])[0].operation_type == "external_sink_interaction"
+
+
+def test_vlm_local_recording_suppresses_conflicting_screen_share_claim() -> None:
+    parsed = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "timestamp_ms": 86_000,
+                        "app_name": "QQ",
+                        "behavior_category": "direct_leak",
+                        "operation_type": "screen_share",
+                        "original_filename": "secret.pdf",
+                        "sink_type": "screen_share",
+                        "action_status": "completed",
+                        "description": "Screen sharing and screen recording to MP4 are active.",
+                    },
+                    {
+                        "timestamp_ms": 83_000,
+                        "app_name": "WPS PDF",
+                        "behavior_category": "hidden_transfer",
+                        "operation_type": "screen_recording",
+                        "original_filename": "secret.pdf",
+                        "modified_filename": "recording.mp4",
+                        "action_status": "completed",
+                        "description": "The local screen recording MP4 is being reviewed.",
+                    },
+                ]
+            }
+        )
+    )
+
+    assert [event.operation_type for event in parsed.events] == ["screen_recording"]
+
+
+def test_vlm_keeps_screen_share_with_independent_meeting_evidence() -> None:
+    parsed = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "timestamp_ms": 86_000,
+                        "app_name": "Tencent Meeting",
+                        "behavior_category": "direct_leak",
+                        "operation_type": "screen_share",
+                        "original_filename": "secret.pdf",
+                        "sink_type": "screen_share",
+                        "action_status": "completed",
+                        "description": (
+                            "The sharing toolbar and remote participant remain visible "
+                            "while a local screen recording MP4 is active."
+                        ),
+                    },
+                    {
+                        "timestamp_ms": 83_000,
+                        "app_name": "WPS PDF",
+                        "behavior_category": "hidden_transfer",
+                        "operation_type": "screen_recording",
+                        "original_filename": "secret.pdf",
+                        "modified_filename": "recording.mp4",
+                        "action_status": "completed",
+                        "description": "The local screen recording MP4 is active.",
+                    },
+                ]
+            }
+        )
+    )
+
+    assert [event.operation_type for event in parsed.events] == ["screen_share", "screen_recording"]
 
 
 def test_vlm_content_transform_is_recorded_without_leakfile() -> None:
@@ -5667,6 +6718,27 @@ def test_dataset_discovery_groups_direct_sessions_as_one_case(tmp_path: Path) ->
         "session_20260103_110000",
     ]
     assert case.to_input_metadata()["session_count"] == 2
+
+
+def test_dataset_discovery_deduplicates_hybrid_parent_and_session_case(tmp_path: Path) -> None:
+    root = tmp_path / "stage2"
+    case_dir = root / "1-transfer-copy-3"
+    (case_dir / "logs").mkdir(parents=True)
+    (case_dir / "video").mkdir()
+    (case_dir / "logs" / "keyevents.json").write_text("[]", encoding="utf-8")
+    (case_dir / "video" / "recording.mp4").write_bytes(b"video")
+    session_dir = _write_composite_session(
+        case_dir,
+        "session_20260424_203808",
+        "2026-04-24 20:38:08",
+        [],
+    )
+
+    discovered = discover_data_case_directories(root)
+
+    assert discovered == [case_dir]
+    assert discovered.count(case_dir) == 1
+    assert session_dir not in discovered
 
 
 def test_composite_case_merges_sessions_on_absolute_timeline_and_reasons_once(tmp_path: Path) -> None:
@@ -6199,6 +7271,33 @@ def test_vlm_grid_builder_supports_vertical_layout(tmp_path: Path) -> None:
     assert [item["cell_id"] for item in grids[1].source_frames] == ["A1"]
 
 
+def test_vlm_vertical_grid_preserves_readable_landscape_width(tmp_path: Path) -> None:
+    Image = pytest.importorskip("PIL.Image")
+    keyframes = []
+    for index in range(2):
+        image_path = tmp_path / f"large_frame_{index}.jpg"
+        Image.new("RGB", (1_280, 720), (index * 40, 80, 120)).save(image_path)
+        keyframes.append(
+            KeyFrame(
+                f"frame_{index}",
+                index * 1_000,
+                str(image_path),
+                0.9,
+                "medium:anchor",
+                window_id="window_0",
+            )
+        )
+
+    grids = build_vlm_frame_grids(
+        choose_keyframes_for_vlm(keyframes, max_frames=-1),
+        grid_size=1,
+        grid_layout="4x1",
+        output_dir=tmp_path / "readable_vertical_grid",
+    )
+
+    assert Image.open(grids[0].frame.image_path).width == 1_280
+
+
 def test_vlm_grid_builder_never_mixes_analysis_windows(tmp_path: Path) -> None:
     Image = pytest.importorskip("PIL.Image")
     keyframes = []
@@ -6368,6 +7467,16 @@ def test_vlm_batch_retries_transient_failure_with_the_same_key() -> None:
     assert results["errors"] == []
     assert len(results["batches"]) == 1
     assert results["retry_warnings"] == ["vlm_transient_retry[0:1]: TimeoutError: temporary timeout"]
+
+
+def test_vlm_invalid_data_url_400_is_retryable_but_other_400_is_not() -> None:
+    url_error = RuntimeError(
+        'vlm_http_error: 400 {"error":{"code":"invalid_parameter_error",'
+        '"message":"The provided URL does not appear to be valid."}}'
+    )
+
+    assert _is_transient_vlm_error(url_error) is True
+    assert _is_transient_vlm_error(RuntimeError("vlm_http_error: 400 invalid model")) is False
 
 
 def test_vlm_batches_reuse_one_process_queue_across_cases() -> None:
@@ -6767,6 +7876,252 @@ def test_screen_share_binds_future_filename_and_directory_identity() -> None:
     assert bundle["upload_candidates"][0]["original_file"] == "D:/gdata/documents_1/产品设计方案.docx"
 
 
+def test_screen_share_binds_basename_to_unique_exact_session_log_path() -> None:
+    correct = "D:/dingxinyao/desktop/公司合作合同.docx"
+    unrelated_same_name = "D:/DataLeakTest/docx/公司合作合同.docx"
+    records = [
+        {
+            "event_id": "exact_source",
+            "timestamp": "2026-03-24T15:16:08.687",
+            "event_type": "modified",
+            "file_path": correct,
+            "process_info": {"process_name": "wpsdesktop.exe"},
+        },
+        {
+            "event_id": "wps_noise",
+            "timestamp": "2026-03-24T15:18:00.000",
+            "event_type": "modified",
+            "file_path": "D:/app/WPS Office/office6/mui/zh_CN/wpsoffice.qm",
+            "process_info": {"process_name": "wps.exe"},
+            "window_info": {"window_title": "公司合作合同.docx - WPS Office"},
+        },
+    ]
+    observations = [
+        {
+            "observation_id": "vlm_share",
+            "start_ms": 1774365546752,
+            "end_ms": 1774365546752,
+            "app_name": "Tencent Meeting",
+            "operation_type": "external_sink_interaction",
+            "resource": "公司合作合同.docx",
+            "related_resources": ["公司合作合同.docx"],
+            "description": (
+                "direct_leak: screen_share. sink_type=screen_share. "
+                "action_status=completed. The contract was visible during an active share."
+            ),
+            "confidence": 0.86,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": records,
+            "frame_segments": observations,
+            "sensitive_files": [unrelated_same_name, correct],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert len(bundle["upload_candidates"]) == 1
+    upload = bundle["upload_candidates"][0]
+    assert upload["original_file"] == correct
+    assert upload["current_file"] == correct
+    assert "log:exact_source" in upload["evidence_refs"]
+
+
+def test_filename_extension_is_not_used_as_same_named_source_directory() -> None:
+    correct = "D:/dingxinyao/desktop/公司合作合同.docx"
+    unrelated_same_name = "D:/DataLeakTest/docx/公司合作合同.docx"
+    records = [
+        {
+            "timestamp": "2026-03-24T15:16:08.687",
+            "event_type": "modified",
+            "file_path": correct,
+            "process_info": {"process_name": "wpsdesktop.exe"},
+        },
+        {
+            "timestamp": "2026-03-24T15:16:10.249",
+            "event_type": "modified",
+            "file_path": "D:/app/WPS Office/office6/mui/zh_CN/wpsoffice.qm",
+            "process_info": {"process_name": "wps.exe"},
+            "window_info": {"window_title": "公司合作合同.docx - WPS Office"},
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": records,
+            "frame_segments": [],
+            "sensitive_files": [unrelated_same_name, correct],
+            "non_vlm_enabled": True,
+        }
+    )
+
+    originals = {item["original_file"] for item in bundle["correlated_events"]}
+    assert correct in originals
+    assert unrelated_same_name not in originals
+
+
+def test_screen_share_does_not_use_document_heading_as_leaked_file() -> None:
+    original = "D:/gdata/documents_1/产品设计方案.docx"
+    heading = "系统架构设计-综合智慧学工服务平台系统"
+    records = [
+        {
+            "event_id": "share_start",
+            "timestamp": "2026-03-07T12:49:10.330",
+            "event_type": "app_switch",
+            "app_name": "Microsoft Teams",
+            "window_info": {"window_title": "teams.live.com 正在共享你的屏幕。"},
+        },
+        {
+            "event_id": "identity",
+            "timestamp": "2026-03-07T12:49:20.574",
+            "event_type": "app_switch",
+            "app_name": "WPS",
+            "window_info": {"window_title": "产品设计方案.docx - WPS Office"},
+        },
+    ]
+    observations = [
+        {
+            "observation_id": "vlm_share",
+            "start_ms": 1772887754253,
+            "end_ms": 1772887754253,
+            "app_name": "Microsoft Teams",
+            "operation_type": "external_sink_interaction",
+            "resource": heading,
+            "related_resources": [heading],
+            "description": (
+                "direct_leak: screen_share. sink_type=screen_share. "
+                "action_status=in_progress. 产品设计方案 is visible during active sharing."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": records,
+            "frame_segments": observations,
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert bundle["upload_candidates"]
+    assert {item["current_file"] for item in bundle["upload_candidates"]} == {original}
+
+
+def test_unexecuted_context_menu_selection_is_not_an_upload_candidate() -> None:
+    original = "C:/Users/alice/Desktop/customer_contacts.pdf"
+    records = [
+        {
+            "event_id": "shell_selection",
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "file_selected",
+            "file_path": original,
+            "app_name": "DeleteHelper",
+        }
+    ]
+    observations = [
+        {
+            "observation_id": "vlm_menu",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Windows Explorer",
+            "operation_type": "file_or_content_transfer",
+            "resource": original,
+            "description": (
+                "hidden_transfer: context_menu_selection. sink_type=unknown. "
+                "action_status=unknown. Send to my phone is visible but was not executed."
+            ),
+            "confidence": 0.8,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": records,
+            "frame_segments": observations,
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert bundle["upload_candidates"] == []
+
+
+def test_lineage_basename_prefers_unique_user_visible_derived_artifact() -> None:
+    original = "D:/sensitive/公司机密条款.docx"
+    desktop = "C:/Users/ASUS/Desktop/普通条款.docx"
+    cache = "C:/Users/ASUS/WPS Cloud Files/.1662474705/cachedata/ABC/普通条款.docx"
+    lineage = Lineage()
+    lineage.add(desktop, original)
+    lineage.add(cache, original)
+
+    assert lineage.resolve_artifact("普通条款.docx") == desktop
+    assert lineage.root("普通条款.docx") == original
+
+
+def test_recent_exact_title_and_derived_directory_disambiguate_same_named_source() -> None:
+    correct = "C:/Users/17503/OneDrive/Desktop/产品设计方案.docx"
+    derived = "C:/Users/17503/OneDrive/Desktop/UNIT1产品设计方案.txt"
+    records = [
+        {
+            "timestamp": "2026-03-25T17:56:50",
+            "event_type": "modified",
+            "file_path": "D:/monitor/logs.json",
+            "process_info": {"process_name": "wps.exe"},
+            "window_info": {"window_title": "产品设计方案.docx - WPS Office"},
+        },
+        {
+            "timestamp": "2026-03-25T17:59:00",
+            "event_type": "created",
+            "file_path": derived,
+            "process_info": {"process_name": "Notepad.exe"},
+            "window_info": {"window_title": "另存为"},
+            "extra": {"raw_operation": "save_as"},
+        },
+    ]
+    observations = [
+        {
+            "observation_id": "vlm_upload",
+            "start_ms": 1774461600000,
+            "end_ms": 1774461600000,
+            "app_name": "百度网盘",
+            "operation_type": "external_sink_interaction",
+            "resource": "UNIT1产品设计方案.txt",
+            "description": (
+                "direct_leak: upload. sink_type=cloud_sync. "
+                "action_status=completed. Upload completed."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+    bundle = EventCorrelator().run(
+        {
+            "log_events": records,
+            "frame_segments": observations,
+            "sensitive_files": [
+                "C:/Users/17503/AppData/Roaming/Tencent/WeMeet/file/产品设计方案.docx",
+                "C:/Users/17503/OneDrive/产品设计方案.docx",
+                correct,
+                "C:/Users/17503/OneDrive/Desktop/产品设计方案.pdf",
+            ],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert bundle["file_lineage"]["direct_file_mappings"][derived] == correct
+    assert len(bundle["upload_candidates"]) == 1
+    upload = bundle["upload_candidates"][0]
+    assert upload["original_file"] == correct
+    assert upload["current_file"] == derived
+
+
 def test_virtual_machine_clipboard_switch_is_external() -> None:
     original = "C:/Users/alice/Desktop/customer_contacts.pdf"
     records = [
@@ -6838,4 +8193,227 @@ def test_blank_feishu_document_after_clipboard_is_preparation_only() -> None:
     )
 
     assert bundle["upload_candidates"] == []
+
+
+def test_selected_mail_attachment_in_composer_is_external_attempt() -> None:
+    original = "C:/Users/alice/OneDrive/product_plan.docx"
+    observations = [
+        {
+            "observation_id": "mail_attachment",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Mail",
+            "operation_type": "external_sink_interaction",
+            "resource": "product_plan.docx",
+            "related_resources": ["product_plan.docx"],
+            "description": (
+                "direct_leak: attach_file. sink_type=mail_attachment. action_status=selected. "
+                "The sensitive file appears as an attached card in the email composer."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    upload = bundle["upload_candidates"][0]
+    assert upload["original_file"] == original
+    assert upload["sink_type"] == "mail_attachment"
+    assert upload["risk_level"] == "selected_or_attached"
+
+
+def test_completed_integrated_ai_translation_result_is_external() -> None:
+    original = "D:/workspace/company_secret_terms.docx"
+    event = ParsedVisionEvent(
+        start_ms=10_000,
+        end_ms=10_000,
+        app_name="WPS",
+        behavior_category="direct_leak",
+        operation_type="AI translation",
+        original_resource="company_secret_terms.docx",
+        modified_resource="unknown",
+        description=(
+            "The user selects sensitive text and sends it to an integrated AI assistant for translation. "
+            "The translated result is subsequently visible in the document."
+        ),
+        confidence=0.95,
+        sink_type="ai_chat",
+        action_status="completed",
+    )
+    observations = vision_events_to_observations([event])
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert observations[0].operation_type == "external_sink_interaction"
+    assert bundle["upload_candidates"][0]["original_file"] == original
+    assert bundle["upload_candidates"][0]["sink_type"] == "ai_chat"
+
+
+def test_monitoring_log_only_ai_claim_is_not_external() -> None:
+    original = "D:/gdata/documents_1/customer_data.docx"
+    observations = [
+        {
+            "observation_id": "monitoring_log_claim",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Doubao",
+            "operation_type": "external_sink_interaction",
+            "resource": "customer_data.docx",
+            "description": (
+                "direct_leak: ai_file_upload. sink_type=ai_chat. action_status=completed. "
+                "Monitoring logs in PowerShell explicitly record an AI application operation by Doubao. "
+                "The log confirms the file was processed by the AI chat application."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"] == []
+    assert any(fact["relation"] == "SuspiciousBehavior" for fact in bundle["datalog_facts"])
+
+
+def test_inferred_recording_thumbnail_is_not_chat_upload() -> None:
+    original = "C:/Users/alice/Desktop/confidential_contract.pdf"
+    observations = [
+        {
+            "observation_id": "recording_thumbnail_claim",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "QQ",
+            "operation_type": "external_sink_interaction",
+            "resource": "confidential_contract.pdf",
+            "description": (
+                "direct_leak: chat_upload. sink_type=chat_upload. action_status=selected. "
+                "An image/video attachment, likely the screen recording or a screenshot given the dark thumbnail, "
+                "is staged while the sensitive file is open in the background."
+            ),
+            "confidence": 0.85,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"] == []
+    assert any(fact["relation"] == "SuspiciousBehavior" for fact in bundle["datalog_facts"])
+
+
+def test_explicit_vm_sink_log_overrides_unexecuted_visual_menu() -> None:
+    original = "C:/Users/alice/Desktop/customer_contacts.pdf"
+    sink_time = parse_timestamp_ms("2026-01-01T00:00:12")
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "app_switch",
+            "app_name": "WPS",
+            "window_info": {"window_title": "customer_contacts.pdf - WPS Office"},
+        },
+        {"timestamp": "2026-01-01T00:00:05", "event_type": "clipboard_text", "app_name": "WPS"},
+        {
+            "timestamp": "2026-01-01T00:00:12",
+            "event_type": "app_switch",
+            "app_name": "vmware",
+            "window_info": {"window_title": "Windows 10 x64 - VMware Workstation"},
+        },
+    ]
+    observations = [
+        {
+            "observation_id": "vm_visual",
+            "start_ms": sink_time,
+            "end_ms": sink_time,
+            "app_name": "WPS Office",
+            "operation_type": "file_or_content_transfer",
+            "resource": "customer_contacts.pdf",
+            "description": (
+                "hidden_transfer: file_copy_and_transfer. sink_type=unknown. action_status=unknown. "
+                "A context menu action was not confirmed, but the file was subsequently opened within VMware."
+            ),
+            "confidence": 0.85,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    upload = bundle["upload_candidates"][0]
+    assert upload["original_file"] == original
+    assert upload["sink_type"] == "virtual_machine"
+
+
+def test_truncated_vm_filename_resolves_with_unique_user_scope() -> None:
+    expected = "C:/Users/18986/Desktop/company_contract.docx"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "app_switch",
+            "app_name": "Edge",
+            "user_info": {"username": "18986"},
+        }
+    ]
+    observations = [
+        {
+            "observation_id": "vm_chat_upload",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Browser (WeChat File Transfer Assistant)",
+            "operation_type": "external_sink_interaction",
+            "resource": "unknown",
+            "description": (
+                "direct_leak: File upload to WeChat File Transfer Assistant. "
+                "sink_type=chat_upload. action_status=selected. A file picker selects a likely .docx file "
+                "with partial text 'company...'; a file card is staged in the transfer interface."
+            ),
+            "confidence": 0.9,
+            "source": "vlm",
+        }
+    ]
+    sensitive = [
+        expected,
+        "C:/Users/other/Desktop/company_finance.docx",
+        "C:/Users/18986/Desktop/unrelated.docx",
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": observations, "sensitive_files": sensitive}
+    )
+
+    upload = bundle["upload_candidates"][0]
+    assert upload["original_file"] == expected
+    assert upload["current_file"] == expected
+    assert upload["sink_type"] == "chat_upload"
+
+
+def test_vlm_file_context_falls_back_to_current_user_paths() -> None:
+    expected = "C:/Users/18986/Desktop/company_contract.docx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T00:00:00",
+                "event_type": "app_switch",
+                "app_name": "Edge",
+                "user_info": {"username": "18986"},
+            }
+        ]
+    )
+
+    context = _vlm_file_context(
+        logs,
+        [expected, "C:/Users/other/Desktop/company_contract.docx"],
+    )
+
+    assert context == [expected]
 

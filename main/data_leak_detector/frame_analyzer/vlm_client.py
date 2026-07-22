@@ -372,7 +372,8 @@ def _prompt(frames: list[VlmRequestFrame], sensitive_files: list[str], active_ap
         "- mail_attachment: compose/send screens, attachment chips, paperclip icons, recipient fields, Outlook/Gmail/QQ mail/163 mail.\n"
         "- cloud_sync: upload dialogs/progress, drag-drop upload areas, sync status, Baidu Netdisk/Quark/OneDrive/Google Drive/Dropbox.\n"
         "A file merely being located in or browsed under a OneDrive/cloud-synced folder is not enough to prove cloud_sync for that file. "
-        "Require a file-specific sync overlay/status, upload progress/result, or a chronological create/move into the sync folder.\n"
+        "A static cloud/check icon only proves historical sync, not a new transfer during this recording. Require current upload/sync progress, "
+        "a newly completed result, or a chronological create/move into the sync folder.\n"
         "- chat_upload: IM file-send panels or attachment cards in WeChat/QQ/Feishu/DingTalk/Lark/Teams chat, "
         "plus Tencent Meeting/Zoom/Teams meeting chat file sends and meeting-document imports.\n"
         "- ai_chat: ChatGPT/Kimi/DeepSeek/Claude/Gemini/Qwen pages, prompt box, attached file chips, generated answer containing sensitive content.\n"
@@ -390,6 +391,24 @@ def _prompt(frames: list[VlmRequestFrame], sensitive_files: list[str], active_ap
         "Require evidence that the transfer was selected or submitted, such as an addressee/conversation/destination, a file in a transfer queue, "
         "upload/send progress, or an explicit Send/Confirm control. A generic 'Send File' panel that only offers copy file, drag-to-send, or open-location "
         "actions without such evidence is a copy/preparation action: classify it as hidden_transfer rather than direct_leak.\n"
+        "For a two-step website upload form, selecting a local file into a staging area is preparation when a separate Upload/Submit button remains "
+        "unclicked and there is no transfer progress. This differs from an attachment already inserted into a chat or mail composer.\n"
+        "Do not infer an upload from a local File Explorer/WPS preview pane or from AI/OCR toolbar capabilities alone. Require an explicit invocation, "
+        "submission, progress, or external service result. Pasting sensitive text into a third-party online encoder/converter is network_upload even "
+        "when the transformation itself is Base64 encoding, translation, or conversion.\n"
+        "Text shown in a monitoring dashboard, terminal, PowerShell window, or monitoring log is not proof that an external action occurred. "
+        "Do not emit direct_leak from a log line naming an AI/chat application unless the destination UI, attachment, submission, progress, or result "
+        "is independently visible.\n"
+        "A chat application icon, notification, background window, or ambiguous dark thumbnail does not prove that a local screenshot or screen "
+        "recording was attached. Require a visible chat composer attachment card or a clearly identified sent item; otherwise keep the recording "
+        "as hidden_transfer only.\n"
+        "A screenshot preview inserted into a chat composer, or an exact sensitive-file card staged in a chat/file-transfer assistant, is selected/attached "
+        "outbound evidence even before the final Send click. If a leave-page warning says entered information may be lost, inspect the background form: "
+        "a visible sensitive-file card there remains staged attachment evidence and must retain the filename identity from earlier frames.\n"
+        "For nested virtual-machine or remote-desktop scenes, cross-check the filename in the inner file card against any readable host desktop icon, "
+        "file picker, or earlier frame. Do not replace it with a merely similar name from sensitive-file context; use unknown if the exact text is unreadable.\n"
+        "A local screen recorder, MP4 creation/playback, or QQ recording UI is hidden_transfer, not screen_share, unless an independent meeting/share banner, "
+        "sharing toolbar state, remote participant, or explicit active-share indicator is also visible.\n"
         "The primary decision is whether an outbound action exists, not whether it succeeded. Selection/attachment, submit, progress, success, rejection, "
         "unsupported-file, cancellation, timeout, and error screens can all prove that an upload/send was attempted and must emit direct_leak. "
         "Fill action_status only when obvious; it is audit metadata and does not change the leak verdict.\n"
@@ -434,11 +453,11 @@ def _chunks(items: list[VlmRequestFrame], size: int) -> list[list[VlmRequestFram
 def _grid_cell_size(images: list[object]) -> tuple[int, int]:
     widths = [max(1, int(getattr(image, "width", 1))) for image in images]
     heights = [max(1, int(getattr(image, "height", 1))) for image in images]
-    cell_width = max(1, min(max(widths), 720))
+    cell_width = max(1, min(max(widths), 1_280))
     aspects = sorted(width / height for width, height in zip(widths, heights, strict=False) if height > 0)
     aspect = aspects[len(aspects) // 2] if aspects else 16 / 9
     cell_height = max(1, int(round(cell_width / max(aspect, 0.1))))
-    return cell_width, min(cell_height, 720)
+    return cell_width, min(cell_height, 1_280)
 
 
 def _image_size(path: str) -> tuple[int, int]:
