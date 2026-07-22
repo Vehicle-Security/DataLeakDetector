@@ -544,7 +544,11 @@ def _build_outbound_context_windows(
     )
     sessions = [
         segment
-        for session in _frontend_sessions(logs, session_gap_ms=session_gap_ms)
+        for session in _frontend_sessions(
+            logs,
+            session_gap_ms=session_gap_ms,
+            sensitive_files=sensitive_files,
+        )
         for segment in _segment_frontend_session(session, config.external_session_segment_ms)
     ]
     phase_owner: dict[tuple[int, str], int] = {}
@@ -684,7 +688,12 @@ def _segment_frontend_session(session: _FrontendSession, segment_ms: int) -> lis
     return segments
 
 
-def _frontend_sessions(logs: list[LogEvent], *, session_gap_ms: int) -> list[_FrontendSession]:
+def _frontend_sessions(
+    logs: list[LogEvent],
+    *,
+    session_gap_ms: int,
+    sensitive_files: tuple[str, ...] = (),
+) -> list[_FrontendSession]:
     foreground = sorted(
         (
             event
@@ -703,19 +712,33 @@ def _frontend_sessions(logs: list[LogEvent], *, session_gap_ms: int) -> list[_Fr
         if not _visible_foreground(event):
             previous_identity = None
             continue
+        inherits_previous_session = False
         identity = identify_frontend_app(
             app_name=event.app_name or event.process_name,
             window_title=event.window_title,
         )
         if _looks_like_file_dialog(event.window_title) and previous_identity is not None:
             identity = previous_identity
+            inherits_previous_session = True
+        elif _is_sensitive_file_manager_companion(
+            event,
+            logs,
+            sensitive_files,
+            previous_identity=previous_identity,
+        ):
+            identity = previous_identity
+            inherits_previous_session = True
         end_ms = min(
             foreground[index + 1].video_time_ms - 1
             if index + 1 < len(foreground)
             else max(timeline_end, event.video_time_ms) + 10_000,
             event.video_time_ms + 30_000,
         )
-        app_key = _frontend_session_app_key(event, identity)
+        app_key = (
+            sessions[-1].app_key
+            if inherits_previous_session and sessions
+            else _frontend_session_app_key(event, identity)
+        )
         if (
             sessions
             and sessions[-1].app_key == app_key
@@ -1289,6 +1312,58 @@ def _looks_like_file_dialog(title: str) -> bool:
     normalized = normalize_text(title).strip()
     return normalized in {"open", "select", "choose", "打开", "选择"} or any(
         marker in normalized for marker in ("请选择", "选择文件", "select file", "choose file")
+    )
+
+
+def _is_sensitive_file_manager_companion(
+    event: LogEvent,
+    logs: list[LogEvent],
+    sensitive_files: tuple[str, ...],
+    *,
+    previous_identity: object | None,
+) -> bool:
+    """Keep an external session alive while Explorer supplies its file payload.
+
+    Native Explorer windows are reported as foreground switches during drag/drop
+    and file selection, even though the mail/chat window remains the actual sink.
+    Only inherit the sink identity when the Explorer title or nearby file event
+    identifies a sensitive source or derived artifact.
+    """
+
+    if previous_identity is None or getattr(previous_identity, "category", "") not in _EVIDENCE_SESSION_CATEGORIES:
+        return False
+    if not _is_file_manager_window(event):
+        return False
+    if _window_title_mentions_sensitive_stem(event.window_title, sensitive_files):
+        return True
+    timestamp = event.video_time_ms
+    return any(
+        other.event_type not in _FOREGROUND_EVENTS
+        and not _is_close_event(other)
+        and -5_000 <= other.video_time_ms - timestamp <= 30_000
+        and (
+            _event_matches_sensitive_or_derived_path(other, sensitive_files)
+            or _may_be_derived_file_event(other, sensitive_files)
+        )
+        for other in logs
+        if other.video_time_ms >= 0
+    )
+
+
+def _is_file_manager_window(event: LogEvent) -> bool:
+    app_key = _foreground_app_key(event)
+    if app_key in {"explorer", "file explorer", "windows explorer"}:
+        return True
+    title = normalize_text(event.window_title).lower()
+    return "文件资源管理器" in title or "file explorer" in title
+
+
+def _window_title_mentions_sensitive_stem(title: str, sensitive_files: tuple[str, ...]) -> bool:
+    normalized_title = normalize_path(title).lower()
+    return any(
+        len(stem) >= 4 and stem in normalized_title
+        for source in sensitive_files
+        if (stem := Path(normalize_path(source)).stem.lower())
     )
 
 

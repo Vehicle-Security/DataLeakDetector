@@ -1254,6 +1254,84 @@ def test_external_session_keeps_source_and_full_business_session() -> None:
     assert {30_000, 52_000, 106_000}.issubset(_probe_timestamps(outbound, VisionConfig()))
 
 
+def test_external_mail_session_survives_sensitive_file_explorer_switch() -> None:
+    source = "D:/work/员工薪资明细表.xlsx"
+    executive = "D:/work/员工薪资明细表/高管薪资.xlsx"
+    regular = "D:/work/员工薪资明细表/普通员工薪资.xlsx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T12:00:30",
+                "event_type": "created",
+                "file_path": executive,
+                "app_name": "WPS Excel",
+                "extra": {"raw_operation": "created", "relative_timestamp": 30.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:31",
+                "event_type": "created",
+                "file_path": regular,
+                "app_name": "WPS Excel",
+                "extra": {"raw_operation": "created", "relative_timestamp": 31.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:00:52",
+                "event_type": "app_switch",
+                "app_name": "Edge",
+                "window_info": {"window_title": "网易邮箱 - 搜索"},
+                "extra": {"relative_timestamp": 52.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:17",
+                "event_type": "app_switch",
+                "app_name": "Edge",
+                "window_info": {"window_title": "网易邮箱6.0"},
+                "extra": {"relative_timestamp": 77.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:47",
+                "event_type": "app_switch",
+                "app_name": "explorer",
+                "window_info": {"window_title": "员工薪资明细表 - 文件资源管理器"},
+                "extra": {"relative_timestamp": 107.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:01:51",
+                "event_type": "modified",
+                "file_path": executive,
+                "app_name": "WPS Excel",
+                "extra": {"raw_operation": "modified", "relative_timestamp": 111.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:02:09",
+                "event_type": "app_switch",
+                "app_name": "explorer",
+                "window_info": {"window_title": "员工薪资明细表 - 文件资源管理器"},
+                "extra": {"relative_timestamp": 129.0},
+            },
+            {
+                "timestamp": "2026-01-01T12:02:11",
+                "event_type": "modified",
+                "file_path": regular,
+                "app_name": "WPS Excel",
+                "extra": {"raw_operation": "modified", "relative_timestamp": 131.0},
+            },
+        ]
+    )
+
+    windows = build_analysis_windows(logs, [source, executive, regular], VisionConfig())
+    outbound = next(
+        window
+        for window in windows
+        if any(action == "external_session" for _, action in window.action_phases)
+        and (131_000, "file_selected") in window.action_phases
+    )
+
+    assert any(action == "external_session" for _, action in outbound.action_phases)
+    assert (111_000, "file_selected") in outbound.action_phases
+    assert (131_000, "file_selected") in outbound.action_phases
+
+
 def test_external_session_promotes_later_sensitive_file_accesses() -> None:
     original = "D:/work/employee_salary.xlsx"
     derived = "D:/work/employee_salary/high_salary.xlsx"
