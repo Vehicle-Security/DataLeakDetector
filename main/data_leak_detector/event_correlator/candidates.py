@@ -88,6 +88,18 @@ def _is_explicit_upload_event(event: CorrelatedEvent, text: str) -> bool:
     if event.operation_type != "external_sink_interaction" and not contains_any(text, SINK_TOKENS):
         return False
     reasons = set(event.join_reasons)
+    # A visual event explicitly marked unknown_risk is an identity/preparation
+    # signal until a deterministic sink log or removable-media destination
+    # confirms an outbound action. Do not turn menu text, monitoring windows,
+    # or a cloud app merely being foregrounded into a LeakFile.
+    if (
+        "visual_declared_behavior:unknown_risk" in reasons
+        and "explicit_sink_log" not in reasons
+        and "removable_media_sink" not in reasons
+    ):
+        return False
+    if "visual_unproven_cloud_folder" in reasons and "explicit_sink_log" not in reasons:
+        return False
     if (
         event.behavior_category == "unknown_risk"
         and "visual_only" in reasons
@@ -123,6 +135,28 @@ def _upload_risk_level(event: CorrelatedEvent, text: str) -> str:
 
 
 def _upload_sink_type(event: CorrelatedEvent, current_file: str, text: str) -> str:
+    for reason in event.join_reasons:
+        if reason.startswith("sink_type:"):
+            declared = reason.partition(":")[2].strip().lower()
+            if declared in {
+                "ai_chat",
+                "mail_attachment",
+                "cloud_sync",
+                "chat_upload",
+                "screen_share",
+                "removable_media",
+                "network_upload",
+                "virtual_machine",
+            }:
+                return declared
+    app_text = normalize_path(event.app_name).lower()
+    if contains_any(app_text, ("doubao", "豆包", "chatgpt", "deepseek", "kimi", "claude", "gemini")):
+        return "ai_chat"
+    if contains_any(
+        app_text,
+        ("quark", "baidunetdisk", "baidu netdisk", "夸克网盘", "百度网盘", "网盘", "cloud drive", "cloud storage"),
+    ):
+        return "cloud_sync"
     combined = f"{text} {event.app_name} {event.current_file} {current_file} {' '.join(event.join_reasons)}"
     if contains_any(
         combined,

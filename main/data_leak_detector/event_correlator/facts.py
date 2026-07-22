@@ -116,6 +116,22 @@ def build_datalog_facts(
     for upload in uploads:
         proc = upload.app_name or "unknown"
         timestamp = parse_timestamp_ms(upload.timestamp)
+        if not normalize_path(upload.original_file):
+            facts.append(
+                DatalogFact(
+                    "SuspiciousBehavior",
+                    (
+                        f"{upload.candidate_id}:unbound_upload_candidate",
+                        proc,
+                        "",
+                        upload.current_file,
+                        upload.sink_type,
+                        f"unbound_{upload.risk_level}",
+                        timestamp,
+                    ),
+                )
+            )
+            continue
         # Leak the object that actually reached the sink. Keeping the derived
         # object here forces Datalog to traverse original -> derived -> sink
         # instead of collapsing a lineage chain into a direct source leak.

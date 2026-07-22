@@ -22,6 +22,7 @@ _EXPLICIT_OUTBOUND_ACTIONS = {
     "chat_send",
     "cloud_sync",
     "cloud_upload",
+    "commit",
     "copy_paste_to_ai",
     "copy_to_removable_media",
     "email_send",
@@ -30,12 +31,16 @@ _EXPLICIT_OUTBOUND_ACTIONS = {
     "http_post",
     "network_upload",
     "paste_exfiltration",
+    "paste_to_ai",
+    "paste_to_web",
     "screen_share",
     "send",
     "send_click",
     "share_screen",
     "upload",
     "upload_complete",
+    "upload_file_to_ai",
+    "web_upload",
 }
 
 
@@ -408,12 +413,13 @@ def _operation_to_pipeline(event: ParsedVisionEvent) -> str:
     if behavior == "hidden_transfer":
         return "file_or_content_transfer"
     text = f"{event.behavior_category} {event.operation_type} {event.description} {event.sink_type}".lower()
-    if _is_suspicious_content_transform(event, text):
-        return "file_or_content_transfer"
     if behavior == "direct_leak" and (
-        _has_explicit_sink(event.sink_type) or _is_explicit_outbound_action(event.operation_type)
+        _is_explicit_outbound_action(event.operation_type)
+        or (_has_explicit_sink(event.sink_type) and not _is_suspicious_content_transform(event, text))
     ):
         return "external_sink_interaction"
+    if _is_suspicious_content_transform(event, text):
+        return "file_or_content_transfer"
     if contains_any(text, SINK_TOKENS):
         return "external_sink_interaction"
     if contains_any(text, TRANSFER_TOKENS):

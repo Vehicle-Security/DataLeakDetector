@@ -75,6 +75,17 @@ class Lineage:
         full_path_matches = {item for item in matches if "/" in normalize_path(item)}
         if len(full_path_matches) == 1:
             return next(iter(full_path_matches))
+        # File-dialog monitors sometimes omit the extension for a selected
+        # document (for example ``普通文件``). Resolve that stem only when it
+        # identifies exactly one concrete derived artifact in this lineage.
+        if not Path(reference).suffix:
+            stem_matches = {
+                derived
+                for derived in self.direct
+                if Path(normalize_path(derived)).stem.lower() == reference_key
+            }
+            if len(stem_matches) == 1:
+                return next(iter(stem_matches))
         if reference in self.direct:
             return reference
         return next(iter(matches)) if len(matches) == 1 else reference

@@ -50,7 +50,11 @@ def run_pipeline(
     baseline = _load_precomputed_baseline(precomputed_baseline_file)
     if baseline and vision_precompute_file is None:
         vision_precompute_file = str(baseline.get("vision_precompute_file") or "") or None
-    records = list(baseline.get("records", [])) if baseline else _load_pipeline_records(log_path)
+    records = (
+        _merge_baseline_records(log_path, [item for item in baseline.get("records", []) if isinstance(item, dict)])
+        if baseline
+        else _load_pipeline_records(log_path)
+    )
     logs = [] if baseline else normalize_logs(records, session_start_ms=session_start_ms)
     initial_sensitive_files = _dedupe_paths(list(load_sensitive_files_config(sensitive_files_config)))
     analysis_sensitive_files, derived_sensitive_context = _analysis_sensitive_context(
@@ -660,6 +664,15 @@ def _composite_session_records(
             session_id = str(item.get("_dld_session_id") or "")
             if session_id in result:
                 result[session_id].append(dict(item))
+        for session in sessions:
+            existing = result[session.session_id]
+            known = {_pipeline_record_identity(item) for item in existing}
+            for record_index, item in enumerate(_load_pipeline_records(session.log_file), start=len(existing)):
+                identity = _pipeline_record_identity(item)
+                if identity in known:
+                    continue
+                existing.append(_namespace_log_record(item, session.session_id, record_index))
+                known.add(identity)
         missing = [session_id for session_id, items in result.items() if not items]
         if missing:
             raise ValueError(f"composite_baseline_records_missing_sessions: {', '.join(missing)}")
@@ -947,8 +960,21 @@ def _load_pipeline_records(log_path: Path) -> list[dict[str, Any]]:
     }
     known = {_pipeline_record_identity(item) for item in records}
     for item in load_json_records(raw_path):
-        if not _is_transfer_supplement(item, known_resources):
+        if not (_is_transfer_supplement(item, known_resources) or _is_identity_window_supplement(item)):
             continue
+        identity = _pipeline_record_identity(item)
+        if identity not in known:
+            records.append(item)
+            known.add(identity)
+    return records
+
+
+def _merge_baseline_records(log_path: Path, baseline_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Refresh reusable baselines with newly retained identity/clipboard events."""
+
+    records = list(baseline_records)
+    known = {_pipeline_record_identity(item) for item in records}
+    for item in _load_pipeline_records(log_path):
         identity = _pipeline_record_identity(item)
         if identity not in known:
             records.append(item)
@@ -960,7 +986,18 @@ def _is_transfer_supplement(record: dict[str, Any], known_resources: set[str]) -
     event_type = str(record.get("event_type") or record.get("type") or "").lower()
     extra = record.get("extra") if isinstance(record.get("extra"), dict) else {}
     operation = str(extra.get("raw_operation") or record.get("operation") or "").lower()
-    if event_type in {"file_selected", "file_upload", "upload", "uploaded", "upload_complete", "send", "sent"}:
+    if event_type in {
+        "file_selected",
+        "file_upload",
+        "upload",
+        "uploaded",
+        "upload_complete",
+        "send",
+        "sent",
+        "clipboard_text",
+        "clipboard_write",
+        "clipboard_image",
+    }:
         return True
     path = normalize_path(record.get("file_path") or record.get("path") or "").lower()
     if path and path in known_resources and event_type in {"opened", "read"} and "browser_file_access" in operation:
@@ -969,6 +1006,39 @@ def _is_transfer_supplement(record: dict[str, Any], known_resources: set[str]) -
         return False
     parent = str(Path(path).parent).lower()
     return any(parent == str(Path(resource).parent).lower() for resource in known_resources)
+
+
+def _is_identity_window_supplement(record: dict[str, Any]) -> bool:
+    """Keep concise foreground-window records that can bind a generic filename."""
+
+    event_type = str(record.get("event_type") or record.get("type") or "").lower()
+    if event_type != "app_switch":
+        return False
+    window = record.get("window_info") if isinstance(record.get("window_info"), dict) else {}
+    title = str(record.get("window_title") or window.get("window_title") or "").strip()
+    if not title or len(title) > 240:
+        return False
+    if re.search(r"\.(?:doc|docx|pdf|ppt|pptx|xls|xlsx|sql|txt|png|jpg|jpeg|zip)(?:\s|$|-)", title, re.IGNORECASE):
+        return True
+    normalized = title.lower()
+    return any(
+        marker in normalized
+        for marker in (
+            "文件资源管理器",
+            "file explorer",
+            "onedrive",
+            "飞书",
+            "feishu",
+            "lark",
+            "teams",
+            "微信",
+            "wechat",
+            "qq(浏览)",
+            "vmware",
+            "virtualbox",
+            "parallels",
+        )
+    )
 
 
 def _is_document_path(path: str) -> bool:

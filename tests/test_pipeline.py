@@ -3227,6 +3227,134 @@ def test_event_correlator_does_not_infer_same_app_family_clipboard_lineage() -> 
     assert bundle["file_lineage"]["direct_file_mappings"] == {}
 
 
+def test_event_correlator_uses_recent_document_context_for_save_as_sink_path() -> None:
+    original = "C:/Users/alice/Documents/confidential_terms.docx"
+    derived = "C:/Users/alice/Desktop/ordinary_terms.docx"
+    records = [
+        {
+            "timestamp": "2026-06-05T22:41:00",
+            "event_type": "modified",
+            "file_path": original,
+            "process_info": {"process_name": "wps.exe"},
+            "window_info": {"window_title": "confidential_terms.docx - WPS Office"},
+        },
+        {
+            "timestamp": "2026-06-05T22:41:10",
+            "event_type": "created",
+            "file_path": derived,
+            "process_info": {"process_name": "wps.exe"},
+            "extra": {"raw_operation": "created"},
+        },
+        {
+            "timestamp": "2026-06-05T22:41:20",
+            "event_type": "file_selected",
+            "file_path": "ordinary_terms",
+            "process_info": {"process_name": "quark.exe"},
+            "window_info": {"window_title": "Quark Netdisk"},
+            "extra": {"raw_operation": "file_selected"},
+        },
+    ]
+    observations = [
+        {
+            "observation_id": "vlm_upload",
+            "start_ms": 20_000,
+            "end_ms": 20_000,
+            "app_name": "Quark Netdisk",
+            "operation_type": "external_sink_interaction",
+            "resource": "confidential_terms.docx",
+            "related_resources": ["confidential_terms.docx"],
+            "description": "direct_leak: cloud_upload. sink_type=cloud_sync. action_status=submitted.",
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": records,
+            "frame_segments": observations,
+            "sensitive_files": [original],
+        }
+    )
+
+    assert bundle["file_lineage"]["direct_file_mappings"] == {derived: original}
+    assert bundle["upload_candidates"][0]["original_file"] == original
+    assert bundle["upload_candidates"][0]["current_file"] == derived
+
+
+def test_event_correlator_normalizes_known_windows_monitor_path_typo() -> None:
+    canonical = (
+        "D:/DataLeakDetector/DataLeakDetector-main/ScreenMonitor/"
+        "windows_monitor/test_files/confidential_terms.docx"
+    )
+    logged = canonical.replace("/windows_monitor/", "/winows_monitor/")
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": [
+                {
+                    "timestamp": "2026-06-05T22:41:00",
+                    "event_type": "modified",
+                    "file_path": logged,
+                    "process_info": {"process_name": "wps.exe"},
+                }
+            ],
+            "frame_segments": [],
+            "sensitive_files": [canonical],
+        }
+    )
+
+    assert bundle["correlated_events"][0]["original_file"] == canonical
+    assert bundle["correlated_events"][0]["current_file"] == logged
+
+
+def test_visual_send_uses_derived_file_created_before_observation() -> None:
+    original = "D:/test_files/confidential_terms.docx"
+    derived = "C:/Users/alice/Desktop/ordinary_terms.docx"
+    records = [
+        {
+            "timestamp": "2026-06-05T22:41:00",
+            "event_type": "modified",
+            "file_path": original,
+            "process_info": {"process_name": "wps.exe"},
+        },
+        {
+            "timestamp": "2026-06-05T22:41:10",
+            "event_type": "created",
+            "file_path": derived,
+            "process_info": {"process_name": "wps.exe"},
+        },
+    ]
+    observations = [
+        {
+            "observation_id": "vlm_send",
+            "start_ms": parse_timestamp_ms("2026-06-05T22:41:30"),
+            "end_ms": parse_timestamp_ms("2026-06-05T22:41:30"),
+            "app_name": "WeChat",
+            "operation_type": "external_sink_interaction",
+            "resource": "confidential_terms.docx",
+            "related_resources": ["confidential_terms.docx"],
+            "description": (
+                "direct_leak: file_send. sink_type=chat_upload. action_status=completed. "
+                "The sensitive file confidential_terms.docx was sent."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": records,
+            "frame_segments": observations,
+            "sensitive_files": [original],
+        }
+    )
+
+    assert bundle["upload_candidates"][0]["original_file"] == original
+    assert bundle["upload_candidates"][0]["current_file"] == derived
+
+
 def test_event_correlator_allows_same_process_screenshot_lineage() -> None:
     original = "C:/Users/alice/Desktop/salary.xlsx"
     screenshot = "C:/Users/alice/Pictures/Screenshots/Screenshot.png"
@@ -4142,6 +4270,81 @@ def test_actionless_unknown_risk_does_not_inherit_prior_sensitive_identity() -> 
     assert not any(item["app_name"] == "Doubao" for item in bundle["correlated_events"])
 
 
+def test_recent_sensitive_clipboard_then_ai_app_switch_confirms_visual_sink() -> None:
+    original = "C:/Users/alice/Desktop/strategy.docx"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "clipboard_text",
+            "content_preview": "confidential strategy content",
+            "process_info": {"process_name": "WINWORD.EXE"},
+            "extra": {"raw_operation": "clipboard_text", "source": "clipboard_monitor"},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:15",
+            "event_type": "app_switch",
+            "file_path": original,
+            "process_info": {"process_name": "msedge.exe"},
+            "window_info": {"window_title": "Poe - AI Chat Platform"},
+            "extra": {"raw_operation": "app", "source": "window_monitor"},
+        },
+    ]
+    observations = [
+        {
+            "observation_id": "vlm_poe",
+            "start_ms": 15_000,
+            "end_ms": 15_000,
+            "app_name": "Microsoft Edge",
+            "operation_type": "external_sink_interaction",
+            "resource": "strategy.docx",
+            "related_resources": ["strategy.docx"],
+            "description": (
+                "unknown_risk: ai_chat_navigation. sink_type=ai_chat. "
+                "action_status=unknown. No paste is visible in the selected keyframes."
+            ),
+            "confidence": 0.6,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    upload = bundle["upload_candidates"][0]
+    assert upload["original_file"] == original
+    assert upload["current_file"] == original
+    assert upload["sink_type"] == "ai_chat"
+
+
+def test_recent_sensitive_clipboard_then_generic_browser_switch_is_not_sink() -> None:
+    original = "C:/Users/alice/Desktop/strategy.docx"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "clipboard_text",
+            "content_preview": "confidential strategy content",
+            "process_info": {"process_name": "WINWORD.EXE"},
+            "extra": {"raw_operation": "clipboard_text", "source": "clipboard_monitor"},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:15",
+            "event_type": "app_switch",
+            "file_path": original,
+            "process_info": {"process_name": "msedge.exe"},
+            "window_info": {"window_title": "Data Leak Monitoring System"},
+            "extra": {"raw_operation": "app", "source": "window_monitor"},
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": [], "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"] == []
+    assert not any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
+
+
 def test_visible_cloud_menu_is_preparation_not_confirmed_upload() -> None:
     original = "C:/Users/alice/Documents/salary.xlsx"
     parsed = parse_vlm_response_detailed(
@@ -4180,6 +4383,152 @@ def test_visible_cloud_menu_is_preparation_not_confirmed_upload() -> None:
         }
     )
     assert bundle["upload_candidates"] == []
+
+
+def test_visual_unknown_risk_with_progress_does_not_become_upload() -> None:
+    original = "C:/Users/alice/Documents/secret.docx"
+    observations = [
+        {
+            "observation_id": "vlm_monitor",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Data Leak Monitoring System",
+            "operation_type": "external_sink_interaction",
+            "resource": "secret.docx",
+            "related_resources": ["secret.docx"],
+            "description": (
+                "unknown_risk: monitoring progress. sink_type=unknown. "
+                "action_status=in_progress. No outbound transfer is confirmed."
+            ),
+            "confidence": 0.8,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"] == []
+    assert not any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
+
+
+def test_cloud_folder_membership_without_file_sync_status_is_not_upload() -> None:
+    original = "C:/Users/alice/OneDrive/Desktop/secret.docx"
+    observations = [
+        {
+            "observation_id": "vlm_cloud_folder",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "File Explorer",
+            "operation_type": "external_sink_interaction",
+            "resource": "secret.docx",
+            "related_resources": ["secret.docx"],
+            "description": (
+                "direct_leak: cloud_sync. sink_type=cloud_sync. action_status=completed. "
+                "Files in the OneDrive folder are automatically synced to the cloud, "
+                "but no file-specific sync status is visible."
+            ),
+            "confidence": 0.8,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"] == []
+    assert not any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
+
+
+def test_declared_ai_chat_sink_is_not_reclassified_as_generic_chat() -> None:
+    original = "C:/Users/alice/Documents/secret.docx"
+    observations = [
+        {
+            "observation_id": "vlm_ai",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "WPS Office",
+            "operation_type": "external_sink_interaction",
+            "resource": "secret.docx",
+            "related_resources": ["secret.docx"],
+            "description": (
+                "direct_leak: copy_paste_to_ai. sink_type=ai_chat. "
+                "action_status=submitted. Sensitive content was submitted."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"][0]["sink_type"] == "ai_chat"
+
+
+def test_explicit_ai_prompt_paste_remains_external_when_response_translates_content() -> None:
+    event = ParsedVisionEvent(
+        start_ms=10_000,
+        end_ms=10_000,
+        app_name="Doubao",
+        behavior_category="direct_leak",
+        operation_type="ai_prompt_paste",
+        original_resource="strategy.docx",
+        modified_resource="unknown",
+        description="The content was submitted and the response translated it.",
+        confidence=0.95,
+        sink_type="ai_chat",
+        action_status="submitted",
+    )
+
+    observations = vision_events_to_observations([event])
+
+    assert observations[0].operation_type == "external_sink_interaction"
+
+
+def test_clipboard_text_containing_usb_case_name_is_not_removable_transfer() -> None:
+    original = "D:/sensitive/company_contract.docx"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "clipboard_text",
+            "file_path": original,
+            "content_preview": "1-transfer-USB flash drive-3",
+            "process_info": {"process_name": "QQ.exe"},
+            "extra": {"raw_operation": "clipboard_text", "source": "clipboard_monitor"},
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": [], "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"] == []
+    assert not any(fact["relation"] == "LeakFile" for fact in bundle["datalog_facts"])
+
+
+def test_same_named_sensitive_sources_keep_exact_full_path_identity() -> None:
+    first = "C:/Users/alice/Desktop/product_plan.docx"
+    second = "D:/gdata/documents_1/product_plan.docx"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "file_selected",
+            "file_path": second,
+            "process_info": {"process_name": "msedge.exe"},
+            "window_info": {"window_title": "CSDN upload"},
+            "extra": {"raw_operation": "file_selected", "category": "file upload"},
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": [], "sensitive_files": [first, second]}
+    )
+
+    assert bundle["upload_candidates"][0]["original_file"] == second
 
 
 def test_vlm_removable_media_event_becomes_external_sink() -> None:
@@ -4604,6 +4953,27 @@ def test_datalog_engine_upload_binding_selects_declared_source_at_merge() -> Non
     assert leaks[0].source_file == source_a
     assert leaks[0].file_chain == (source_a, merged)
     assert source_b not in leaks[0].file_chain
+
+
+def test_build_datalog_facts_does_not_emit_leak_for_unbound_upload() -> None:
+    upload = UploadCandidate(
+        candidate_id="unbound_upload",
+        timestamp="2026-06-28T10:00:30.000",
+        app_name="teams.exe",
+        original_file="",
+        current_file="sensitive file",
+        sink_type="chat_upload",
+        risk_level="completed",
+        confidence=0.95,
+    )
+
+    facts = build_datalog_facts([], [upload], Lineage(), case_id="unbound-upload")
+
+    assert not any(fact.relation == "LeakFile" for fact in facts)
+    assert not any(fact.relation == "UploadBinding" for fact in facts)
+    suspicious = [fact for fact in facts if fact.relation == "SuspiciousBehavior"]
+    assert len(suspicious) == 1
+    assert suspicious[0].args[5] == "unbound_completed"
 
 
 def test_build_datalog_facts_assigns_unique_operation_ids() -> None:
@@ -6279,4 +6649,115 @@ def test_pipeline_writes_report_for_inline_leak(tmp_path: Path) -> None:
     assert report["graph"]["status"] == "not_supported"
     assert report["log_miner"]["source"] == "in_memory"
     assert report["frame_analyzer"]["statistics"]["vision"]["log_mining"]["source"] == "in_memory"
+
+
+def test_screen_share_binds_future_filename_and_directory_identity() -> None:
+    records = [
+        {
+            "timestamp": "2026-03-07T12:49:10.330",
+            "event_type": "app_switch",
+            "app_name": "Edge",
+            "window_info": {"window_title": "teams.live.com 正在共享你的屏幕。"},
+        },
+        {
+            "timestamp": "2026-03-07T12:49:14.435",
+            "event_type": "app_switch",
+            "app_name": "explorer",
+            "window_info": {"window_title": "documents_1 - 文件资源管理器"},
+        },
+        {
+            "timestamp": "2026-03-07T12:49:20.574",
+            "event_type": "app_switch",
+            "app_name": "wps",
+            "window_info": {"window_title": "产品设计方案.docx - WPS Office"},
+        },
+    ]
+    bundle = EventCorrelator().run(
+        {
+            "log_events": records,
+            "frame_segments": [],
+            "sensitive_files": [
+                "D:/gdata/documents_1/产品设计方案.docx",
+                "C:/other/documents_2/产品设计方案.docx",
+            ],
+            "non_vlm_enabled": True,
+        }
+    )
+
+    assert bundle["upload_candidates"][0]["app_name"] == "Microsoft Teams"
+    assert bundle["upload_candidates"][0]["sink_type"] == "screen_share"
+    assert bundle["upload_candidates"][0]["original_file"] == "D:/gdata/documents_1/产品设计方案.docx"
+
+
+def test_virtual_machine_clipboard_switch_is_external() -> None:
+    original = "C:/Users/alice/Desktop/customer_contacts.pdf"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "app_switch",
+            "app_name": "WPS",
+            "window_info": {"window_title": "customer_contacts.pdf - WPS Office"},
+        },
+        {"timestamp": "2026-01-01T00:00:05", "event_type": "clipboard_text", "app_name": "WPS"},
+        {
+            "timestamp": "2026-01-01T00:00:12",
+            "event_type": "app_switch",
+            "app_name": "vmware",
+            "window_info": {"window_title": "Windows 10 x64 - VMware Workstation"},
+        },
+    ]
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": [], "sensitive_files": [original], "non_vlm_enabled": True}
+    )
+
+    assert bundle["upload_candidates"][0]["sink_type"] == "virtual_machine"
+    assert bundle["upload_candidates"][0]["original_file"] == original
+
+
+def test_generic_browser_after_clipboard_is_not_an_external_sink() -> None:
+    original = "C:/Users/alice/Desktop/customer_contacts.pdf"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "app_switch",
+            "app_name": "WPS",
+            "window_info": {"window_title": "customer_contacts.pdf - WPS Office"},
+        },
+        {"timestamp": "2026-01-01T00:00:05", "event_type": "clipboard_text", "app_name": "WPS"},
+        {
+            "timestamp": "2026-01-01T00:00:12",
+            "event_type": "app_switch",
+            "app_name": "Chrome",
+            "window_info": {"window_title": "New Tab - Google Chrome"},
+        },
+    ]
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": [], "sensitive_files": [original], "non_vlm_enabled": True}
+    )
+
+    assert bundle["upload_candidates"] == []
+
+
+def test_blank_feishu_document_after_clipboard_is_preparation_only() -> None:
+    original = "C:/Users/alice/Desktop/customer_contacts.pdf"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "event_type": "app_switch",
+            "app_name": "WPS",
+            "window_info": {"window_title": "customer_contacts.pdf - WPS Office"},
+        },
+        {"timestamp": "2026-01-01T00:00:05", "event_type": "clipboard_text", "app_name": "WPS"},
+        {
+            "timestamp": "2026-01-01T00:00:12",
+            "event_type": "app_switch",
+            "app_name": "Chrome",
+            "window_info": {"window_title": "未命名文档 - 飞书云文档 - Google Chrome"},
+        },
+    ]
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": [], "sensitive_files": [original], "non_vlm_enabled": True}
+    )
+
+    assert bundle["upload_candidates"] == []
 
