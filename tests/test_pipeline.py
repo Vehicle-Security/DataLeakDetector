@@ -4808,6 +4808,61 @@ def test_visible_cloud_menu_is_preparation_not_confirmed_upload() -> None:
     assert bundle["upload_candidates"] == []
 
 
+def test_screenshot_then_paste_to_cloud_document_stays_direct_leak() -> None:
+    parsed = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "timestamp_ms": 74_355,
+                        "app_name": "WPS, Feishu",
+                        "behavior_category": "direct_leak",
+                        "operation_type": "screenshot_and_paste_to_cloud_doc",
+                        "original_filename": "机密文档.docx",
+                        "sink_type": "cloud_sync",
+                        "action_status": "completed",
+                        "description": "Sensitive content was pasted into a Feishu cloud document.",
+                    }
+                ]
+            }
+        )
+    )
+
+    event = parsed.events[0]
+    assert event.behavior_category == "direct_leak"
+    assert event.operation_type == "screenshot_and_paste_to_cloud_doc"
+    assert event.sink_type == "cloud_sync"
+
+
+def test_drive_protection_notification_is_not_removable_media_transfer() -> None:
+    parsed = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "timestamp_ms": 67_825,
+                        "app_name": "explorer",
+                        "behavior_category": "direct_leak",
+                        "operation_type": "copy_to_removable_media",
+                        "original_filename": "customer.dll",
+                        "sink_type": "removable_media",
+                        "action_status": "in_progress",
+                        "description": (
+                            "A 'Protecting drive E' notification is visible, likely copying "
+                            "the renamed sensitive file to the removable drive."
+                        ),
+                    }
+                ]
+            }
+        )
+    )
+
+    event = parsed.events[0]
+    assert event.behavior_category == "unknown_risk"
+    assert event.action_status == "unknown"
+    assert event.sink_type == "unknown"
+
+
 def test_visual_unknown_risk_with_progress_does_not_become_upload() -> None:
     original = "C:/Users/alice/Documents/secret.docx"
     observations = [
@@ -6019,7 +6074,8 @@ def test_datalog_engine_screen_share_keeps_active_state_for_late_file_log() -> N
     assert leaks[0].leak_timestamp == 150
 
 
-def test_completed_visual_upload_allows_late_log_identity_without_reordering_leak() -> None:
+@pytest.mark.parametrize("risk_level", ["in_progress", "completed"])
+def test_confirmed_visual_upload_allows_late_log_identity_without_reordering_leak(risk_level: str) -> None:
     source = "C:/Users/alice/Desktop/secret.docx"
     facts = build_datalog_facts(
         [
@@ -6054,7 +6110,7 @@ def test_completed_visual_upload_allows_late_log_identity_without_reordering_lea
                 original_file=source,
                 current_file=source,
                 sink_type="network_upload",
-                risk_level="completed",
+                risk_level=risk_level,
                 confidence=0.95,
                 evidence_refs=("frame:completed",),
             )
@@ -6341,6 +6397,205 @@ def test_vlm_parser_downgrades_local_preparation_with_unpressed_send_control(
     )
     assert bundle["upload_candidates"] == []
     assert any(fact["relation"] == "SuspiciousBehavior" for fact in bundle["datalog_facts"])
+
+
+def test_vlm_parser_keeps_visible_screenshot_preview_as_chat_upload() -> None:
+    descriptions = (
+        "User takes a screenshot of the sensitive document and attaches the resulting image "
+        "to QQ chat; the image is staged in the composer with the Send button visible.",
+        "User captures a screenshot and pastes the resulting image into the QQ chat composer, "
+        "preparing to send it.",
+        "The screenshot taken from the sensitive document is staged in the QQ chat composer, "
+        "with the Send button visible.",
+    )
+    for description in descriptions:
+        result = parse_vlm_response_detailed(
+            json.dumps(
+                {
+                    "events": [
+                        {
+                            "timestamp_ms": 24_977,
+                            "app_name": "QQ",
+                            "behavior_category": "direct_leak",
+                            "operation_type": "screenshot_chat_upload",
+                            "original_filename": "公司合作合同.docx",
+                            "modified_filename": "unknown",
+                            "sink_type": "chat_upload",
+                            "action_status": "selected",
+                            "description": description,
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            ),
+            keywords=["公司合作合同.docx"],
+        )
+
+        event = result.events[0]
+        assert event.behavior_category == "direct_leak"
+        assert event.operation_type == "screenshot_chat_upload"
+        assert event.sink_type == "chat_upload"
+        assert event.action_status == "selected"
+        bundle = EventCorrelator().run(
+            {
+                "log_events": [],
+                "frame_segments": vision_events_to_observations([event]),
+                "sensitive_files": ["C:/Users/alice/Desktop/公司合作合同.docx"],
+                "non_vlm_enabled": False,
+            }
+        )
+        assert bundle["upload_candidates"][0]["sink_type"] == "chat_upload"
+        assert bundle["upload_candidates"][0]["risk_level"] == "selected_or_attached"
+
+
+def test_vlm_parser_upgrades_invoked_ai_ocr_even_when_model_calls_it_hidden() -> None:
+    result = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "timestamp_ms": 49_023,
+                        "app_name": "AI看图",
+                        "behavior_category": "hidden_transfer",
+                        "operation_type": "text_extraction",
+                        "original_filename": "屏幕截图 2026-03-18 202713.png",
+                        "sink_type": "unknown",
+                        "action_status": "selected",
+                        "description": (
+                            "User selects the 'AI Extract Text' (AI提取文字) feature and "
+                            "configures the output path for generating a derived document."
+                        ),
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    event = result.events[0]
+    assert event.behavior_category == "direct_leak"
+    assert event.operation_type == "network_upload"
+    assert event.sink_type == "network_upload"
+
+
+def test_vlm_parser_upgrades_submitted_ai_image_viewer_ocr_without_fixed_verb() -> None:
+    result = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "timestamp_ms": 49_023,
+                        "app_name": "AI Image Viewer/WPS",
+                        "behavior_category": "hidden_transfer",
+                        "operation_type": "text_extraction",
+                        "original_filename": "sensitive.png",
+                        "sink_type": "unknown",
+                        "action_status": "submitted",
+                        "description": (
+                            "User uses an AI text extraction (OCR) tool to convert the image "
+                            "to a Word document, selecting an output path and initiating the process."
+                        ),
+                    }
+                ]
+            }
+        )
+    )
+
+    event = result.events[0]
+    assert event.behavior_category == "direct_leak"
+    assert event.operation_type == "network_upload"
+    assert event.sink_type == "network_upload"
+
+
+def test_vlm_parser_keeps_onenote_desktop_virtual_print_local() -> None:
+    result = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "timestamp_ms": 46_444,
+                        "app_name": "WPS Office",
+                        "behavior_category": "direct_leak",
+                        "operation_type": "print_to_cloud_app",
+                        "original_filename": "公司机密条款.docx",
+                        "sink_type": "cloud_sync",
+                        "action_status": "in_progress",
+                        "description": (
+                            "A print job is sent to OneNote (Desktop) using the "
+                            "Send to Microsoft OneNote 16 Driver."
+                        ),
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    event = result.events[0]
+    assert event.behavior_category == "hidden_transfer"
+    assert event.operation_type == "virtual_print"
+    assert event.sink_type == "unknown"
+
+
+def test_vlm_parser_downgrades_toolbar_only_inferred_network_upload() -> None:
+    result = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "timestamp_ms": 56_559,
+                        "app_name": "Browser/Online Tool",
+                        "behavior_category": "direct_leak",
+                        "operation_type": "network_upload",
+                        "original_filename": "screenshot.png",
+                        "sink_type": "network_upload",
+                        "action_status": "unknown",
+                        "description": (
+                            "The screenshot is loaded into an online image processing tool "
+                            "(indicated by Login/VIP buttons and AI processing toolbar), "
+                            "implying a network upload."
+                        ),
+                    }
+                ]
+            }
+        )
+    )
+
+    event = result.events[0]
+    assert event.behavior_category == "unknown_risk"
+    assert event.operation_type == "local_preview"
+    assert event.sink_type == "unknown"
+
+
+def test_vlm_parser_upgrades_completed_integrated_ai_translation_result() -> None:
+    result = parse_vlm_response_detailed(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "timestamp_ms": 67_044,
+                        "app_name": "WPS Office",
+                        "behavior_category": "hidden_transfer",
+                        "operation_type": "copy_paste_save_derived_file",
+                        "original_filename": "产品设计方案.docx",
+                        "modified_filename": "产品设计方案翻译.docx",
+                        "sink_type": "unknown",
+                        "action_status": "completed",
+                        "description": (
+                            "User used the built-in translation tool to translate the document "
+                            "content and copied the translated text after a Copy Success result."
+                        ),
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    event = result.events[0]
+    assert event.behavior_category == "direct_leak"
+    assert event.operation_type == "ai_translation"
+    assert event.sink_type == "ai_chat"
 
 
 def test_vlm_parser_accepts_top_level_array_and_keeps_distinct_resources() -> None:
@@ -8229,6 +8484,58 @@ def test_screen_share_binds_basename_to_unique_exact_session_log_path() -> None:
     assert "log:exact_source" in upload["evidence_refs"]
 
 
+def test_ai_paste_uses_runtime_user_to_resolve_same_name_and_ignores_monitor_path() -> None:
+    correct = "D:/gdata/documents_1/产品设计方案.docx"
+    records = [
+        {
+            "event_id": "monitor_context",
+            "timestamp": "2026-03-07T12:26:21.974",
+            "event_type": "file_upload",
+            "file_path": (
+                "D:/project2/DataLeakDetector2/ScreenMonitor/winows_monitor/"
+                "recordings/session_20260307_122606/logs/keyevents.json"
+            ),
+            "process_info": {"process_name": "wps.exe"},
+            "window_info": {"window_title": "产品设计方案.docx - WPS Office"},
+            "user_info": {"username": "LENOVO"},
+        }
+    ]
+    observations = [
+        {
+            "observation_id": "vlm_ai_paste",
+            "start_ms": 1772886397350,
+            "end_ms": 1772886397350,
+            "app_name": "AI 中文版",
+            "operation_type": "external_sink_interaction",
+            "resource": "产品设计书.docx",
+            "description": (
+                "direct_leak: AI prompt paste. sink_type=ai_chat. "
+                "action_status=submitted. The copied document text was pasted and sent."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": records,
+            "frame_segments": observations,
+            "sensitive_files": [
+                "C:/Users/17503/Desktop/产品设计方案.docx",
+                "C:/Users/17503/OneDrive/产品设计方案.docx",
+                correct,
+            ],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    assert len(bundle["upload_candidates"]) == 1
+    upload = bundle["upload_candidates"][0]
+    assert upload["original_file"] == correct
+    assert upload["current_file"] == correct
+
+
 def test_filename_extension_is_not_used_as_same_named_source_directory() -> None:
     correct = "D:/dingxinyao/desktop/公司合作合同.docx"
     unrelated_same_name = "D:/DataLeakTest/docx/公司合作合同.docx"
@@ -8768,6 +9075,28 @@ def test_vlm_file_context_falls_back_to_current_user_paths() -> None:
     context = _vlm_file_context(
         logs,
         [expected, "C:/Users/other/Desktop/company_contract.docx"],
+    )
+
+    assert context == [expected]
+
+
+def test_vlm_file_context_matches_sensitive_basename_in_window_title() -> None:
+    expected = "D:/gdata/documents_1/产品设计方案.docx"
+    logs = normalize_logs(
+        [
+            {
+                "timestamp": "2026-01-01T00:00:00",
+                "event_type": "app_switch",
+                "app_name": "WPS",
+                "window_info": {"window_title": "产品设计方案.docx - WPS Office"},
+                "user_info": {"username": "LENOVO"},
+            }
+        ]
+    )
+
+    context = _vlm_file_context(
+        logs,
+        [expected, "C:/Users/LENOVO/Desktop/公司战略规划.docx"],
     )
 
     assert context == [expected]

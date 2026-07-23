@@ -148,6 +148,8 @@ def _upload_risk_level(event: CorrelatedEvent, text: str) -> str:
 
 
 def _upload_sink_type(event: CorrelatedEvent, current_file: str, text: str) -> str:
+    if event.operation_type == "network_upload" or "network_upload" in text:
+        return "network_upload"
     for reason in event.join_reasons:
         if reason.startswith("sink_type:"):
             declared = reason.partition(":")[2].strip().lower()

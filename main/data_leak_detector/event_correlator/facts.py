@@ -55,10 +55,10 @@ def build_datalog_facts(
     # process carries that artifact history until an upload accesses the file.
     for _, _, event in source_events.values():
         timestamp = parse_timestamp_ms(event.timestamp)
-        if _is_late_identity_for_completed_visual_upload(event, uploads):
-            # A completed visual upload is the authoritative sink evidence;
-            # the later log only supplies the exact file identity. Do not let
-            # its monitor timestamp reverse an otherwise confirmed path.
+        if _is_late_identity_for_visual_upload(event, uploads):
+            # A confirmed visual upload/share is the authoritative sink
+            # evidence; a later monitor event only supplies exact file
+            # identity. Do not let its timestamp reverse the leak path.
             timestamp = 0
         facts.append(
             DatalogFact(
@@ -262,7 +262,7 @@ def _is_external_sink_event(event: CorrelatedEvent) -> bool:
     return event.operation_type == "external_sink_interaction" or event.behavior_category == "data_exfiltration_candidate"
 
 
-def _is_late_identity_for_completed_visual_upload(
+def _is_late_identity_for_visual_upload(
     event: CorrelatedEvent,
     uploads: list[UploadCandidate],
 ) -> bool:
@@ -273,7 +273,7 @@ def _is_late_identity_for_completed_visual_upload(
     for upload in uploads:
         upload_time = parse_timestamp_ms(upload.timestamp)
         if (
-            upload.risk_level != "completed"
+            not is_confirmed_risk_level(upload.risk_level)
             or not any(ref.startswith("frame:") for ref in upload.evidence_refs)
             or normalize_path(upload.original_file).lower() != source_key
             or not (0 < event_time - upload_time <= 15_000)

@@ -110,6 +110,25 @@ _OUTBOUND_SOURCE_OBJECT_ACTIONS = {
     "upload_file_to_ai",
     "web_upload",
 }
+_CONTENT_LINEAGE_MARKERS = (
+    "ocr",
+    "annotation",
+    "comment",
+    "批注",
+    "隐写",
+    "stegan",
+    "手动录入",
+    "transcrib",
+    "翻译",
+    "translate",
+    "虚拟机",
+    "virtual machine",
+    "vmware",
+    "bluetooth",
+    "蓝牙",
+    "共享目录",
+    "shared folder",
+)
 
 
 class EventCorrelator:
@@ -688,6 +707,9 @@ class EventCorrelator:
         if len(unique_title_matches) == 1:
             return unique_title_matches[0]
         if len(unique_title_matches) > 1:
+            user_scoped_matches = _narrow_sources_by_runtime_user(unique_title_matches, log)
+            if len(user_scoped_matches) == 1:
+                return user_scoped_matches[0]
             nearby_titles = [
                 normalize_path(other.window_title).lower()
                 for other in logs
@@ -739,6 +761,22 @@ class EventCorrelator:
                 unique_narrowed = _dedupe_paths(narrowed)
                 if len(unique_narrowed) == 1:
                     return unique_narrowed[0]
+
+        if _is_cloud_document_clipboard_paste(log):
+            screenshot_roots = []
+            for artifact in lineage.direct:
+                normalized = normalize_path(artifact)
+                if Path(normalized).suffix.lower() not in {".bmp", ".jpeg", ".jpg", ".png"}:
+                    continue
+                artifact_time = self._lineage_artifact_times.get(normalized.lower(), 0)
+                if not artifact_time or not 0 <= log.timestamp_ms - artifact_time <= _SCREENSHOT_CLIPBOARD_TARGET_HORIZON_MS:
+                    continue
+                root = self._resolve_original(lineage.root(normalized), sensitive_files, lineage)
+                if root:
+                    screenshot_roots.append(root)
+            unique_roots = _dedupe_paths(screenshot_roots)
+            if len(unique_roots) == 1:
+                return unique_roots[0]
 
         # A clipboard write followed by an external app switch may omit the
         # source path on the sink event. Bind only to a recent, explicit file
@@ -932,8 +970,12 @@ class EventCorrelator:
                 confidence = max(sink.confidence, min(identity.confidence, 0.95))
             else:
                 identity_id = identity.event_id
-                identity_resource = identity.file_path or original
-                related = [*sink.related_resources, identity.file_path, original]
+                identity_path = normalize_path(identity.file_path)
+                identity_resource = original if _is_internal_runtime_path(identity_path) else (identity_path or original)
+                related = [*sink.related_resources]
+                if identity_path and not _is_internal_runtime_path(identity_path):
+                    related.append(identity_path)
+                related.append(original)
                 marker = f"log_identity={identity_id}"
                 confidence = sink.confidence
             fused.append(
@@ -1087,6 +1129,16 @@ class EventCorrelator:
                     logs or [],
                     sensitive_files,
                 )
+            if (
+                not original
+                and _declared_visual_behavior(observation) == "direct_leak"
+                and _is_attached_outbound_observation(observation)
+            ):
+                # VLMs occasionally translate or paraphrase the source name
+                # while correctly identifying a staged outbound attachment.
+                # Bind only an unambiguous unique or semantic source.
+                if len(sensitive_files) == 1:
+                    original = sensitive_files[0]
             text = f"{observation.description} {observation.operation_type} {observation.resource} {' '.join(observation.related_resources)}"
             if not (_is_external_observation(observation) or _is_transfer_observation(observation)):
                 continue
@@ -1100,7 +1152,11 @@ class EventCorrelator:
                 continue
             declared_behavior = _declared_visual_behavior(observation)
             if declared_behavior == "unknown_risk" and _observation_action_status(observation) == "unknown":
-                behavior = "unknown_risk"
+                behavior = (
+                    "data_exfiltration_candidate"
+                    if original and _is_attached_outbound_observation(observation)
+                    else "unknown_risk"
+                )
             else:
                 behavior = behavior_category(text) if original else "unknown_risk"
             behavior = _behavior_with_action_status(observation, behavior)
@@ -1109,6 +1165,14 @@ class EventCorrelator:
                 if log_binding and log_binding[1]
                 else self._visual_current_file(observation, original, sensitive_files, lineage)
             )
+            binding_logs = log_binding[2] if log_binding else ()
+            clipboard_bridge = bool(
+                binding_logs and _is_cloud_document_clipboard_paste(binding_logs[-1])
+            ) and _is_screenshot_or_ocr_observation(observation)
+            visual_operation = _effective_visual_operation_type(observation)
+            if clipboard_bridge:
+                behavior = "data_exfiltration_candidate"
+                visual_operation = "external_sink_interaction"
             visual_event = CorrelatedEvent(
                 event_id=f"corr_{start_index + len(visual_events)}",
                 timestamp=_observation_timestamp(observation, recording_start_ms),
@@ -1116,13 +1180,25 @@ class EventCorrelator:
                 app_name=observation.app_name,
                 original_file=original,
                 current_file=current_file,
-                operation_type=_effective_visual_operation_type(observation),
+                operation_type=visual_operation,
                 behavior_category=behavior,
                 confidence=round(min(max(observation.confidence, 0.70), 1.0), 3),
-                evidence_refs=_observation_evidence_refs(observation),
+                evidence_refs=tuple(
+                    dict.fromkeys(
+                        [
+                            *_observation_evidence_refs(observation),
+                            *(f"log:{log.event_id}" for log in binding_logs),
+                        ]
+                    )
+                ),
                 join_reasons=tuple(
                     _visual_join_reasons(observation, original)
                     + _screen_share_state_reasons(observation, logs or [])
+                    + (
+                        ["ocr_clipboard_bridge", "clipboard_to_cloud_document", "sink_type:cloud_sync"]
+                        if clipboard_bridge
+                        else []
+                    )
                 ),
             )
             visual_events.append(visual_event)
@@ -1168,6 +1244,7 @@ class EventCorrelator:
             if not (
                 _is_sink_log(log)
                 or log.event_type in {"file_selected", "file_upload", "upload", "uploaded"}
+                or _is_cloud_document_clipboard_paste(log)
                 or (contextual_sink and (not observation_sink or contextual_sink == observation_sink))
                 or cloud_sync_result
             ):
@@ -1181,10 +1258,21 @@ class EventCorrelator:
                 and same_file(lineage.root(observed_artifact), original)
             ):
                 current = observed_artifact
+            elif _is_cloud_document_clipboard_paste(log):
+                # OCR/screenshot clipboard content reaches a cloud document
+                # without a new filesystem target. Preserve the latest visible
+                # screenshot artifact as the carrier instead of collapsing the
+                # sink directly onto the source document.
+                current = self._latest_visible_descendant_before(original, observation, lineage)
             else:
                 current = lineage.resolve_artifact(log.file_path)
             if not current or current == normalize_path(log.file_path):
                 current = _lineage_artifact_mention(log.window_title, lineage) or current
+            if _is_internal_runtime_path(current):
+                # Monitor/cache files can share the source document's active
+                # window title. They provide identity context only and must
+                # never replace the content being sent to an external sink.
+                current = original
             if _is_source_label_only(current, original):
                 current = original
             if current:
@@ -1201,14 +1289,19 @@ class EventCorrelator:
                 and not _same_exact_file_path(current, original)
             ):
                 artifact_rank = 0
-            candidates.append((artifact_rank, distance, original, current))
+            evidence_logs = (
+                _cloud_document_clipboard_evidence_logs(log, logs)
+                if _is_cloud_document_clipboard_paste(log)
+                else (log,)
+            )
+            candidates.append((artifact_rank, distance, original, current, evidence_logs))
         if not candidates:
             return None
         candidates.sort(key=lambda item: item[:2])
         best_score = candidates[0][:2]
         best = [item for item in candidates if item[:2] == best_score]
         roots = _dedupe_paths([item[2] for item in best])
-        return (best[0][2], best[0][3]) if len(roots) == 1 else None
+        return (best[0][2], best[0][3], best[0][4]) if len(roots) == 1 else None
 
     def _visual_current_file(
         self,
@@ -1282,7 +1375,10 @@ class EventCorrelator:
             if not _is_user_visible_lineage_target(normalized):
                 continue
             timestamp = self._lineage_artifact_times.get(normalized.lower(), 0)
-            if timestamp and center and timestamp > center:
+            # VLM observations are often video-relative while lineage log
+            # timestamps are absolute epoch milliseconds. Do not discard an
+            # otherwise valid artifact merely because the units differ.
+            if timestamp and center and center > 10_000_000_000 and timestamp > center:
                 continue
             candidates.append((timestamp, normalized))
         if not candidates:
@@ -1483,7 +1579,123 @@ def _normalize_cached_observation_semantics(observation):
             operation_type="file_or_content_transfer",
             description=description,
         )
+    # Cached VLM observations may have been parsed before the sink/action
+    # precedence fix. An explicitly submitted AI action remains external even
+    # when the content operation is translation or OCR.
+    if (
+        declared == "direct_leak"
+        and status in {"submitted", "in_progress", "completed"}
+        and _observation_sink_type(observation) == "ai_chat"
+    ):
+        return replace(observation, operation_type="external_sink_interaction")
+    if (
+        declared == "direct_leak"
+        and _observation_sink_type(observation) == "cloud_sync"
+        and _is_screenshot_only_observation(observation)
+        and not _has_explicit_cloud_transfer_observation(observation)
+    ):
+        description = re.sub(
+            r"^\s*direct_leak\s*:",
+            "hidden_transfer:",
+            observation.description,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        description = re.sub(r"\bsink_type=cloud_sync\b", "sink_type=unknown", description, count=1, flags=re.IGNORECASE)
+        return replace(observation, operation_type="file_or_content_transfer", description=description)
+    if (
+        declared == "hidden_transfer"
+        and status in {"submitted", "in_progress", "completed"}
+        and _observation_sink_type(observation) in {"", "unknown"}
+        and _is_external_ocr_text(observation)
+    ):
+        description = re.sub(
+            r"^\s*hidden_transfer\s*:",
+            "direct_leak: network_upload:",
+            observation.description,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        description = re.sub(
+            r"\bsink_type=unknown\b",
+            "sink_type=network_upload",
+            description,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        return replace(
+            observation,
+            operation_type="external_sink_interaction",
+            description=description,
+        )
     return observation
+
+
+def _is_external_ocr_text(observation) -> bool:
+    text = _observation_search_text(observation).lower()
+    passive_only = any(
+        marker in text
+        for marker in ("toolbar is visible", "feature is merely visible", "not invoked", "仅显示工具栏", "未调用")
+    )
+    return (
+        not passive_only
+        and any(marker in text for marker in ("ocr", "extract text", "text extraction", "提取文字", "文字识别"))
+        and any(marker in text for marker in ("ai image", "ai看图", "ai 看图", "ai tool", "图片工具"))
+    )
+
+
+def _is_screenshot_or_ocr_observation(observation) -> bool:
+    text = _observation_search_text(observation).lower()
+    return any(
+        marker in text
+        for marker in (
+            "screenshot",
+            "screen capture",
+            "snipping tool",
+            "屏幕截图",
+            "截图",
+            "ocr",
+            "text extraction",
+            "提取文字",
+            "文字识别",
+        )
+    )
+
+
+def _is_screenshot_only_observation(observation) -> bool:
+    text = _observation_search_text(observation).lower()
+    if any(
+        marker in text
+        for marker in (
+            "paste to cloud",
+            "paste into cloud",
+            "pasted to cloud",
+            "pasted into cloud",
+            "paste_to_cloud",
+            "粘贴到云文档",
+            "粘贴至云文档",
+            "上传到云文档",
+        )
+    ):
+        return False
+    return any(marker in text for marker in ("screenshot", "screen capture", "截图", "屏幕截图"))
+
+
+def _has_explicit_cloud_transfer_observation(observation) -> bool:
+    text = _observation_search_text(observation).lower()
+    return any(
+        marker in text
+        for marker in (
+            "upload progress",
+            "sync progress",
+            "upload completed",
+            "sync completed",
+            "上传进度",
+            "同步进度",
+            "上传完成",
+            "同步完成",
+        )
+    )
 
 
 def _is_monitoring_log_only_claim(text: str) -> bool:
@@ -1616,6 +1828,36 @@ def _is_sink_log(log) -> bool:
     raw_operation = str(log.raw.get("operation") or extra.get("raw_operation") or "")
     category = str(extra.get("category") or "")
     return raw_operation in {"file_selected", "file_upload", "upload", "send_click"} or contains_any(category, ("文件上传", "直接外发"))
+
+
+def _is_cloud_document_clipboard_paste(log) -> bool:
+    extra = log.raw.get("extra") if isinstance(log.raw.get("extra"), dict) else {}
+    raw_operation = str(log.raw.get("operation") or extra.get("raw_operation") or "").lower()
+    operation = str(extra.get("operation") or "").lower()
+    title = normalize_path(log.window_title).lower()
+    return (
+        log.event_type.lower() in {"clipboard_operation", "clipboard_paste", "paste"}
+        and raw_operation in {"clipboard_paste", "paste"}
+        and ("upload_to_cloud" in operation or contains_any(title, ("飞书", "feishu", "lark")))
+    )
+
+
+def _cloud_document_clipboard_evidence_logs(paste_log, logs):
+    evidence = [paste_log]
+    for log in logs:
+        if log.timestamp_ms > paste_log.timestamp_ms:
+            continue
+        if paste_log.timestamp_ms - log.timestamp_ms > _SCREENSHOT_CLIPBOARD_TARGET_HORIZON_MS:
+            continue
+        extra = log.raw.get("extra") if isinstance(log.raw.get("extra"), dict) else {}
+        operation = str(extra.get("operation") or "").lower()
+        raw_operation = str(log.raw.get("operation") or extra.get("raw_operation") or "").lower()
+        if (
+            "ocr_text_extraction" in operation
+            or raw_operation in {"clipboard_image", "clipboard_text", "clipboard_write"}
+        ):
+            evidence.append(log)
+    return tuple(sorted({item.event_id: item for item in evidence}.values(), key=lambda item: item.timestamp_ms))
 
 
 def _is_screen_share_context(log) -> bool:
@@ -2056,7 +2298,14 @@ def _has_derived_transfer_evidence(event, text: str, target: str) -> bool:
     context = f"{text} {event.window_title} {event.description}"
     if _is_removable_media_context(context):
         return True
-    return _is_user_visible_lineage_target(target) and contains_any(context, TRANSFER_TOKENS)
+    # Content-only transformations (OCR, annotations, steganography, manual
+    # transcription and translation) often do not use the generic filesystem
+    # transfer vocabulary, but still create a carrier that must remain in the
+    # sensitive lineage.
+    return _is_user_visible_lineage_target(target) and (
+        contains_any(context, TRANSFER_TOKENS)
+        or any(marker in context.lower() for marker in _CONTENT_LINEAGE_MARKERS)
+    )
 
 
 def _is_user_visible_lineage_target(file_path: str) -> bool:
@@ -2083,6 +2332,12 @@ def _is_cloud_sync_directory_transfer(log, target: str, original: str, lineage: 
     normalized_target = normalize_path(target)
     lowered_target = normalized_target.lower()
     if not _is_user_visible_lineage_target(normalized_target):
+        return False
+    # A screenshot being created in OneDrive/Pictures/Screenshots is a local
+    # capture artifact. The synced directory alone is not proof that this
+    # particular image reached the cloud; require separate visual/log sink
+    # evidence for that conclusion.
+    if _is_screenshot_target(log, lowered_target):
         return False
     if not any(marker in lowered_target for marker in ("/onedrive/", "/wpsdrive/")):
         return False
@@ -2408,6 +2663,8 @@ def _contextual_sink_type(log) -> str:
     if _is_virtual_machine_context(log):
         return "virtual_machine"
     text = normalize_path(f"{log.app_name} {log.window_title}").lower()
+    if contains_any(text, ("fsquirt", "bluetooth file transfer", "send files via bluetooth", "蓝牙文件传输", "通过蓝牙发送")):
+        return "removable_media"
     if contains_any(
         text,
         ("quark", "baidunetdisk", "baidu netdisk", "夸克网盘", "百度网盘", "网盘", "cloud drive", "cloud storage"),
@@ -2551,6 +2808,11 @@ def _effective_visual_operation_type(observation) -> str:
     if _is_confirmed_external_observation(observation):
         return "external_sink_interaction"
     if _declared_visual_behavior(observation) == "direct_leak":
+        if (
+            _observation_action_status(observation) == "selected"
+            and _is_attached_outbound_observation(observation)
+        ):
+            return "external_sink_interaction"
         if (
             observation.operation_type == "external_sink_interaction"
             and _observation_action_status(observation) in {"submitted", "in_progress", "completed"}
@@ -2719,7 +2981,55 @@ def _is_explicit_declared_outbound_action(action: str) -> bool:
 
 def _observation_sink_type(observation) -> str:
     match = re.search(r"\bsink_type=([a-z_]+)\b", observation.description.lower())
-    return match.group(1) if match else ""
+    declared = match.group(1) if match else ""
+    if declared and declared != "unknown":
+        return declared
+    text = _observation_search_text(observation).lower()
+    if contains_any(text, ("fsquirt", "bluetooth file transfer", "send files via bluetooth", "蓝牙文件传输", "通过蓝牙发送")):
+        return "removable_media"
+    return declared
+
+
+def _is_attached_outbound_observation(observation) -> bool:
+    sink_type = _observation_sink_type(observation)
+    if sink_type not in {"ai_chat", "chat_upload", "mail_attachment", "network_upload"}:
+        return False
+    operation = observation.operation_type.lower()
+    text = observation.description.lower()
+    attachment_markers = (
+        "attached to",
+        "attached",
+        "attaches",
+        "into the qq chat composer",
+        "into the chat composer",
+        "pasted into the qq chat composer",
+        "pasted into the chat composer",
+        "pasted into qq chat",
+        "attachment chip",
+        "file card",
+        "upload area",
+        "staged in the upload",
+        "staged in the qq chat composer",
+        "staged in the chat composer",
+        "staged in the composer",
+        "ready to be sent",
+        "附件",
+        "文件卡片",
+        "上传区域",
+        "粘贴到聊天编辑区",
+        "粘贴至聊天编辑区",
+    )
+    send_control_markers = ("send button", "send control", "发送按钮", "发送键")
+    attached = any(marker in text for marker in attachment_markers)
+    explicit_operation = any(marker in operation for marker in ("attach", "file_upload", "upload_file"))
+    # A payload already inserted into a chat/mail/AI composer is an outbound
+    # attempt even before the final send click.  action_status remains audit
+    # metadata and must not suppress the leak verdict.
+    return attached and (
+        sink_type in {"chat_upload", "mail_attachment", "ai_chat"}
+        or explicit_operation
+        or any(marker in text for marker in send_control_markers)
+    )
 
 
 def _is_unproven_cloud_folder_claim(observation) -> bool:
@@ -2774,6 +3084,11 @@ def _behavior_with_action_status(observation, fallback: str) -> str:
     if status == "failed":
         return "failed_external_attempt"
     if status == "selected":
+        if (
+            _declared_visual_behavior(observation) == "direct_leak"
+            and _is_attached_outbound_observation(observation)
+        ):
+            return "data_exfiltration_candidate"
         return "selected_external_attempt"
     return fallback
 
@@ -2820,6 +3135,32 @@ def _mentions_source_directory(text: str, file_path: str) -> bool:
     if not normalized_text or not directory or directory == suffix:
         return False
     return bool(re.search(rf"(?<![\w.]){re.escape(directory)}(?![\w.])", normalized_text))
+
+
+def _narrow_sources_by_runtime_user(paths: list[str], log) -> list[str]:
+    """Discard same-name Windows profile paths that contradict the active user."""
+
+    raw = getattr(log, "raw", {}) or {}
+    username = str((raw.get("user_info") or {}).get("username") or "").strip().lower()
+    if not username:
+        return paths
+
+    scoped: list[tuple[str, str]] = []
+    unscoped: list[str] = []
+    for path in paths:
+        normalized = normalize_path(path)
+        match = re.search(r"(?i)(?:^|/)users/([^/]+)/", normalized)
+        if match:
+            scoped.append((match.group(1).lower(), path))
+        else:
+            unscoped.append(path)
+
+    matching_user = [path for owner, path in scoped if owner == username]
+    if matching_user:
+        return _dedupe_paths(matching_user)
+    if unscoped:
+        return _dedupe_paths(unscoped)
+    return paths
 
 
 def _best_sensitive_mention(text: str, sensitive_files: list[str]) -> str:
@@ -3166,7 +3507,20 @@ def _may_contribute_lineage(
 
     extra = event.raw.get("extra") if isinstance(event.raw.get("extra"), dict) else {}
     raw_operation = str(event.raw.get("operation") or extra.get("raw_operation") or "").lower()
-    return any(token in raw_operation for token in ("copy", "paste", "export", "print", "save_as", "compress", "upload", "transfer"))
+    return any(
+        token in raw_operation
+        for token in (
+            "copy",
+            "paste",
+            "export",
+            "print",
+            "save_as",
+            "compress",
+            "upload",
+            "transfer",
+            *_CONTENT_LINEAGE_MARKERS,
+        )
+    )
 
 
 def _guess_source_by_stem_from_index(file_path: str, known_stems: list[tuple[str, str]]) -> str:

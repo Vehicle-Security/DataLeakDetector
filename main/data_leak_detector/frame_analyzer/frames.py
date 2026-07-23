@@ -30,10 +30,15 @@ _DERIVATION_OFFSETS_MS = (
     5_000,
     10_000,
 )
-_FILE_SELECTION_OFFSETS_MS = (-2_000, -1_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000)
+_FILE_SELECTION_OFFSETS_MS = (-2_000, -1_000, -250, -100, 0, 250, 500, 750, 1_000, 1_500, 2_000, 3_000, 4_000, 5_000, 6_000, 7_000, 8_000, 10_000, 20_000, 30_000)
 _OUTBOUND_OFFSETS_MS = (-2_000, -1_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000, 10_000)
-_CLIPBOARD_OFFSETS_MS = (-1_000, -250, 0, 500, 2_000, 5_000, 10_000, 15_000, 25_000, 30_000)
-_PASTE_OFFSETS_MS = (-2_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000, 10_000, 15_000)
+_CLIPBOARD_OFFSETS_MS = (-2_000, -1_500, -1_000, -500, -250, -125, 0, 125, 250, 500, 750, 1_000, 2_000, 5_000, 10_000, 15_000, 25_000, 30_000)
+_PASTE_OFFSETS_MS = (
+    -2_000, -500, -250, -100, 0, 125, 250, 375, 500, 750, 1_000,
+    1_500, 1_625, 1_750, 1_875, 2_000, 2_125, 2_250, 2_375, 2_500,
+    2_625, 2_750, 2_875, 3_000, 3_125, 3_250, 3_375, 3_500,
+    4_000, 5_000, 7_500, 10_000, 15_000,
+)
 _SCREEN_SHARE_OFFSETS_MS = (-2_000, -250, -100, 0, 250, 500, 1_000, 2_000, 5_000, 10_000, 15_000)
 _CAPTURE_START_OFFSETS_MS = (-1_000, 0, 1_000, 2_000, 3_000, 5_000, 8_000)
 _CAPTURE_OFFSETS_MS = (-15_000, -13_000, -11_000, -9_000, -7_000, -5_000, -3_000, -1_000, 0)
@@ -498,13 +503,29 @@ def _focus_semantic_action_phases(
             immediate = [item for item in ordered if anchor <= item.frame.timestamp_ms <= anchor + 1_000]
             post = [item for item in ordered if anchor + 1_000 < item.frame.timestamp_ms <= anchor + 5_000]
             late = [item for item in ordered if item.frame.timestamp_ms > anchor + 5_000]
-            pre_items = [*pre[:1], *pre[-1:]] if base_action == "file_selected" else pre[-1:]
+            pre_items = [*pre[:1], *pre[-1:]] if base_action in {"file_selected", "clipboard"} else pre[-1:]
             if base_action == "capture" and pre:
                 pre_items = [max(pre, key=lambda item: (float(item.gray.std()), item.frame.score, item.frame.timestamp_ms))]
+            if base_action == "paste":
+                # Paste previews can appear for only a few hundred
+                # milliseconds.  Always retain the approximately +2.25s state
+                # (the common paste-render point), plus the strongest visual
+                # transitions, instead of only the first empty-composer frames.
+                target = min(post, key=lambda item: abs(item.frame.timestamp_ms - (anchor + 2_250))) if post else None
+                strongest = sorted(post, key=lambda item: (item.frame.score, item.entropy), reverse=True)
+                post_items = [target] if target else []
+                post_items.extend(item for item in strongest if item not in post_items)
+                post_items = sorted(post_items[:3], key=lambda item: item.frame.timestamp_ms)
+            elif base_action == "file_selected":
+                post_items = post[:3]
+            elif base_action == "clipboard":
+                post_items = post[:3]
+            else:
+                post_items = post[:1]
             chosen_items = [
                 *pre_items,
                 *([max(immediate, key=lambda item: (item.frame.score, item.frame.timestamp_ms))] if immediate else []),
-                *post[:1],
+                *post_items,
                 *late[-1:],
             ]
         chosen.extend(chosen_items)
@@ -741,7 +762,17 @@ def _trim_mandatory_evidence(
         ]
         if not group:
             continue
-        core = min(group, key=lambda item: (abs(item.frame.timestamp_ms - anchor), -item.frame.score))
+        # For paste, the immediate state usually still shows the empty
+        # composer.  Under a tight strong-window budget, preserve the later
+        # post-action state where the pasted payload is actually visible.
+        if base_action == "paste":
+            post = [item for item in group if anchor + 1_000 < item.frame.timestamp_ms <= anchor + 5_000]
+            core = max(post or group, key=lambda item: (item.frame.timestamp_ms, item.frame.score))
+        elif base_action == "clipboard":
+            pre = [item for item in group if item.frame.timestamp_ms < anchor]
+            core = min(pre, key=lambda item: (abs(item.frame.timestamp_ms - (anchor - 2_000)), -item.frame.score)) if pre else min(group, key=lambda item: (abs(item.frame.timestamp_ms - anchor), -item.frame.score))
+        else:
+            core = min(group, key=lambda item: (abs(item.frame.timestamp_ms - anchor), -item.frame.score))
         phase_groups.append((core, _phase_evidence_preferences(group, anchor, base_action)))
 
     selected: list[_FrameCandidate] = []
@@ -796,7 +827,7 @@ def _phase_evidence_preferences(
     if immediate:
         preferences.append(max(immediate, key=lambda item: (item.frame.score, item.frame.timestamp_ms)))
     if post:
-        preferences.append(post[0])
+        preferences.extend(post[:5] if action in {"paste", "file_selected"} else post[:3] if action == "clipboard" else post[:1])
     return list({item.frame.frame_id: item for item in preferences}.values())
 
 
@@ -891,6 +922,17 @@ def _dedupe_keyframes_globally(
         duplicate_hash = 0
         for index, kept in enumerate(retained):
             gap = abs(candidate.frame.timestamp_ms - kept.frame.timestamp_ms)
+            candidate_actions = _candidate_actions(candidate)
+            kept_actions = _candidate_actions(kept)
+            if (
+                gap >= 500
+                and candidate_actions
+                and kept_actions
+                and candidate_actions & kept_actions & {"clipboard", "paste", "file_selected"}
+            ):
+                # Distinct source/action/result states are useful lineage
+                # evidence even when most of the screen remains unchanged.
+                continue
             if gap < max(config.frame_anchor_duplicate_gap_ms, 500) and (
                 ":pre" in candidate.frame.reason or ":pre" in kept.frame.reason
             ):

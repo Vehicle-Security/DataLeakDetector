@@ -333,6 +333,10 @@ def build_analysis_window_for_event(
     direct_derivation = _may_be_derived_file_event(event, sensitive)
     action = _action_kind(event)
     recent_context_ms = 120_000 if action in {"clipboard", "paste"} else 30_000
+    clipboard_context = bool(
+        isinstance(sensitive_context_index, set | frozenset)
+        and event.event_id in sensitive_context_index
+    )
     if action in {"clipboard", "paste"} and isinstance(sensitive_context_index, set | frozenset):
         sensitive_context = direct_sensitive or direct_derivation or event.event_id in sensitive_context_index
     else:
@@ -342,6 +346,14 @@ def build_analysis_window_for_event(
             or timeline.active_at(event.video_time_ms)
             or timeline.recent_at(event.video_time_ms, radius_ms=recent_context_ms)
         )
+    if not action and clipboard_context and event.event_type in _FOREGROUND_EVENTS:
+        identity = identify_frontend_app(
+            app_name=event.app_name or event.process_name,
+            window_title=event.window_title,
+        )
+        if identity.category in _EVIDENCE_SESSION_CATEGORIES:
+            action = "paste"
+            sensitive_context = True
     if action == "transfer_anchor" and direct_sensitive:
         # A browser access to a known sensitive document is the file-selection
         # phase of an outbound action, even if the monitor labels it as IO.
@@ -1077,6 +1089,7 @@ def _sensitive_clipboard_event_ids(
     unbound_sensitive_context_ms: list[int] = []
     recent_sensitive_context_ms: list[int] = []
     clipboard_taint: tuple[int, bool] | None = None
+    last_clipboard_ms = -10**9
     selected: set[str] = set()
 
     for event in events:
@@ -1109,6 +1122,21 @@ def _sensitive_clipboard_event_ids(
                 selected.add(event.event_id)
             if action == "clipboard":
                 clipboard_taint = (timestamp, current_sensitive)
+            if current_sensitive or event.event_type.lower() == "clipboard_image":
+                last_clipboard_ms = timestamp
+
+        # Clipboard-backed transfers frequently surface only as a foreground
+        # switch to a chat, mail or browser sink. Preserve that state for VLM
+        # review even when the monitor never emits a paste/send event.
+        if (
+            event.event_type in _FOREGROUND_EVENTS
+            and 0 <= timestamp - last_clipboard_ms <= 30_000
+            and identify_frontend_app(
+                app_name=event.app_name or event.process_name,
+                window_title=event.window_title,
+            ).category in _EVIDENCE_SESSION_CATEGORIES
+        ):
+            selected.add(event.event_id)
 
         if event.window_title.strip():
             title_sensitive = _window_title_mentions_sensitive(event.window_title, sensitive_files)

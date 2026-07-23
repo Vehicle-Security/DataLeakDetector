@@ -173,7 +173,10 @@ def _finalize_pipeline(
     for fact in correlation_bundle["datalog_facts"]:
         engine.add_fact(fact["relation"], *fact["args"], case_id=fact.get("case_id"))
     leak_paths = engine.query_leak()
-    suspicious_facts = _suspicious_datalog_facts(correlation_bundle)
+    suspicious_facts = _suspicious_datalog_facts(
+        correlation_bundle,
+        sensitive_files=initial_sensitive_files,
+    )
     detector_conclusion = _detector_conclusion(leak_paths, suspicious_facts)
     groundtruth_verdict = evaluate_groundtruth(groundtruth_file)
 
@@ -251,6 +254,7 @@ def _finalize_pipeline(
         frame_bundle=frame_bundle,
         correlation_bundle=correlation_bundle,
         leak_paths=leak_payloads,
+        sensitive_files=initial_sensitive_files,
         detector_conclusion=detector_conclusion,
         verdict_source=payload["verdict"]["source"],
         groundtruth_available=groundtruth_verdict.available,
@@ -429,6 +433,7 @@ def _build_detection_core(
     frame_bundle: dict[str, Any],
     correlation_bundle: dict[str, Any],
     leak_paths: list[dict[str, Any]],
+    sensitive_files: list[str] | tuple[str, ...],
     detector_conclusion: str,
     verdict_source: str,
     groundtruth_available: bool,
@@ -460,7 +465,9 @@ def _build_detection_core(
         "datalog_reasoning": {
             "facts": len(datalog_facts),
             "leak_paths": len(leak_paths),
-            "suspicious_behaviors": len(_suspicious_datalog_facts(correlation_bundle)),
+            "suspicious_behaviors": len(
+                _suspicious_datalog_facts(correlation_bundle, sensitive_files=sensitive_files)
+            ),
             "detector_conclusion": detector_conclusion,
             "role": "基于 OpenFile/TransferFile/LeakFile/SuspiciousBehavior 等事实做可解释污点传播",
         },
@@ -1116,7 +1123,11 @@ def _detector_conclusion(leak_paths: list[Any], suspicious_facts: list[dict[str,
     return "no_confirmed_data_leak"
 
 
-def _suspicious_datalog_facts(correlation_bundle: dict[str, Any]) -> list[dict[str, Any]]:
+def _suspicious_datalog_facts(
+    correlation_bundle: dict[str, Any],
+    *,
+    sensitive_files: list[str] | tuple[str, ...] = (),
+) -> list[dict[str, Any]]:
     """Return suspicious facts that are bound to a sensitive source.
 
     Unbound outbound activity remains in ``datalog_facts`` for auditing, but it
@@ -1124,18 +1135,42 @@ def _suspicious_datalog_facts(correlation_bundle: dict[str, Any]) -> list[dict[s
     is not a data-leak signal.
     """
 
+    trusted_sources = {
+        normalize_path(path).lower()
+        for path in sensitive_files
+        if normalize_path(path)
+    }
+    lineage = correlation_bundle.get("file_lineage") or {}
+    direct_mappings = {
+        normalize_path(derived).lower(): normalize_path(source).lower()
+        for derived, source in (lineage.get("direct_file_mappings") or {}).items()
+        if normalize_path(derived) and normalize_path(source)
+    }
+    while True:
+        derived_sources = {
+            derived
+            for derived, source in direct_mappings.items()
+            if source in trusted_sources
+        }
+        unseen = derived_sources - trusted_sources
+        if not unseen:
+            break
+        trusted_sources.update(unseen)
     return [
         dict(item)
         for item in correlation_bundle.get("datalog_facts", [])
         if isinstance(item, dict)
         and item.get("relation") == "SuspiciousBehavior"
-        and _suspicious_fact_has_sensitive_source(item)
+        and _suspicious_fact_has_sensitive_source(item, trusted_sources)
     ]
 
 
-def _suspicious_fact_has_sensitive_source(fact: dict[str, Any]) -> bool:
+def _suspicious_fact_has_sensitive_source(fact: dict[str, Any], trusted_sources: set[str]) -> bool:
     args = fact.get("args")
-    return isinstance(args, (list, tuple)) and len(args) > 2 and bool(normalize_path(args[2]))
+    if not isinstance(args, (list, tuple)) or len(args) <= 2:
+        return False
+    source = normalize_path(args[2]).lower()
+    return bool(source and source in trusted_sources)
 
 
 def _is_scorable_conclusion(value: str) -> bool:
@@ -1178,8 +1213,11 @@ def _vlm_file_context(logs: list[Any], analysis_sensitive_files: list[str]) -> l
     observed: list[str] = []
     for event in logs:
         path = normalize_path(getattr(event, "file_path", ""))
-        if path and any(same_file(path, sensitive) for sensitive in analysis_sensitive_files):
-            observed.append(path)
+        window_title = normalize_path(getattr(event, "window_title", "")).lower()
+        for sensitive in analysis_sensitive_files:
+            sensitive_name = Path(normalize_path(sensitive)).name.lower()
+            if (path and same_file(path, sensitive)) or (sensitive_name and sensitive_name in window_title):
+                observed.append(sensitive)
     if observed:
         return _dedupe_paths(observed)
 

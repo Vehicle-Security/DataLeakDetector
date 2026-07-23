@@ -41,7 +41,7 @@ class VisionConfig:
     frame_sequential_gap_ms: int = 5_000
     frame_anchor_duplicate_gap_ms: int = 500
     max_keyframes_per_window: int = 18
-    max_keyframes_per_strong_window: int = 12
+    max_keyframes_per_strong_window: int = 18
     max_keyframes_per_medium_window: int = 2
     max_keyframes_per_weak_window: int = 2
     include_weak_windows: bool = False
@@ -96,7 +96,7 @@ class VisionConfig:
             frame_sequential_gap_ms=max(0, _env_int("DLD_FRAME_SEQUENTIAL_GAP_MS", 5_000)),
             frame_anchor_duplicate_gap_ms=max(0, _env_int("DLD_FRAME_ANCHOR_DUPLICATE_GAP_MS", 500)),
             max_keyframes_per_window=_env_int("DLD_MAX_KEYFRAMES_PER_WINDOW", 18),
-            max_keyframes_per_strong_window=_env_int("DLD_MAX_KEYFRAMES_PER_STRONG_WINDOW", 12),
+            max_keyframes_per_strong_window=_env_int("DLD_MAX_KEYFRAMES_PER_STRONG_WINDOW", 18),
             max_keyframes_per_medium_window=_env_int("DLD_MAX_KEYFRAMES_PER_MEDIUM_WINDOW", 2),
             max_keyframes_per_weak_window=_env_int("DLD_MAX_KEYFRAMES_PER_WEAK_WINDOW", 2),
             include_weak_windows=_env_bool("DLD_INCLUDE_WEAK_WINDOWS", False),

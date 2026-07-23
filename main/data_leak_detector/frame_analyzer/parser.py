@@ -195,12 +195,30 @@ def _normalize_event(item: dict[str, Any]) -> ParsedVisionEvent:
         _first_text(item, "action_status", "status", "transfer_status"),
         context=f"{operation} {behavior} {description}",
     )
+    sink_type = _normalize_sink_type(
+        _first_text(item, "sink_type", "sink", "channel"),
+        app_name=app_name,
+        operation=operation,
+    )
+    if _structured_value(behavior) == "direct_leak" and _is_local_virtual_print(operation, description):
+        behavior = "hidden_transfer"
+        operation = "virtual_print"
+        sink_type = "unknown"
     if action_status == "selected" and _is_preparation_only_context(
         f"{operation} {app_name} {description}"
     ):
         action_status = "unknown"
         if _structured_value(behavior) == "direct_leak":
             behavior = "unknown_risk"
+    if (
+        action_status == "selected"
+        and _structured_value(behavior) == "direct_leak"
+        and _is_unconfirmed_chat_attachment(operation, description, original, modified)
+    ):
+        behavior = "unknown_risk"
+        operation = "chat_attachment_preparation"
+        sink_type = "unknown"
+        action_status = "unknown"
     if (
         _structured_value(behavior) == "hidden_transfer"
         and action_status in {"submitted", "in_progress", "completed"}
@@ -209,12 +227,42 @@ def _normalize_event(item: dict[str, Any]) -> ParsedVisionEvent:
         behavior = "direct_leak"
         operation = "paste_to_web"
         sink_type = "network_upload"
-    else:
-        sink_type = _normalize_sink_type(
-            _first_text(item, "sink_type", "sink", "channel"),
-            app_name=app_name,
-            operation=operation,
-        )
+    if (
+        _structured_value(behavior) == "direct_leak"
+        and _structured_value(sink_type) == "cloud_sync"
+        and _is_screenshot_only_action(operation, description)
+        and not _has_explicit_cloud_transfer_evidence(description)
+    ):
+        behavior = "hidden_transfer"
+        operation = "screenshot"
+        sink_type = "unknown"
+    if (
+        _structured_value(behavior) == "hidden_transfer"
+        and action_status in {"selected", "submitted", "in_progress", "completed"}
+        and sink_type in {"unknown", ""}
+        and _is_external_ocr_submission(app_name, operation, description)
+    ):
+        behavior = "direct_leak"
+        operation = "network_upload"
+        sink_type = "network_upload"
+    if (
+        _structured_value(behavior) == "hidden_transfer"
+        and action_status in {"submitted", "in_progress", "completed"}
+        and sink_type in {"unknown", ""}
+        and _is_completed_integrated_ai_translation(app_name, operation, description)
+    ):
+        behavior = "direct_leak"
+        operation = "ai_translation"
+        sink_type = "ai_chat"
+    if (
+        _structured_value(behavior) == "direct_leak"
+        and _structured_value(sink_type) == "removable_media"
+        and _is_unconfirmed_removable_transfer(description)
+    ):
+        behavior = "unknown_risk"
+        operation = "removable_media_observation"
+        sink_type = "unknown"
+        action_status = "unknown"
     monitoring_log_only_claim = _is_monitoring_log_only_claim(description)
     inferred_recording_attachment = _is_inferred_recording_attachment(description, status=action_status)
     if (
@@ -321,18 +369,46 @@ def _is_passive_local_preview(app_name: str, operation: str, description: str) -
 def _is_inferred_toolbar_upload(description: str) -> bool:
     text = description.lower()
     passive_display = any(marker in text for marker in ("is displayed in", "is visible in", "显示在", "可见于"))
-    toolbar_only = any(marker in text for marker in ("toolbar shows", "toolbar contains", "工具栏显示", "工具栏包含"))
+    toolbar_only = any(
+        marker in text
+        for marker in (
+            "toolbar shows",
+            "toolbar contains",
+            "indicated by login",
+            "indicated by login/vip",
+            "indicated by vip",
+            "ai processing toolbar",
+            "工具栏显示",
+            "工具栏包含",
+        )
+    )
     inferred_upload = any(
         marker in text
         for marker in (
             "implying the file was uploaded",
+            "implying a network upload",
             "suggesting the file was uploaded",
             "therefore it was uploaded",
             "由此推断文件已上传",
             "暗示文件已上传",
         )
     )
-    return passive_display and toolbar_only and inferred_upload
+    explicit_transfer = any(
+        marker in text
+        for marker in (
+            "upload progress",
+            "upload completed",
+            "submitted to",
+            "clicked upload",
+            "service result",
+            "上传进度",
+            "上传完成",
+            "点击上传",
+        )
+    )
+    return toolbar_only and inferred_upload and not explicit_transfer and (
+        passive_display or "loaded into" in text or "indicated by" in text
+    )
 
 
 def _is_monitoring_log_only_claim(description: str) -> bool:
@@ -590,6 +666,178 @@ def _is_preparation_only_context(value: str) -> bool:
     )
 
 
+def _is_external_ocr_submission(app_name: str, operation: str, description: str) -> bool:
+    text = f"{app_name} {operation} {description}".lower()
+    ocr = any(marker in text for marker in ("ocr", "extract text", "text extraction", "提取文字", "文字识别"))
+    ai_tool = any(marker in text for marker in ("ai image", "ai看图", "ai 看图", "ai tool", "图片工具"))
+    invoked = any(
+        marker in text
+        for marker in (
+            "initiates recognition",
+            "start recognition",
+            "selects the 'ai extract text",
+            'selects the "ai extract text',
+            "selects ai extract text",
+            "uses the ai extract text",
+            "initiating the process",
+            "initiates the process",
+            "开始识别",
+            "启动识别",
+            "点击识别",
+            "选择ai提取文字",
+            "选择 ai提取文字",
+        )
+    )
+    passive_only = any(
+        marker in text
+        for marker in (
+            "toolbar capability",
+            "toolbar is visible",
+            "feature is merely visible",
+            "does not invoke",
+            "not invoked",
+            "仅显示工具栏",
+            "未调用",
+            "未开始识别",
+        )
+    )
+    return ocr and ai_tool and (invoked or not passive_only)
+
+
+def _is_local_virtual_print(operation: str, description: str) -> bool:
+    text = f"{operation} {description}".lower()
+    return (
+        any(marker in text for marker in ("print", "打印"))
+        and any(
+            marker in text
+            for marker in (
+                "onenote (desktop)",
+                "microsoft onenote 16 driver",
+                "send to microsoft onenote",
+                "onenote desktop",
+            )
+        )
+        and not any(marker in text for marker in ("onenote web", "share link", "shared notebook", "上传完成"))
+    )
+
+
+def _is_completed_integrated_ai_translation(app_name: str, operation: str, description: str) -> bool:
+    text = f"{app_name} {operation} {description}".lower()
+    integrated_tool = any(marker in text for marker in ("wps", "built-in translation", "integrated ai"))
+    translation = any(marker in text for marker in ("translation", "translate", "translated", "翻译"))
+    result = any(
+        marker in text
+        for marker in (
+            "copy success",
+            "translated result",
+            "translated text",
+            "translation result",
+            "translated the document content",
+            "翻译结果",
+            "翻译完成",
+            "复制成功",
+        )
+    )
+    return integrated_tool and translation and result
+
+
+def _is_screenshot_only_action(operation: str, description: str) -> bool:
+    text = f"{operation} {description}".lower()
+    if any(
+        marker in text
+        for marker in (
+            "paste to cloud",
+            "paste into cloud",
+            "pasted to cloud",
+            "pasted into cloud",
+            "paste_to_cloud",
+            "粘贴到云文档",
+            "粘贴至云文档",
+            "上传到云文档",
+        )
+    ):
+        return False
+    return any(marker in text for marker in ("screenshot", "screen capture", "截图", "屏幕截图"))
+
+
+def _is_unconfirmed_removable_transfer(description: str) -> bool:
+    text = description.lower()
+    return (
+        any(marker in text for marker in ("protecting drive", "正在保护", "保护驱动器"))
+        and any(marker in text for marker in ("likely", "可能", "推测", "疑似"))
+    )
+
+
+def _is_unconfirmed_chat_attachment(
+    operation: str,
+    description: str,
+    original: str,
+    modified: str,
+) -> bool:
+    text = f"{operation} {description}".lower()
+    chat_action = any(marker in text for marker in ("chat_upload", "screenshot_chat_upload", "附件", "attached"))
+    staged = any(marker in text for marker in ("send button visible", "send button is visible", "发送按钮可见", "待发送"))
+    sent = any(marker in text for marker in ("clicked send", "sent successfully", "was sent", "点击发送", "发送成功", "已发送"))
+    if not (chat_action and staged and not sent):
+        return False
+    # A visibly inserted screenshot preview is itself the derived sensitive
+    # carrier, even when the PNG filename is not shown in the composer.
+    if (
+        "screenshot" in text
+        and any(
+            marker in text
+            for marker in (
+                "staged in the qq chat composer",
+                "staged in the composer",
+                "visible in the composer",
+                "chat composer",
+                "preview is visible",
+                "thumbnail is visible",
+                "编辑区可见",
+                "编辑区中",
+            )
+        )
+    ):
+        return False
+    source_name = Path(normalize_path(original)).name.lower()
+    target_name = Path(normalize_path(modified)).name.lower()
+    def has_visible_card(name: str) -> bool:
+        if not name or name == "unknown":
+            return False
+        return any(
+            marker in text
+            for marker in (
+                f"attached file '{name}'",
+                f'attachment card shows {name}',
+                f"file '{name}' is attached",
+                f"attachment '{name}'",
+                f"附件卡显示{name}",
+                f"附件为{name}",
+            )
+        )
+
+    has_named_source = has_visible_card(source_name)
+    has_named_target = has_visible_card(target_name)
+    return not (has_named_source or has_named_target)
+
+
+def _has_explicit_cloud_transfer_evidence(description: str) -> bool:
+    text = description.lower()
+    return any(
+        marker in text
+        for marker in (
+            "upload progress",
+            "sync progress",
+            "upload completed",
+            "sync completed",
+            "上传进度",
+            "同步进度",
+            "上传完成",
+            "同步完成",
+        )
+    )
+
+
 def _is_relevant(event: ParsedVisionEvent, keywords: list[str]) -> bool:
     text = " ".join(
         [
@@ -644,6 +892,12 @@ def _operation_to_pipeline(event: ParsedVisionEvent) -> str:
     behavior = _structured_value(event.behavior_category)
     if _is_confirmed_external_submission(event):
         return "external_sink_interaction"
+    if (
+        behavior == "direct_leak"
+        and event.action_status in {"submitted", "in_progress", "completed"}
+        and _structured_value(event.sink_type) == "ai_chat"
+    ):
+        return "external_sink_interaction"
     if behavior in {"hidden_transfer", "unknown_risk"}:
         return "file_or_content_transfer"
     text = f"{event.behavior_category} {event.operation_type} {event.description} {event.sink_type}".lower()
@@ -683,6 +937,13 @@ def _is_confirmed_external_submission(event: ParsedVisionEvent) -> bool:
         return False
     if not _has_explicit_sink(event.sink_type):
         return False
+    if (
+        event.behavior_category == "direct_leak"
+        and event.action_status in {"submitted", "in_progress", "completed"}
+        and _structured_value(event.sink_type) == "network_upload"
+        and event.operation_type.lower() in {"translate", "translation", "rewrite", "改写", "翻译"}
+    ):
+        return True
     if _is_explicit_outbound_action(event.operation_type):
         return True
     text = f"{event.operation_type} {event.description}".lower()
