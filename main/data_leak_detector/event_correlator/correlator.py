@@ -18,11 +18,13 @@ from .config import EventCorrelatorConfig
 from .facts import build_datalog_facts
 from .lineage import Lineage
 from .observations import ObservationIndex, normalize_observations
-from .output import lineage_payload, operation_record
+from .output import landing_locations, lineage_payload, operation_record
 
 
 _CLIPBOARD_SOURCE_HORIZON_MS = 120_000
 _CLIPBOARD_TARGET_HORIZON_MS = 15_000
+_SCREENSHOT_CLIPBOARD_CONTEXT_HORIZON_MS = 30_000
+_SCREENSHOT_CLIPBOARD_TARGET_HORIZON_MS = 60_000
 _DOCUMENT_TITLE_SOURCE_HORIZON_MS = 300_000
 _CLIPBOARD_TARGET_EVENTS = {"created", "modified", "file_created", "file_modified"}
 _CLIPBOARD_DOCUMENT_EXTENSIONS = {
@@ -172,6 +174,7 @@ class EventCorrelator:
             "operation_records": [operation_record(item) for item in correlated],
             "upload_candidates": [item.to_dict() for item in uploads],
             "file_lineage": lineage_payload(lineage),
+            "landing_locations": landing_locations(lineage, correlated),
             "datalog_facts": [item.to_dict() for item in facts],
             "statistics": {
                 "log_events_input": len(logs),
@@ -221,7 +224,7 @@ class EventCorrelator:
         recent_artifact_by_process: dict[str, tuple[str, int]] = {}
         recent_sensitive_contexts: list[tuple[str, int, str, str]] = []
         recent_document_titles: list[tuple[int, str]] = []
-        active_clipboard: tuple[str, int, str, str] | None = None
+        active_clipboard: tuple[str, int, str, str, bool] | None = None
 
         for event in sorted(logs, key=lambda item: item.timestamp_ms):
             process_key = (event.process_name or event.app_name or "").lower()
@@ -251,11 +254,33 @@ class EventCorrelator:
                 active_clipboard = None
                 recent = recent_artifact_by_process.get(process_key)
                 if recent and 0 <= event_time_ms - recent[1] <= _CLIPBOARD_SOURCE_HORIZON_MS:
-                    active_clipboard = (recent[0], event_time_ms, clipboard_kind, process_family)
+                    active_clipboard = (recent[0], event_time_ms, clipboard_kind, process_family, False)
+                elif clipboard_kind == "image":
+                    # Screenshot tools commonly own the clipboard, while the
+                    # sensitive document remains open in another application.
+                    # Keep this bridge narrowly bounded so a generic chat image
+                    # cannot taint a later Office document.
+                    source = _recent_sensitive_context_source(
+                        recent_sensitive_contexts,
+                        event_time_ms,
+                    )
+                    if source:
+                        active_clipboard = (source, event_time_ms, clipboard_kind, process_family, True)
             elif active_clipboard:
-                clipboard_source, clipboard_time_ms, clipboard_kind, clipboard_process_family = active_clipboard
+                (
+                    clipboard_source,
+                    clipboard_time_ms,
+                    clipboard_kind,
+                    clipboard_process_family,
+                    screenshot_bridge,
+                ) = active_clipboard
                 elapsed_ms = event_time_ms - clipboard_time_ms
-                if elapsed_ms > _CLIPBOARD_TARGET_HORIZON_MS:
+                target_horizon_ms = (
+                    _SCREENSHOT_CLIPBOARD_TARGET_HORIZON_MS
+                    if clipboard_kind == "image"
+                    else _CLIPBOARD_TARGET_HORIZON_MS
+                )
+                if elapsed_ms > target_horizon_ms:
                     active_clipboard = None
                 elif (
                     0 <= elapsed_ms
@@ -267,7 +292,12 @@ class EventCorrelator:
                             and _is_screenshot_target(event, normalize_path(target).lower())
                         )
                     )
-                    and _is_clipboard_derived_target(event, target, clipboard_kind)
+                    and _is_clipboard_derived_target(
+                        event,
+                        target,
+                        clipboard_kind,
+                        require_created_office_target=screenshot_bridge,
+                    )
                 ):
                     lineage.add(target, clipboard_source)
                     if self._resolve_original(target, sensitive_files, lineage):
@@ -372,6 +402,8 @@ class EventCorrelator:
         clipboard_sink_ids = _contextual_clipboard_sink_event_ids(ordered_logs)
 
         for log in ordered_logs:
+            if _is_internal_runtime_path(log.file_path):
+                continue
             clipboard_sink = log.event_id in clipboard_sink_ids
             path_key = normalize_path(log.file_path).lower() or f"event:{log.event_id}"
             if path_key not in original_cache:
@@ -1629,6 +1661,27 @@ def _is_preparation_only_external_window(log) -> bool:
     )
 
 
+def _is_internal_runtime_path(file_path: str) -> bool:
+    """Exclude monitor artifacts and application internals from sensitive flows."""
+
+    path = normalize_path(file_path).lower()
+    if not path:
+        return False
+    markers = (
+        "/recordings/session_",
+        "/screenmonitor/windows_monitor/recordings/",
+        "/screenmonitor/winows_monitor/recordings/",
+        "/appdata/",
+        "/cache/",
+        "/cachedata/",
+        "/cacheddata/",
+        "/program files/",
+        "/programdata/",
+        "/temp/",
+    )
+    return any(marker in path for marker in markers)
+
+
 def _is_standalone_log_evidence(log) -> bool:
     """Keep deterministic facts focused on actions instead of file-system noise."""
 
@@ -1759,6 +1812,18 @@ def _clipboard_event_kind(event) -> str:
     return ""
 
 
+def _recent_sensitive_context_source(
+    contexts: list[tuple[str, int, str, str]],
+    timestamp_ms: int,
+) -> str:
+    for artifact, context_ms, _title, _process in reversed(contexts):
+        if timestamp_ms - context_ms > _SCREENSHOT_CLIPBOARD_CONTEXT_HORIZON_MS:
+            break
+        if context_ms <= timestamp_ms:
+            return artifact
+    return ""
+
+
 def _event_sensitive_artifact(event, known: list[str], sensitive_files: list[str], lineage: Lineage) -> str:
     for candidate in (
         event.file_path,
@@ -1806,7 +1871,13 @@ def _unique_known_artifact_mention(
     return next(iter(name_matches)) if len(name_matches) == 1 else ""
 
 
-def _is_clipboard_derived_target(event, target: str, clipboard_kind: str) -> bool:
+def _is_clipboard_derived_target(
+    event,
+    target: str,
+    clipboard_kind: str,
+    *,
+    require_created_office_target: bool = False,
+) -> bool:
     if event.event_type.lower() not in _CLIPBOARD_TARGET_EVENTS:
         return False
     normalized = normalize_path(target)
@@ -1821,8 +1892,33 @@ def _is_clipboard_derived_target(event, target: str, clipboard_kind: str) -> boo
     name = Path(lowered).name
     title = normalize_path(event.window_title).lower()
     if name and name in title:
+        if require_created_office_target:
+            return event.event_type.lower() in {"created", "file_created"}
         return True
-    return clipboard_kind == "image" and _is_screenshot_target(event, lowered)
+    if clipboard_kind != "image":
+        return False
+    if _is_screenshot_target(event, lowered):
+        return True
+    return (
+        (not require_created_office_target or event.event_type.lower() in {"created", "file_created"})
+        and _is_office_document_target(event, lowered)
+    )
+
+
+def _is_office_document_target(event, target: str) -> bool:
+    suffix = Path(target).suffix.lower()
+    if suffix not in _CLIPBOARD_DOCUMENT_EXTENSIONS or suffix == ".txt":
+        return False
+    process_family = _lineage_process_family(event)
+    if process_family not in {"wps_office", "microsoft_office"}:
+        return False
+    title = normalize_path(event.window_title).lower()
+    name = Path(target).name.lower()
+    return (
+        name in title
+        or (suffix == ".pdf" and any(marker in title for marker in ("输出为pdf", "成功输出")))
+        or (event.event_type.lower() in {"created", "file_created"} and not title)
+    )
 
 
 def _is_screenshot_target(event, target: str) -> bool:

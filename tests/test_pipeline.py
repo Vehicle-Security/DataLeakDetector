@@ -15,6 +15,7 @@ from data_leak_detector.datasets import discover_data_case, discover_data_case_d
 from data_leak_detector.event_correlator import EventCorrelator
 from data_leak_detector.event_correlator.facts import build_datalog_facts
 from data_leak_detector.event_correlator.lineage import Lineage
+from data_leak_detector.event_correlator.output import landing_locations
 from data_leak_detector.frame_analyzer import analyze_video_behavior
 from data_leak_detector.frame_analyzer.artifacts import export_vision_artifacts
 from data_leak_detector.frame_analyzer.vlm_dispatch import (
@@ -104,6 +105,88 @@ def _records() -> list[dict]:
             "window_info": {"window_title": "Gmail attach file upload completed"},
         },
     ]
+
+
+def test_landing_locations_exposes_visible_derived_files_and_filters_cache() -> None:
+    source = "C:/Users/alice/Documents/customer_salary.xlsx"
+    visible = "C:/Users/alice/Desktop/customer_salary_part1.xlsx"
+    cache = "C:/Users/alice/AppData/Local/Temp/customer_salary_part1.xlsx"
+    lineage = Lineage()
+    lineage.add(visible, source)
+    lineage.add(cache, source)
+    event = CorrelatedEvent(
+        event_id="corr_0",
+        timestamp="2026-06-28T10:01:00.000",
+        event_type="visual_observation",
+        app_name="Explorer",
+        original_file=source,
+        current_file=visible,
+        operation_type="file_or_content_transfer",
+        behavior_category="hidden_transformation_candidate",
+        confidence=0.9,
+        evidence_refs=("frame:0",),
+        join_reasons=("visual_transfer_context", "sink_type:cloud_sync"),
+    )
+
+    assert landing_locations(lineage, [event]) == [
+        {
+            "path": visible,
+            "source_file": source,
+            "location_type": "cloud_sync_file",
+            "confidence": 0.95,
+            "provenance": "file_lineage+correlated_event",
+            "evidence_refs": ["frame:0"],
+        }
+    ]
+
+
+def test_landing_locations_ignores_paths_from_log_identity_binding() -> None:
+    source = "C:/Users/alice/Documents/customer_salary.xlsx"
+    event = CorrelatedEvent(
+        event_id="corr_0",
+        timestamp="2026-06-28T10:01:00.000",
+        event_type="created",
+        app_name="Excel",
+        original_file=source,
+        current_file="C:/Users/alice/DataLeakDetector/recordings/logs.json",
+        operation_type="file_or_content_transfer",
+        behavior_category="hidden_transformation_candidate",
+        confidence=0.9,
+        join_reasons=("log_event", "log_identity_window"),
+    )
+
+    assert landing_locations(Lineage(), [event]) == []
+
+
+def test_event_correlator_excludes_monitor_log_files_from_sensitive_transfers() -> None:
+    source = "C:/Users/alice/Desktop/customer_contacts.pdf"
+    monitor_log = "D:/DataLeakDetector/ScreenMonitor/winows_monitor/recordings/session_20260325/logs/keyevents.json"
+    records = [
+        {
+            "timestamp": "2026-03-25T12:11:00.000",
+            "event_type": "file_access",
+            "file_path": source,
+            "process_info": {"process_name": "wps.exe"},
+            "window_info": {"window_title": "customer_contacts.pdf - WPS"},
+        },
+        {
+            "timestamp": "2026-03-25T12:11:01.000",
+            "event_type": "modified",
+            "file_path": monitor_log,
+            "process_info": {"process_name": "wps.exe"},
+            "window_info": {"window_title": "customer_contacts.pdf - WPS"},
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": [], "sensitive_files": [source]}
+    )
+
+    assert all(item["current_file"] != monitor_log for item in bundle["correlated_events"])
+    assert all(
+        not (fact["relation"] == "TransferFile" and monitor_log in fact["args"])
+        for fact in bundle["datalog_facts"]
+    )
 
 
 def test_frame_analyzer_creates_log_anchored_observations() -> None:
@@ -3651,6 +3734,39 @@ def test_event_correlator_allows_same_process_screenshot_lineage() -> None:
     )
 
     assert bundle["file_lineage"]["direct_file_mappings"] == {screenshot: original}
+
+
+def test_screenshot_clipboard_from_external_tool_links_to_following_office_document() -> None:
+    original = "C:/Users/alice/Desktop/contract.pdf"
+    derived = "C:/Users/alice/Desktop/notes.docx"
+    records = [
+        {
+            "timestamp": "2026-06-05T22:41:00",
+            "event_type": "app_switch",
+            "process_info": {"process_name": "browser.exe"},
+            "window_info": {"window_title": "contract.pdf - Browser"},
+            "extra": {"relative_timestamp": 0.0},
+        },
+        {
+            "timestamp": "2026-06-05T22:41:08",
+            "event_type": "clipboard_image",
+            "process_info": {"process_name": "qq.exe"},
+            "extra": {"relative_timestamp": 8.0, "raw_operation": "clipboard_image"},
+        },
+        {
+            "timestamp": "2026-06-05T22:41:25",
+            "event_type": "created",
+            "file_path": derived,
+            "process_info": {"process_name": "wps.exe"},
+            "window_info": {"window_title": "notes.docx - WPS Office"},
+            "extra": {"relative_timestamp": 25.0, "raw_operation": "created"},
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": [], "sensitive_files": [original]}
+    )
+    assert bundle["file_lineage"]["direct_file_mappings"] == {derived: original}
 
 
 @pytest.mark.parametrize(

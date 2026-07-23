@@ -201,7 +201,12 @@ class Neo4jLogMiner:
         activity_windows = self._activity_windows_from_graph(activity_rows, vision_config)
         if not activity_windows:
             activity_windows = build_sensitive_activity_windows(logs, sensitive_files, vision_config)
-        windows = _finalize_windows(action_windows, activity_windows, logs)
+        # The graph query is a shortlist, not the source of truth for window
+        # semantics. Merge local candidates so newly supported evidence (for
+        # example a screenshot tool writing a sensitive clipboard image) is
+        # not silently omitted until the Neo4j query is updated as well.
+        local_windows = build_analysis_windows(logs, sensitive_files, vision_config)
+        windows = _finalize_windows([*action_windows, *local_windows], activity_windows, logs)
         if not windows:
             windows = build_analysis_windows(logs, sensitive_files, vision_config)
         return LogMiningResult(
@@ -313,7 +318,14 @@ def build_analysis_window_for_event(
     if event.video_time_ms < 0:
         return None
     sensitive = tuple(sensitive_files) if normalized_sensitive else _normalize_sensitive_files(sensitive_files)
-    if _is_noise_only_event(event) and not _event_matches_sensitive(event, sensitive):
+    if (
+        _is_noise_only_event(event)
+        and not _event_matches_sensitive(event, sensitive)
+        and not (
+            isinstance(sensitive_context_index, set | frozenset)
+            and event.event_id in sensitive_context_index
+        )
+    ):
         return None
     timeline = sensitive_timeline or _SensitiveTimeline.from_logs(logs, sensitive)
     direct_sensitive = _event_matches_sensitive(event, sensitive)
@@ -1047,6 +1059,7 @@ def _sensitive_clipboard_event_ids(
 
     current_document_by_app: dict[str, tuple[int, bool]] = {}
     unbound_sensitive_context_ms: list[int] = []
+    recent_sensitive_context_ms: list[int] = []
     clipboard_taint: tuple[int, bool] | None = None
     selected: set[str] = set()
 
@@ -1066,6 +1079,11 @@ def _sensitive_clipboard_event_ids(
                     0 <= timestamp - signal_ms <= 120_000
                     for signal_ms in unbound_sensitive_context_ms
                 )
+            if not current_sensitive and event.event_type.lower() == "clipboard_image":
+                current_sensitive = any(
+                    0 <= timestamp - signal_ms <= 30_000
+                    for signal_ms in recent_sensitive_context_ms
+                )
             if action == "paste" and clipboard_taint:
                 current_sensitive = current_sensitive or (
                     0 <= timestamp - clipboard_taint[0] <= 120_000
@@ -1078,11 +1096,14 @@ def _sensitive_clipboard_event_ids(
 
         if event.window_title.strip():
             title_sensitive = _window_title_mentions_sensitive(event.window_title, sensitive_files)
+            if title_sensitive:
+                recent_sensitive_context_ms.append(timestamp)
             if app_family:
                 current_document_by_app[app_family] = (timestamp, title_sensitive)
             elif title_sensitive:
                 unbound_sensitive_context_ms.append(timestamp)
         elif _event_has_strict_sensitive_identity(event, sensitive_files):
+            recent_sensitive_context_ms.append(timestamp)
             if app_family:
                 current_document_by_app[app_family] = (timestamp, True)
             else:
