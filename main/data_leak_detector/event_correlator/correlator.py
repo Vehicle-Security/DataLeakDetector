@@ -313,6 +313,7 @@ class EventCorrelator:
                         active_clipboard = None
 
             parent_inferred_source = _source_from_derived_parent_alias(target, sensitive_files)
+            archive_inferred_source = _source_from_same_stem_archive(target, sensitive_files)
             title_inferred_source = _source_from_recent_title_context(
                 event,
                 target,
@@ -328,6 +329,7 @@ class EventCorrelator:
             )
             if (
                 not parent_inferred_source
+                and not archive_inferred_source
                 and not title_inferred_source
                 and not recent_inferred_source
                 and not _may_contribute_lineage(event, original, target, known_keys, known_stems)
@@ -341,12 +343,14 @@ class EventCorrelator:
             elif target:
                 inferred_source = (
                     parent_inferred_source
+                    or archive_inferred_source
                     or title_inferred_source
                     or _source_from_derived_filename(target, sensitive_files)
                     or recent_inferred_source
                 )
                 if inferred_source and (
                     parent_inferred_source
+                    or archive_inferred_source
                     or title_inferred_source
                     or _has_derived_transfer_evidence(event, text, target)
                     or _is_recent_document_save_as(event, target, inferred_source, recent_sensitive_contexts)
@@ -1116,7 +1120,10 @@ class EventCorrelator:
                 behavior_category=behavior,
                 confidence=round(min(max(observation.confidence, 0.70), 1.0), 3),
                 evidence_refs=_observation_evidence_refs(observation),
-                join_reasons=tuple(_visual_join_reasons(observation, original)),
+                join_reasons=tuple(
+                    _visual_join_reasons(observation, original)
+                    + _screen_share_state_reasons(observation, logs or [])
+                ),
             )
             visual_events.append(visual_event)
             if _is_visual_file_split(observation) and current_file and not same_file(original, current_file):
@@ -1618,6 +1625,7 @@ def _is_screen_share_context(log) -> bool:
             "screen sharing",
             "share screen",
             "屏幕共享中",
+            "屏幕共享会议控件",
         ),
     )
     return has_share_action and contains_any(text, ("teams", "zoom", "meeting", "会议", "共享"))
@@ -2312,6 +2320,27 @@ def _source_from_derived_parent_alias(file_path: str, sensitive_files: list[str]
     return unique[0] if len(unique) == 1 else ""
 
 
+def _source_from_same_stem_archive(file_path: str, sensitive_files: list[str]) -> str:
+    """Bind an archive beside a sensitive file to that source conservatively."""
+
+    normalized = normalize_path(file_path)
+    if not _looks_like_absolute_path(normalized):
+        return ""
+    candidate = Path(normalized)
+    if candidate.suffix.lower() not in {".zip", ".rar", ".7z"}:
+        return ""
+    matches = [
+        sensitive
+        for sensitive in sensitive_files
+        if (
+            Path(normalize_path(sensitive)).parent.as_posix().lower() == candidate.parent.as_posix().lower()
+            and Path(normalize_path(sensitive)).stem.lower() == candidate.stem.lower()
+        )
+    ]
+    unique = _dedupe_paths(matches)
+    return unique[0] if len(unique) == 1 else ""
+
+
 def _is_generated_descendant_name(candidate_stem: str, source_stem: str) -> bool:
     if not source_stem or candidate_stem == source_stem:
         return False
@@ -2413,6 +2442,24 @@ def _observation_timestamp(observation, recording_start_ms: int) -> str:
     if recording_start_ms:
         return str(recording_start_ms + timestamp_ms)
     return ""
+
+
+def _screen_share_state_reasons(observation, logs) -> list[str]:
+    """Attach the observed start of an active sharing state to visual evidence."""
+
+    if _observation_sink_type(observation) != "screen_share":
+        return []
+    center = observation.start_ms if not observation.end_ms else (observation.start_ms + observation.end_ms) // 2
+    app = normalize_path(observation.app_name).lower()
+    starts = [
+        log.timestamp_ms
+        for log in logs
+        if log.timestamp_ms
+        and log.timestamp_ms <= center
+        and _is_screen_share_context(log)
+        and (not app or app in normalize_path(_correlated_app_name(log, None)).lower())
+    ]
+    return [f"screen_share_started_at:{min(starts)}"] if starts else []
 
 
 def _choose_identity_binding(bindings: list[tuple[int, int, str, str, Any]]):

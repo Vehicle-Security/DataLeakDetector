@@ -5952,6 +5952,68 @@ def test_datalog_engine_upload_binding_selects_declared_source_at_merge() -> Non
     assert source_b not in leaks[0].file_chain
 
 
+def test_datalog_engine_screen_share_keeps_active_state_for_late_file_log() -> None:
+    source = "C:/Users/alice/Desktop/secret.docx"
+    engine = DatalogEngine(case_id="active-screen-share")
+    engine.add_fact("OpenFile", "open_after_share", "case_lineage", source, 200)
+    engine.add_fact("CrossProcessTransfer", "share_access", "case_lineage", "Zoom", source, 150)
+    engine.add_fact("UploadBinding", "share_bind", "share_leak", source, source, 150)
+    engine.add_fact("LeakFile", "share_leak", "Zoom", source, "screen_share", 150, 100)
+
+    leaks = engine.query_leak()
+
+    assert len(leaks) == 1
+    assert leaks[0].source_file == source
+    assert leaks[0].leak_timestamp == 150
+
+
+def test_completed_visual_upload_allows_late_log_identity_without_reordering_leak() -> None:
+    source = "C:/Users/alice/Desktop/secret.docx"
+    facts = build_datalog_facts(
+        [
+            CorrelatedEvent(
+                event_id="visual_upload",
+                timestamp="100",
+                event_type="visual_observation",
+                app_name="GitLab",
+                original_file=source,
+                current_file=source,
+                operation_type="external_sink_interaction",
+                behavior_category="data_exfiltration_candidate",
+                confidence=0.95,
+            ),
+            CorrelatedEvent(
+                event_id="late_identity",
+                timestamp="2000",
+                event_type="app_switch",
+                app_name="Chrome",
+                original_file=source,
+                current_file=source,
+                operation_type="file_open",
+                behavior_category="unknown_risk",
+                confidence=0.8,
+            ),
+        ],
+        [
+            UploadCandidate(
+                candidate_id="visual_upload",
+                timestamp="100",
+                app_name="GitLab",
+                original_file=source,
+                current_file=source,
+                sink_type="network_upload",
+                risk_level="completed",
+                confidence=0.95,
+                evidence_refs=("frame:completed",),
+            )
+        ],
+        Lineage(),
+    )
+
+    canonical_open = next(item for item in facts if item.relation == "OpenFile")
+    assert canonical_open.args[3] == 0
+
+
 def test_build_datalog_facts_does_not_emit_leak_for_unbound_upload() -> None:
     upload = UploadCandidate(
         candidate_id="unbound_upload",

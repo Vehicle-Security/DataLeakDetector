@@ -392,7 +392,9 @@ def build_analysis_window_for_event(
             # Mail clients frequently emit only a picker-selection log. The
             # send button/confirmation can remain visible much later, so keep
             # a result frame across that otherwise unobserved gap.
-            after_ms = max(after_ms, 90_000)
+            # Keep the terminal anchor inside the short recordings used by
+            # this workflow while still spanning the usual delayed send.
+            after_ms = max(after_ms, 75_000)
         step_ms = config.strong_frame_step_ms
         budget = config.max_keyframes_per_strong_window
         threshold = config.strong_frame_diff_threshold
@@ -404,6 +406,15 @@ def build_analysis_window_for_event(
         threshold = config.frame_diff_threshold
     source = _extra(event).get("source") or "log"
     timestamp = event.video_time_ms
+    mail_attachment_followup = action == "file_selected" and _is_mail_attachment_context(event)
+    action_phases = ((timestamp, action),)
+    anchors = (timestamp,)
+    if mail_attachment_followup:
+        # Mail monitors often expose attachment selection but not the final
+        # send click. Preserve one terminal frame so VLM can join the selected
+        # filename with the later compose/send state.
+        action_phases = (*action_phases, (timestamp + after_ms, "session_end"))
+        anchors = tuple(sorted({*anchors, timestamp + after_ms}))
     return AnalysisWindow(
         max(0, timestamp - before_ms),
         timestamp + after_ms,
@@ -412,9 +423,9 @@ def build_analysis_window_for_event(
         step_ms=step_ms,
         max_keyframes=budget,
         diff_threshold=threshold,
-        anchor_ms=(timestamp,),
-        action_anchor_ms=(timestamp,),
-        action_phases=((timestamp, action),),
+        anchor_ms=anchors,
+        action_anchor_ms=anchors,
+        action_phases=action_phases,
         requires_post_action_state=action in {
             "clipboard",
             "file_selected",

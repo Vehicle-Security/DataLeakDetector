@@ -12,7 +12,7 @@ from .frames import AnalysisWindow, KeyFrame, KeyFrameDuplicate, KeyFrameSelecti
 from .vlm_client import build_vlm_frame_grids, prepare_vlm_frame_images
 
 
-VISION_PRECOMPUTE_STRATEGY_VERSION = 17
+VISION_PRECOMPUTE_STRATEGY_VERSION = 18
 
 
 def export_vision_artifacts(

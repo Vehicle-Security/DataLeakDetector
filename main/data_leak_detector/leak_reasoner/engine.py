@@ -62,18 +62,25 @@ class DatalogEngine:
         seen: set[tuple[str, str, str, str]] = set()
 
         for fact in self.facts["LeakFile"]:
-            leak_id, process, data, channel, timestamp = _pad(fact.args, 5)
+            leak_id, process, data, channel, timestamp, share_start = _pad(fact.args, 6)
             item = tainted_by_process_data.get((str(process), str(data)))
             leak_timestamp = _int(timestamp)
-            if item is None or not _can_follow(item.timestamp, leak_timestamp):
-                continue
+            screen_share_start = _int(share_start) if str(channel) == "screen_share" else 0
             bound_sources = self._bound_sources_for_leak(str(leak_id), str(data), leak_timestamp)
             complete_paths = self._complete_fact_paths(
                 str(process),
                 str(data),
                 leak_timestamp,
                 bound_sources=bound_sources,
+                screen_share_start=screen_share_start,
             )
+            if item is None or not _can_follow(item.timestamp, leak_timestamp):
+                # For a confirmed active screen share, a file opened after the
+                # share begins can still be exposed before sharing ends. The
+                # visual observation supplies the leak evidence; the source
+                # log is only used to bind its file identity.
+                if not (screen_share_start and complete_paths):
+                    continue
             if bound_sources and not complete_paths:
                 continue
             path_candidates: list[tuple[str, list[DatalogFact]]] = []
@@ -116,6 +123,7 @@ class DatalogEngine:
         leak_timestamp: int,
         *,
         bound_sources: set[str] | None = None,
+        screen_share_start: int = 0,
     ) -> list[list[DatalogFact]]:
         """Find the best acyclic, forward-time lineage path for each source."""
 
@@ -145,11 +153,13 @@ class DatalogEngine:
         ) -> None:
             for root in roots.get(state, ()):
                 root_timestamp = _int(_pad(root.args, 4)[3])
-                if _can_follow(root_timestamp, next_timestamp):
+                if _can_follow_in_leak_path(root_timestamp, next_timestamp, screen_share_start):
                     candidates.append([root])
             for previous_state, edge in inbound.get(state, ()):
                 edge_timestamp = _int(_pad(edge.args, 5)[4])
-                if previous_state in visited or not _can_follow(edge_timestamp, next_timestamp):
+                if previous_state in visited or not _can_follow_in_leak_path(
+                    edge_timestamp, next_timestamp, screen_share_start
+                ):
                     continue
                 before = len(candidates)
                 walk(previous_state, edge_timestamp or next_timestamp, visited | {previous_state})
@@ -382,7 +392,7 @@ def _flow_step(fact: DatalogFact) -> dict[str, Any]:
             "file": str(data),
             "timestamp": _int(timestamp),
         }
-    op_id, process, data, channel, timestamp = _pad(fact.args, 5)
+    op_id, process, data, channel, timestamp, _ = _pad(fact.args, 6)
     return {
         "relation": fact.relation,
         "op_id": str(op_id),
@@ -395,6 +405,20 @@ def _flow_step(fact: DatalogFact) -> dict[str, Any]:
 
 def _can_follow(previous_timestamp: int, next_timestamp: int) -> bool:
     return previous_timestamp <= 0 or next_timestamp <= 0 or next_timestamp >= previous_timestamp
+
+
+def _can_follow_in_leak_path(
+    previous_timestamp: int,
+    next_timestamp: int,
+    screen_share_start: int = 0,
+) -> bool:
+    if _can_follow(previous_timestamp, next_timestamp):
+        return True
+    # Visual frames and desktop-monitor file events can be emitted in a
+    # different order. A confirmed active share remains a state after it has
+    # started, so file activity during that state is valid identity/lineage
+    # evidence even when its monitor timestamp trails the visual frame.
+    return bool(screen_share_start and previous_timestamp >= screen_share_start)
 
 
 def _pad(args: tuple[Any, ...], size: int) -> tuple[Any, ...]:

@@ -87,6 +87,10 @@ class UploadCandidate:
     risk_level: str
     confidence: float
     evidence_refs: tuple[str, ...] = ()
+    # A screen-share sink is a state, not an instantaneous transfer.  When
+    # available, retain the observed start so later file activity can be
+    # evaluated while the sharing state remains active.
+    active_start_timestamp: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)

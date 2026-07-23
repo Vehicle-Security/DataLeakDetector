@@ -39,6 +39,7 @@ def build_upload_candidates(
                 risk_level=_upload_risk_level(event, text),
                 confidence=max(event.confidence, default_confidence),
                 evidence_refs=event.evidence_refs,
+                active_start_timestamp=_active_sink_start_timestamp(event),
             )
         )
     return _dedupe_upload_candidates(uploads)
@@ -225,5 +226,15 @@ def _is_noise_or_placeholder_path(value: str) -> bool:
     if suffix in {".tmp", ".temp", ".log", ".xlog", ".db", ".db-journal", ".db-wal", ".db-shm"}:
         return True
     return False
+
+
+def _active_sink_start_timestamp(event: CorrelatedEvent) -> str:
+    if _upload_sink_type(event, event.current_file or event.original_file, "") != "screen_share":
+        return ""
+    prefix = "screen_share_started_at:"
+    for reason in event.join_reasons:
+        if reason.startswith(prefix):
+            return reason[len(prefix):]
+    return ""
 
 

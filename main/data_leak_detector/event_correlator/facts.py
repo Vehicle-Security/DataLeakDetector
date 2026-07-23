@@ -55,6 +55,11 @@ def build_datalog_facts(
     # process carries that artifact history until an upload accesses the file.
     for _, _, event in source_events.values():
         timestamp = parse_timestamp_ms(event.timestamp)
+        if _is_late_identity_for_completed_visual_upload(event, uploads):
+            # A completed visual upload is the authoritative sink evidence;
+            # the later log only supplies the exact file identity. Do not let
+            # its monitor timestamp reverse an otherwise confirmed path.
+            timestamp = 0
         facts.append(
             DatalogFact(
                 "OpenFile",
@@ -177,8 +182,16 @@ def build_datalog_facts(
             )
         )
         if is_confirmed_risk_level(upload.risk_level):
+            share_start = (
+                parse_timestamp_ms(upload.active_start_timestamp)
+                if upload.sink_type == "screen_share"
+                else 0
+            )
             facts.append(
-                DatalogFact("LeakFile", (f"{upload.candidate_id}:leak", proc, leaked_file, upload.sink_type, timestamp))
+                DatalogFact(
+                    "LeakFile",
+                    (f"{upload.candidate_id}:leak", proc, leaked_file, upload.sink_type, timestamp, share_start),
+                )
             )
         else:
             facts.append(
@@ -247,6 +260,27 @@ def _is_lineage_transfer_event(event: CorrelatedEvent) -> bool:
 
 def _is_external_sink_event(event: CorrelatedEvent) -> bool:
     return event.operation_type == "external_sink_interaction" or event.behavior_category == "data_exfiltration_candidate"
+
+
+def _is_late_identity_for_completed_visual_upload(
+    event: CorrelatedEvent,
+    uploads: list[UploadCandidate],
+) -> bool:
+    event_time = parse_timestamp_ms(event.timestamp)
+    if not event_time or not event.original_file:
+        return False
+    source_key = normalize_path(event.original_file).lower()
+    for upload in uploads:
+        upload_time = parse_timestamp_ms(upload.timestamp)
+        if (
+            upload.risk_level != "completed"
+            or not any(ref.startswith("frame:") for ref in upload.evidence_refs)
+            or normalize_path(upload.original_file).lower() != source_key
+            or not (0 < event_time - upload_time <= 15_000)
+        ):
+            continue
+        return True
+    return False
 
 
 def _is_suspicious_event(event: CorrelatedEvent) -> bool:
