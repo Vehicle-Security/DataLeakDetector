@@ -301,14 +301,14 @@ stage5/U4-Bluetooth-SensitiveLeak-3 [结构无法恢复]
 
 当前 `groundtruth.json` 的 `record_id` 为 `1`，operation 写有 `直接外发-上传文件发送`、`直接外发-粘贴外发`，但复核备注指出该样例未涉及 GitCode。建议人工核对该目录的视频、日志、groundtruth 是否串入了其他上传/粘贴样例；如果该视频不是 GitCode 场景，应修正目录/record_id/标注，或移出 `8-git-GitCode-1` 正例集合。
 
-### stage2 / 4-contentchange-transfer-2
+### stage2 / 4-contentchange-transfer-2（已修正）
 
 - 样例路径：`spec/data/nas_samples/stage2/4-contentchange-transfer-2`
 - 当前输出：`artifacts/all_data_release_matrix_neo4j/vision_precompute/4-contentchange-transfer-2/4-contentchange-transfer-2_logs_556`
 - stage2_vlm：line 944，`detector=no_confirmed_data_leak`，`expected=data_leak_risk_detected`
-- 问题类型：groundtruth 标注文件上传，但样例片段中没有文件上传。
+- 原问题类型：groundtruth 的记录 ID、敏感源路径和“文件上传”描述与视频不一致。
 
-`groundtruth.json` 的 `record_id` 为 `1-clipboard-email-1`，与目录 `4-contentchange-transfer-2` 不一致；operation 中两次写 `直接外发-文件上传-WPS`。复核备注明确指出该样例没有文件上传。建议核对 groundtruth 是否串入 clipboard/email/WPS 上传样例；若当前视频只包含复制/翻译等中间行为，应改为 `suspicious_behavior_detected` 或补齐真正的上传片段。
+当前 `groundtruth.json` 已修正为 `4-contentchange-transfer-2`，并使用日志中确认的原始文件路径。关键帧显示 WPS 集成 AI 助手使用 DeepSeek-R1 接收机密正文并完成翻译；这里的外发对象是正文而不是文件附件，因此按 `ai_chat` 直接外发处理，不能因“没有文件上传”降为 `suspicious_behavior_detected`。
 
 ### stage2 / 5-screen-screenshot-3
 
@@ -338,7 +338,6 @@ stage5/U4-Bluetooth-SensitiveLeak-3 [结构无法恢复]
 
 stage1/3-Messaging-TIM-5/session_20260420_222538
 stage1/6-workplace-youdao-4
-stage2/5-screen-screenshot-1
 stage4/9-1
 stage4/4-1
 stage5/U2-Annotation-1

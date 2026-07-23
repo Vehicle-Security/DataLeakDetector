@@ -409,6 +409,8 @@ def _prompt(frames: list[VlmRequestFrame], sensitive_files: list[str], active_ap
         "file picker, or earlier frame. Do not replace it with a merely similar name from sensitive-file context; use unknown if the exact text is unreadable.\n"
         "A local screen recorder, MP4 creation/playback, or QQ recording UI is hidden_transfer, not screen_share, unless an independent meeting/share banner, "
         "sharing toolbar state, remote participant, or explicit active-share indicator is also visible.\n"
+        "For QQ recording windows such as '录屏生成视频' or '制作MP4', do not infer a chat attachment from the QQ app name, a dark preview, or a visible Send "
+        "control. Require an actual chat composer or message thread plus a clearly identified attachment card or sent item before emitting direct_leak.\n"
         "The primary decision is whether an outbound action exists, not whether it succeeded. Selection/attachment, submit, progress, success, rejection, "
         "unsupported-file, cancellation, timeout, and error screens can all prove that an upload/send was attempted and must emit direct_leak. "
         "Fill action_status only when obvious; it is audit metadata and does not change the leak verdict.\n"

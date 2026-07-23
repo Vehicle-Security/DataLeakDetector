@@ -240,6 +240,7 @@ def test_vlm_prompt_requires_executed_transfer_evidence() -> None:
     assert "screenshot preview inserted into a chat composer" in prompt
     assert "sensitive-file card staged" in prompt
     assert "local screen recorder" in prompt
+    assert "do not infer a chat attachment from the QQ app name" in prompt
 
 
 def test_reusable_precompute_baseline_excludes_nested_session_cache(tmp_path: Path) -> None:
@@ -5196,6 +5197,57 @@ def test_ocr_screenshot_and_saved_text_keep_original_document_lineage() -> None:
     assert any(leak.file_chain == (original, screenshot, text_file) for leak in engine.query_leak())
 
 
+def test_ocr_text_created_in_sync_folder_uses_source_named_by_current_window() -> None:
+    screenshot = "C:/Users/alice/OneDrive/Desktop/product_secret.png"
+    text_file = "C:/Users/alice/OneDrive/Desktop/1.0_product_plan.txt"
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "app_switch",
+            "file_path": screenshot,
+            "process_info": {"process_name": "photolaunch.exe"},
+            "window_info": {"window_title": "product_secret.png - WPS Image"},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:20",
+            "event_type": "created",
+            "file_path": text_file,
+            "process_info": {"process_name": "photolaunch.exe"},
+            "window_info": {"window_title": "product_secret.png - WPS Image"},
+        },
+    ]
+    observations = [
+        {
+            "observation_id": "save_ocr_text",
+            "start_ms": 15_000,
+            "end_ms": 15_000,
+            "app_name": "Notepad / File Explorer",
+            "operation_type": "external_sink_interaction",
+            "resource": "1.0.txt",
+            "related_resources": ["product_secret.png", "1.0.txt"],
+            "description": (
+                "direct_leak: save_file. sink_type=cloud_sync. action_status=selected. "
+                "The OCR text is being saved under OneDrive Desktop."
+            ),
+            "confidence": 0.9,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": records,
+            "frame_segments": observations,
+            "sensitive_files": [screenshot],
+        }
+    )
+
+    assert bundle["file_lineage"]["direct_file_mappings"][text_file] == screenshot
+    upload = next(item for item in bundle["upload_candidates"] if item["current_file"] == text_file)
+    assert upload["original_file"] == screenshot
+    assert upload["sink_type"] == "cloud_sync"
+
+
 def test_opening_sensitive_file_already_in_sync_directory_is_not_cloud_upload() -> None:
     original = "C:/Users/alice/OneDrive/Desktop/product_plan.docx"
     record = {
@@ -6241,6 +6293,11 @@ def test_vlm_parser_upgrades_sensitive_text_pasted_into_online_tool() -> None:
             "A screen recording preview shows a Send to DingTalk button; the recording is only staged.",
         ),
         (
+            "chat_upload",
+            "A screenshot or recording (likely of the sensitive document or the recording session) "
+            "is attached in a QQ window. The Send button is visible.",
+        ),
+        (
             "file_upload",
             "The file is staged in the upload area and is ready for upload to a public web platform.",
         ),
@@ -6273,6 +6330,7 @@ def test_vlm_parser_downgrades_local_preparation_with_unpressed_send_control(
     event = result.events[0]
     assert event.behavior_category == "unknown_risk"
     assert event.action_status == "unknown"
+    assert vision_events_to_observations([event])[0].operation_type == "file_or_content_transfer"
     bundle = EventCorrelator().run(
         {
             "log_events": [],
@@ -8495,6 +8553,34 @@ def test_completed_integrated_ai_translation_result_is_external() -> None:
     assert bundle["upload_candidates"][0]["sink_type"] == "ai_chat"
 
 
+def test_transmitted_integrated_ai_translation_result_is_external() -> None:
+    original = "D:/workspace/company_secret_terms.docx"
+    event = ParsedVisionEvent(
+        start_ms=10_000,
+        end_ms=10_000,
+        app_name="WPS",
+        behavior_category="direct_leak",
+        operation_type="ai_translation",
+        original_resource="company_secret_terms.docx",
+        modified_resource="unknown",
+        description=(
+            "The sensitive content is transmitted to the AI service, and the translated result "
+            "is subsequently visible in the document."
+        ),
+        confidence=0.95,
+        sink_type="ai_chat",
+        action_status="completed",
+    )
+    observations = vision_events_to_observations([event])
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert observations[0].operation_type == "external_sink_interaction"
+    assert bundle["upload_candidates"][0]["sink_type"] == "ai_chat"
+
+
 def test_monitoring_log_only_ai_claim_is_not_external() -> None:
     original = "D:/gdata/documents_1/customer_data.docx"
     observations = [
@@ -8537,6 +8623,34 @@ def test_inferred_recording_thumbnail_is_not_chat_upload() -> None:
                 "direct_leak: chat_upload. sink_type=chat_upload. action_status=selected. "
                 "An image/video attachment, likely the screen recording or a screenshot given the dark thumbnail, "
                 "is staged while the sensitive file is open in the background."
+            ),
+            "confidence": 0.85,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"] == []
+    assert any(fact["relation"] == "SuspiciousBehavior" for fact in bundle["datalog_facts"])
+
+
+def test_inferred_qq_recording_session_attachment_is_not_chat_upload() -> None:
+    original = "C:/Users/alice/Desktop/confidential_contract.pdf"
+    observations = [
+        {
+            "observation_id": "qq_recording_session_claim",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "QQ",
+            "operation_type": "external_sink_interaction",
+            "resource": "confidential_contract.pdf",
+            "description": (
+                "direct_leak: chat_upload. sink_type=chat_upload. action_status=selected. "
+                "A screenshot or recording (likely of the sensitive document or the recording session) "
+                "is attached in a QQ window. The Send button is visible."
             ),
             "confidence": 0.85,
             "source": "vlm",

@@ -1527,14 +1527,21 @@ def _is_monitoring_log_only_claim(text: str) -> bool:
 def _is_inferred_recording_attachment(text: str, *, status: str) -> bool:
     if status != "selected":
         return False
-    recording = any(marker in text for marker in ("screen recording", "screenshot", "recording mp4", "录屏", "截图"))
-    attachment = any(marker in text for marker in ("attachment", "staged", "thumbnail", "附件", "待发送", "缩略图"))
+    recording = any(
+        marker in text
+        for marker in ("screen recording", "recording session", "screenshot", "recording mp4", "录屏", "截图")
+    )
+    attachment = any(
+        marker in text for marker in ("attachment", "attached", "staged", "thumbnail", "附件", "待发送", "缩略图")
+    )
     inferred = any(
         marker in text
         for marker in (
             "likely the screen recording",
             "likely a screen recording",
             "likely a screenshot",
+            "likely of the sensitive document",
+            "likely of the recording session",
             "given the dark thumbnail",
             "appears to contain the recording",
             "可能是录屏",
@@ -2180,12 +2187,14 @@ def _source_from_recent_document_context(
         ) and not explicit_copy:
             continue
         title_text = normalize_path(title).lower()
+        event_title_text = normalize_path(event.window_title).lower()
         same_parent = (
             event.event_type.lower() in {"created", "file_created", "renamed"}
             and _is_save_as_context(event)
             and source_path.parent.name.lower() == target_path.parent.name.lower()
         )
         visible_source = source_path.name.lower() in title_text
+        source_in_event_title = source_path.name.lower() in event_title_text
         same_stem = source_path.stem.lower() == target_path.stem.lower()
         same_process = bool(
             event_process
@@ -2194,7 +2203,13 @@ def _source_from_recent_document_context(
             and _is_lineage_authoring_process(event_process)
             and elapsed <= 30_000
         )
-        if same_parent or same_stem or same_process:
+        title_bound_derivative = bool(
+            source_in_event_title
+            and elapsed <= 30_000
+            and event.event_type.lower()
+            in {"created", "modified", "renamed", "copied", "file_created", "file_modified"}
+        )
+        if same_parent or same_stem or same_process or title_bound_derivative:
             # Same-process/save-as and same-stem evidence is stronger than a
             # stale title-only mention from another candidate file.
             strength = 0 if (same_parent or same_stem or same_process) else 1

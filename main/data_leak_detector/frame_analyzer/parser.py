@@ -378,14 +378,21 @@ def _is_inferred_recording_attachment(description: str, *, status: str) -> bool:
     if status != "selected":
         return False
     text = description.lower()
-    recording = any(marker in text for marker in ("screen recording", "screenshot", "recording mp4", "录屏", "截图"))
-    attachment = any(marker in text for marker in ("attachment", "staged", "thumbnail", "附件", "待发送", "缩略图"))
+    recording = any(
+        marker in text
+        for marker in ("screen recording", "recording session", "screenshot", "recording mp4", "录屏", "截图")
+    )
+    attachment = any(
+        marker in text for marker in ("attachment", "attached", "staged", "thumbnail", "附件", "待发送", "缩略图")
+    )
     inferred = any(
         marker in text
         for marker in (
             "likely the screen recording",
             "likely a screen recording",
             "likely a screenshot",
+            "likely of the sensitive document",
+            "likely of the recording session",
             "given the dark thumbnail",
             "appears to contain the recording",
             "可能是录屏",
@@ -637,7 +644,7 @@ def _operation_to_pipeline(event: ParsedVisionEvent) -> str:
     behavior = _structured_value(event.behavior_category)
     if _is_confirmed_external_submission(event):
         return "external_sink_interaction"
-    if behavior == "hidden_transfer":
+    if behavior in {"hidden_transfer", "unknown_risk"}:
         return "file_or_content_transfer"
     text = f"{event.behavior_category} {event.operation_type} {event.description} {event.sink_type}".lower()
     if behavior == "direct_leak" and (
@@ -689,6 +696,7 @@ def _is_confirmed_external_submission(event: ParsedVisionEvent) -> bool:
             "submitted to",
             "uploaded to",
             "sent to",
+            "transmitted to",
             "synced to",
             "transferring sensitive data to",
             "粘贴到",
