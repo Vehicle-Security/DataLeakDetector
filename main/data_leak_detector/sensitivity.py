@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 from .io import normalize_path, read_text
@@ -11,6 +12,25 @@ from .io import normalize_path, read_text
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SENSITIVE_FILES_CONFIG_PATH = REPO_ROOT / "spec" / "config" / "sensitive_files..json"
+STAGE_SENSITIVE_FILES_CONFIG_DIR = REPO_ROOT / "spec" / "config"
+
+
+def resolve_sensitive_files_config(path: str | Path, configured_path: str | Path | None = None) -> Path | None:
+    """Select the stage-specific source list for NAS samples unless overridden."""
+
+    if configured_path:
+        return Path(configured_path)
+
+    sample_path = Path(path).resolve()
+    for candidate in (sample_path, *sample_path.parents):
+        match = re.fullmatch(r"stage(\d+)", candidate.name, flags=re.IGNORECASE)
+        if not match or candidate.parent.name.lower() != "nas_samples":
+            continue
+        stage_config = STAGE_SENSITIVE_FILES_CONFIG_DIR / f"sensitive_files_{match.group(1)}.json"
+        if not stage_config.exists():
+            raise FileNotFoundError(f"sensitive files config does not exist for {candidate.name}: {stage_config}")
+        return stage_config
+    return None
 
 
 def load_sensitive_files_config(path: str | Path | None = None) -> tuple[str, ...]:

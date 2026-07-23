@@ -18,7 +18,7 @@ from .groundtruth import evaluate_groundtruth
 from .io import iso_now, load_json_records, normalize_logs, normalize_path, parse_timestamp_ms, same_file
 from .leak_reasoner import DatalogEngine
 from .models import DetectionReport
-from .sensitivity import load_sensitive_files_config
+from .sensitivity import load_sensitive_files_config, resolve_sensitive_files_config
 
 
 def run_pipeline(
@@ -459,7 +459,7 @@ def _build_detection_core(
         "datalog_reasoning": {
             "facts": len(datalog_facts),
             "leak_paths": len(leak_paths),
-            "suspicious_behaviors": sum(1 for fact in datalog_facts if fact.get("relation") == "SuspiciousBehavior"),
+            "suspicious_behaviors": len(_suspicious_datalog_facts(correlation_bundle)),
             "detector_conclusion": detector_conclusion,
             "role": "基于 OpenFile/TransferFile/LeakFile/SuspiciousBehavior 等事实做可解释污点传播",
         },
@@ -904,6 +904,7 @@ def run_data_case(
 ) -> dict[str, Any]:
     """Run a real spec/data sample directory."""
 
+    sensitive_files_config = resolve_sensitive_files_config(case_dir, sensitive_files_config)
     case = discover_data_case(
         case_dir,
         case_root=case_root,
@@ -1115,11 +1116,25 @@ def _detector_conclusion(leak_paths: list[Any], suspicious_facts: list[dict[str,
 
 
 def _suspicious_datalog_facts(correlation_bundle: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return suspicious facts that are bound to a sensitive source.
+
+    Unbound outbound activity remains in ``datalog_facts`` for auditing, but it
+    cannot by itself make a case suspicious: transferring a non-sensitive file
+    is not a data-leak signal.
+    """
+
     return [
         dict(item)
         for item in correlation_bundle.get("datalog_facts", [])
-        if isinstance(item, dict) and item.get("relation") == "SuspiciousBehavior"
+        if isinstance(item, dict)
+        and item.get("relation") == "SuspiciousBehavior"
+        and _suspicious_fact_has_sensitive_source(item)
     ]
+
+
+def _suspicious_fact_has_sensitive_source(fact: dict[str, Any]) -> bool:
+    args = fact.get("args")
+    return isinstance(args, (list, tuple)) and len(args) > 2 and bool(normalize_path(args[2]))
 
 
 def _is_scorable_conclusion(value: str) -> bool:

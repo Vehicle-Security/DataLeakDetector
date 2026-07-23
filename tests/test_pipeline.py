@@ -73,7 +73,7 @@ from data_leak_detector.leak_reasoner import DatalogEngine
 from data_leak_detector.models import CorrelatedEvent, LeakPath, UploadCandidate
 from data_leak_detector.policy import contains_any, load_policy_config
 from data_leak_detector.policy import classify_sink
-from data_leak_detector.sensitivity import load_sensitive_files_config
+from data_leak_detector.sensitivity import load_sensitive_files_config, resolve_sensitive_files_config
 from data_leak_detector.pipeline import _build_report_id, _load_pipeline_records, _vlm_file_context
 
 
@@ -6495,6 +6495,53 @@ def test_pipeline_reports_suspicious_detector_state_for_hidden_behavior(tmp_path
     assert verdict["detector_correct"] is True
 
 
+def test_pipeline_does_not_mark_unbound_non_sensitive_upload_as_suspicious(tmp_path: Path) -> None:
+    log_file = tmp_path / "logs.json"
+    observations = tmp_path / "observations.json"
+    sensitive_config = tmp_path / "sensitive_files.json"
+    log_file.write_text("[]", encoding="utf-8")
+    observations.write_text(
+        json.dumps(
+            [
+                {
+                    "observation_id": "vlm_0",
+                    "start_ms": 1000,
+                    "end_ms": 1000,
+                    "app_name": "ChatGPT",
+                    "operation_type": "external_sink_interaction",
+                    "resource": "2026年日历.docx",
+                    "description": "direct_leak: ai_file_upload. action_status=completed.",
+                    "confidence": 0.95,
+                    "source": "vlm",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    sensitive_config.write_text(
+        json.dumps({"sensitive_files": ["C:/Users/lynn/Desktop/月度日常开销统计.pptx"]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    report = run_pipeline(
+        log_file=log_file,
+        sensitive_files_config=sensitive_config,
+        observations_file=observations,
+    )
+
+    raw_suspicious = [
+        fact
+        for fact in report["event_correlator"]["datalog_facts"]
+        if fact["relation"] == "SuspiciousBehavior"
+    ]
+    assert raw_suspicious
+    assert all(not fact["args"][2] for fact in raw_suspicious)
+    assert report["conclusion"] == "no_confirmed_data_leak"
+    assert report["summary"]["suspicious_behaviors"] == 0
+    assert report["leak_reasoner"]["suspicious_behaviors"] == []
+
+
 
 
 def test_visual_observation_can_create_datalog_fact_without_file_path_log() -> None:
@@ -6985,6 +7032,22 @@ def test_dataset_case_discovery_uses_real_data_layout(tmp_path: Path) -> None:
     assert case.log_file.name == "keyevents.json"
     assert case.video_file and case.video_file.name == "recording.mp4"
     assert case.sensitive_files == ("C:/from-config.xlsx",)
+
+
+@pytest.mark.parametrize("stage", [0, 1, 2, 4, 5])
+def test_nas_sample_stage_selects_matching_sensitive_files_config(stage: int) -> None:
+    case_dir = Path(__file__).parents[1] / "spec" / "data" / "nas_samples" / f"stage{stage}" / "case"
+
+    resolved = resolve_sensitive_files_config(case_dir)
+
+    assert resolved == Path(__file__).parents[1] / "spec" / "config" / f"sensitive_files_{stage}.json"
+
+
+def test_explicit_sensitive_files_config_overrides_nas_sample_stage(tmp_path: Path) -> None:
+    override = tmp_path / "sensitive_files.json"
+    case_dir = Path(__file__).parents[1] / "spec" / "data" / "nas_samples" / "stage1" / "case"
+
+    assert resolve_sensitive_files_config(case_dir, override) == override
 
 
 def test_dataset_case_discovery_accepts_misspelled_groundtruth_name(tmp_path: Path) -> None:

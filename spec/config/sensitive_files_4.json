@@ -1,0 +1,32 @@
+{
+  "dataset_name": "stage4",
+  "sensitive_files": [
+    "C:\\Users\\17503\\AppData\\Roaming\\Tencent\\WeMeet\\Global\\Data\\IM\\file\\2026-3\\15243390651012704982\\产品设计方案.docx",
+    "C:\\Users\\17503\\OneDrive\\Desktop\\产品设计方案.docx",
+    "C:\\Users\\17503\\WPSDrive\\1666809052\\WPS企业云盘\\武汉大学\\我的企业文档\\产品设计机密.ksheet",
+    "C:\\Users\\18986\\Desktop\\机密.pdf",
+    "C:\\Users\\18986\\Desktop\\机密.docx",
+    "C:\\Users\\18986\\Documents\\录音\\会议录音-公司合作合同.m4a",
+    "C:\\Users\\46521\\Desktop\\数据采集测试\\database_pymysql.py",
+    "C:\\Users\\46521\\Desktop\\数据采集测试\\机密合同.pdf",
+    "C:\\Users\\86158\\Desktop\\公司机密.docx",
+    "C:\\Users\\86158\\Desktop\\文字文稿1.pdf",
+    "C:\\Users\\LENOVO\\Desktop\\会议录音.m4a",
+    "C:\\Users\\LENOVO\\Desktop\\公司战略规划.docx",
+    "C:\\Users\\clhcl\\Desktop\\客户联系方式.pdf",
+    "C:\\Users\\clhcl\\Desktop\\客户联系方式1.sql",
+    "C:\\Users\\clhcl\\Desktop\\文字文稿.sql",
+    "C:\\Users\\王佳瑶\\Desktop\\内部系统部署账号.txt",
+    "C:\\Users\\王佳瑶\\Desktop\\员工薪资明细表Q4.xlsx",
+    "C:\\Users\\王佳瑶\\Desktop\\员工薪资明细表Q4_1.xlsx",
+    "C:\\Users\\王佳瑶\\Desktop\\并购项目内部讨论纪要.docx",
+    "C:\\Users\\超级番茄头\\Desktop\\机密文档.docx",
+    "D:\\DataLeakDetector\\DataLeakDetector-main\\ScreenMonitor\\winows_monitor\\test_files\\课堂会议录音文件.m4a",
+    "D:\\DataLeakDetector\\DataLeakDetector-main\\ScreenMonitor\\windows_monitor\\test_files\\公司机密条款.docx",
+    "D:\\dingxinyao\\desktop\\公司合作合同.docx",
+    "D:\\dingxinyao\\desktop\\员工薪资明细表.xlsx",
+    "D:\\code\\practice\\test_2026_03_22_2.c",
+    "D:\\gdata\\documents_1\\产品设计方案.docx",
+    "D:\\gdata\\重要信息文件\\customer.txt"
+  ]
+}

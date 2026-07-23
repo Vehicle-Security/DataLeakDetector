@@ -8,7 +8,7 @@ from typing import Any
 import re
 
 from .io import parse_timestamp_ms
-from .sensitivity import load_sensitive_files_config
+from .sensitivity import load_sensitive_files_config, resolve_sensitive_files_config
 
 GROUNDTRUTH_FILENAMES = ("groundtruth.json", "groundtrutn.json")
 
@@ -138,7 +138,7 @@ def discover_data_case(
     else:
         groundtruth_status = "missing"
 
-    sensitive = load_sensitive_files_config(sensitive_files_config)
+    sensitive = load_sensitive_files_config(resolve_sensitive_files_config(case_dir, sensitive_files_config))
     recording_starts = [item.recording_start_ms for item in sessions if item.recording_start_ms]
     recording_start_ms = min(recording_starts) if recording_starts else _recording_start_ms(case_dir)
 

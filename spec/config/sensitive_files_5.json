@@ -1,0 +1,18 @@
+{
+  "dataset_name": "stage5",
+  "sensitive_files": [
+    "C:\\Users\\17503\\OneDrive\\产品设计方案.docx",
+    "C:\\Users\\18986\\Desktop\\公司合作合同.docx",
+    "C:\\Users\\46521\\Desktop\\数据采集测试\\机密合同.pdf",
+    "C:\\Users\\46521\\Desktop\\普通文件.docx",
+    "C:\\Users\\86158\\Desktop\\财务报表.docx",
+    "C:\\Users\\LENOVO\\Desktop\\公司战略规划.docx",
+    "C:\\Users\\clhcl\\Desktop\\客户联系方式.pdf",
+    "C:\\Users\\clhcl\\Desktop\\文字文稿1.docx",
+    "C:\\Users\\clhcl\\Desktop\\文字文稿1.pdf",
+    "C:\\Users\\超级番茄头\\Desktop\\公司合同.docx",
+    "D:\\DataLeakTest\\docx\\公司合作合同.docx",
+    "D:\\gdata\\documents_1\\产品研发方案.docx",
+    "D:\\工作日记.docx"
+  ]
+}

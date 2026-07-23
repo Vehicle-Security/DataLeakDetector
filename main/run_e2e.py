@@ -15,7 +15,6 @@ from data_leak_detector import run_data_case, run_pipeline
 from data_leak_detector.datasets import data_case_id, discover_data_case_directories
 from data_leak_detector.frame_analyzer.artifacts import VISION_PRECOMPUTE_STRATEGY_VERSION
 from data_leak_detector.frame_analyzer.vlm_dispatch import vlm_dispatcher_snapshots
-from data_leak_detector.sensitivity import DEFAULT_SENSITIVE_FILES_CONFIG_PATH
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -45,8 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", "-o", default="", help="Optional directory for the JSON report.")
     parser.add_argument(
         "--sensitive-files-config",
-        default=str(DEFAULT_SENSITIVE_FILES_CONFIG_PATH),
-        help="JSON file containing the only initial sensitive-source paths.",
+        default=None,
+        help="JSON file containing initial sensitive-source paths; NAS stage cases default to sensitive_files_X.json.",
     )
     parser.add_argument("--observations", default="", help="Optional precomputed frame observation JSON.")
     parser.add_argument("--vision", action="store_true", help="Enable direct-keyframe VLM frame analysis.")
