@@ -102,6 +102,15 @@ def build_datalog_facts(
         if key not in transfers:
             lineage_event = lineage_events.get(normalize_path(derived).lower())
             event_id = lineage_event[2].event_id if lineage_event else f"lineage:{len(facts)}"
+            # A VLM timestamp identifies an evidence frame, not necessarily
+            # the precise filesystem transition. Retain its lineage edge but
+            # leave ordering unknown so a nearby authoritative log edge is
+            # not rejected solely because the frame was sampled early.
+            lineage_timestamp = (
+                0
+                if lineage_event is not None and lineage_event[2].event_type == "visual_observation"
+                else (lineage_event[0] if lineage_event else 0)
+            )
             facts.append(
                 DatalogFact(
                     "TransferFile",
@@ -110,7 +119,7 @@ def build_datalog_facts(
                         _LINEAGE_PROCESS,
                         source,
                         derived,
-                        lineage_event[0] if lineage_event else 0,
+                        lineage_timestamp,
                     ),
                 )
             )
@@ -221,7 +230,12 @@ def _same_artifact_path(left: str, right: str) -> bool:
 
 def _event_rank(item: tuple[int, int, CorrelatedEvent]) -> tuple[int, int]:
     timestamp, index, _ = item
-    return (timestamp if timestamp > 0 else 2**63 - 1), index
+    event = item[2]
+    # VLM observations are timestamped by the selected keyframe. A nearby
+    # filesystem log is a more reliable ordering signal for canonical lineage,
+    # even when the frame happened to be sampled a few seconds earlier.
+    evidence_rank = 1 if event.event_type == "visual_observation" else 0
+    return evidence_rank, (timestamp if timestamp > 0 else 2**63 - 1), index
 
 
 def _is_lineage_transfer_event(event: CorrelatedEvent) -> bool:

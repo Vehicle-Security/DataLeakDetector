@@ -388,6 +388,11 @@ def build_analysis_window_for_event(
             before_ms = max(before_ms, 30_000)
         if action in {"file_selected", "upload", "send", "removable", "screen_share", "clipboard"}:
             after_ms = max(after_ms, 30_000)
+        if action == "file_selected" and _is_mail_attachment_context(event):
+            # Mail clients frequently emit only a picker-selection log. The
+            # send button/confirmation can remain visible much later, so keep
+            # a result frame across that otherwise unobserved gap.
+            after_ms = max(after_ms, 90_000)
         step_ms = config.strong_frame_step_ms
         budget = config.max_keyframes_per_strong_window
         threshold = config.strong_frame_diff_threshold
@@ -1255,6 +1260,17 @@ def _has_removable_media_signal(text: str) -> bool:
     if any(token in text for token in ("bluetooth", "removable", "fsquirt", "u盘", "蓝牙")):
         return True
     return re.search(r"(?<![a-z0-9])usb(?![a-z0-9])", text) is not None
+
+
+def _is_mail_attachment_context(event: LogEvent) -> bool:
+    identity = identify_frontend_app(
+        app_name=event.app_name or event.process_name,
+        window_title=event.window_title,
+    )
+    if identity.category == "mail":
+        return True
+    text = _event_text(event).lower()
+    return any(marker in text for marker in ("mail", "email", "邮件", "邮箱", "附件", "attachment"))
 
 
 def _is_open_event(event: LogEvent) -> bool:

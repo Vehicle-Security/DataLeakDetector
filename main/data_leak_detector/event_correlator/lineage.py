@@ -135,5 +135,8 @@ def _is_user_visible_artifact(file_path: str) -> bool:
         "/programdata/",
         "/temp/",
         "/windows/",
+        "/xwechat_files/",
+        "/tencent files/",
+        "/db_storage/",
     )
     return bool(lowered and not any(marker in lowered for marker in hidden_markers))

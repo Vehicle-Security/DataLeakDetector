@@ -160,6 +160,7 @@ class EventCorrelator:
             config=config,
             recording_start_ms=visual_recording_start_ms,
         )
+        correlated = _add_confirmed_git_push_events(correlated, logs)
         correlated = _suppress_redundant_cloud_sync_source_events(correlated, lineage)
         uploads = build_upload_candidates(correlated, default_confidence=config.upload_confidence)
         case_id = str(payload.get("case_id") or "case")
@@ -1104,21 +1105,39 @@ class EventCorrelator:
                 if log_binding and log_binding[1]
                 else self._visual_current_file(observation, original, sensitive_files, lineage)
             )
-            visual_events.append(
-                CorrelatedEvent(
-                    event_id=f"corr_{start_index + len(visual_events)}",
-                    timestamp=_observation_timestamp(observation, recording_start_ms),
-                    event_type="visual_observation",
-                    app_name=observation.app_name,
-                    original_file=original,
-                    current_file=current_file,
-                    operation_type=_effective_visual_operation_type(observation),
-                    behavior_category=behavior,
-                    confidence=round(min(max(observation.confidence, 0.70), 1.0), 3),
-                    evidence_refs=_observation_evidence_refs(observation),
-                    join_reasons=tuple(_visual_join_reasons(observation, original)),
-                )
+            visual_event = CorrelatedEvent(
+                event_id=f"corr_{start_index + len(visual_events)}",
+                timestamp=_observation_timestamp(observation, recording_start_ms),
+                event_type="visual_observation",
+                app_name=observation.app_name,
+                original_file=original,
+                current_file=current_file,
+                operation_type=_effective_visual_operation_type(observation),
+                behavior_category=behavior,
+                confidence=round(min(max(observation.confidence, 0.70), 1.0), 3),
+                evidence_refs=_observation_evidence_refs(observation),
+                join_reasons=tuple(_visual_join_reasons(observation, original)),
             )
+            visual_events.append(visual_event)
+            if _is_visual_file_split(observation) and current_file and not same_file(original, current_file):
+                # A split followed by cloud/mail/chat delivery contains two
+                # semantically useful actions. Keep the confirmed external
+                # event above, and emit the local derivation independently.
+                visual_events.append(
+                    CorrelatedEvent(
+                        event_id=f"corr_{start_index + len(visual_events)}",
+                        timestamp=visual_event.timestamp,
+                        event_type="visual_transformation",
+                        app_name=observation.app_name,
+                        original_file=original,
+                        current_file=current_file,
+                        operation_type="file_or_content_transfer",
+                        behavior_category="hidden_transformation_candidate",
+                        confidence=visual_event.confidence,
+                        evidence_refs=visual_event.evidence_refs,
+                        join_reasons=(*visual_event.join_reasons, "visual_file_split"),
+                    )
+                )
         return visual_events
 
     def _visual_log_binding(self, observation, logs, sensitive_files: list[str], lineage: Lineage):
@@ -1602,6 +1621,72 @@ def _is_screen_share_context(log) -> bool:
         ),
     )
     return has_share_action and contains_any(text, ("teams", "zoom", "meeting", "会议", "共享"))
+
+
+def _add_confirmed_git_push_events(
+    correlated: list[CorrelatedEvent],
+    logs,
+) -> list[CorrelatedEvent]:
+    """Promote a terminal Git staging chain plus an observed push command.
+
+    Clipboard monitoring can attribute the copied ``git push`` command to a
+    browser. It becomes external-transfer evidence only when a nearby visual
+    terminal event has already bound a sensitive file to Git preparation.
+    """
+
+    result = list(correlated)
+    for log in logs:
+        text = _event_search_text(log).lower()
+        if not re.search(r"\bgit\s+push\b", text):
+            continue
+        timestamp_ms = log.timestamp_ms
+        candidates = [
+            event
+            for event in result
+            if event.original_file
+            and event.app_name.lower() in {"cmd", "cmd.exe", "windowsterminal", "powershell", "powershell.exe"}
+            and any(ref.startswith("frame:") for ref in event.evidence_refs)
+            and 0 <= timestamp_ms - parse_timestamp_ms(event.timestamp) <= 30_000
+        ]
+        if not candidates:
+            continue
+        source = max(candidates, key=lambda event: parse_timestamp_ms(event.timestamp))
+        if not _has_git_stage_evidence(logs, source.original_file, timestamp_ms):
+            continue
+        result.append(
+            CorrelatedEvent(
+                event_id=f"corr_{len(result)}",
+                timestamp=log.timestamp,
+                event_type="git_push",
+                app_name="WindowsTerminal",
+                original_file=source.original_file,
+                current_file=source.current_file or source.original_file,
+                operation_type="external_sink_interaction",
+                behavior_category="data_exfiltration_candidate",
+                confidence=0.95,
+                evidence_refs=tuple(dict.fromkeys((*source.evidence_refs, f"log:{log.event_id}"))),
+                join_reasons=(
+                    "terminal_git_push",
+                    "explicit_sink_log",
+                    "sink_type:network_upload",
+                    "git_staged_sensitive_file",
+                ),
+            )
+        )
+    return result
+
+
+def _has_git_stage_evidence(logs, original_file: str, push_timestamp_ms: int) -> bool:
+    filename = Path(normalize_path(original_file)).name.lower()
+    if not filename:
+        return False
+    for log in logs:
+        if not 0 <= push_timestamp_ms - log.timestamp_ms <= 30_000:
+            continue
+        text = _event_search_text(log).lower()
+        if re.search(r"\bgit\s+(?:add|commit)\b", text) and filename in text:
+            return True
+    return False
 
 
 def _contextual_clipboard_sink_event_ids(logs) -> set[str]:
@@ -2314,6 +2399,11 @@ def _visual_join_reasons(observation, original: str) -> list[str]:
     if _is_unproven_cloud_folder_claim(observation):
         reasons.append("visual_unproven_cloud_folder")
     return reasons
+
+
+def _is_visual_file_split(observation) -> bool:
+    text = _observation_search_text(observation).lower()
+    return any(marker in text for marker in ("pdf split", "split pdf", "file split", "拆分pdf", "pdf拆分", "文件拆分"))
 
 
 def _observation_timestamp(observation, recording_start_ms: int) -> str:
