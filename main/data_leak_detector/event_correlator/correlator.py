@@ -962,6 +962,11 @@ class EventCorrelator:
             if source_kind == "visual":
                 identity_id = identity.observation_id
                 identity_resource = identity.resource or original
+                fused_resource = (
+                    sink.resource
+                    if _is_visual_derived_candidate(sink.resource, original)
+                    else identity_resource
+                )
                 related = [*sink.related_resources, identity.resource, *identity.related_resources, original]
                 marker = f"visual_identity={identity_id}"
                 identity_frames = _description_evidence_frame_ids(identity.description)
@@ -972,6 +977,9 @@ class EventCorrelator:
                 identity_id = identity.event_id
                 identity_path = normalize_path(identity.file_path)
                 identity_resource = original if _is_internal_runtime_path(identity_path) else (identity_path or original)
+                sink_resource = normalize_path(sink.resource)
+                explicit_derived_sink = _is_explicit_visual_derived_resource(sink, original)
+                fused_resource = sink_resource if explicit_derived_sink else identity_resource
                 related = [*sink.related_resources]
                 if identity_path and not _is_internal_runtime_path(identity_path):
                     related.append(identity_path)
@@ -981,7 +989,7 @@ class EventCorrelator:
             fused.append(
                 replace(
                     sink,
-                    resource=normalize_path(identity_resource),
+                    resource=normalize_path(fused_resource),
                     related_resources=tuple(
                         dict.fromkeys(normalize_path(item) for item in related if normalize_path(item))
                     ),
@@ -1253,7 +1261,9 @@ class EventCorrelator:
             if not original:
                 continue
             observed_artifact = lineage.resolve_artifact(observation.resource)
-            if (
+            if _is_explicit_visual_derived_resource(observation, original):
+                current = normalize_path(observation.resource)
+            elif (
                 observed_artifact in lineage.direct
                 and same_file(lineage.root(observed_artifact), original)
             ):
@@ -1331,6 +1341,11 @@ class EventCorrelator:
         if original and action == "chat_upload" and _mentions_exact_filename(observation.description, original):
             return original
         if original and action in _OUTBOUND_SOURCE_OBJECT_ACTIONS and _mentions_exact_filename(observation.description, original):
+            if (
+                _is_visual_derived_candidate(current_file, original)
+                and _mentions_exact_filename(observation.description, current_file)
+            ):
+                return lineage.resolve_artifact(current_file)
             derived = self._latest_visible_descendant_before(original, observation, lineage)
             return derived or original
         resolved_artifact = lineage.resolve_artifact(current_file)
@@ -3322,7 +3337,14 @@ def _visual_removable_destination(observation, original: str) -> str:
     targets = [drive for drive in drives if drive != source_drive]
     if len(set(targets)) != 1:
         return ""
-    return f"{targets[0].upper()}:/{Path(normalize_path(original)).name}"
+    observed = normalize_path(observation.resource)
+    destination_name = Path(normalize_path(original)).name
+    if (
+        _is_visual_derived_candidate(observed, original)
+        and _mentions_exact_filename(observation.description, observed)
+    ):
+        destination_name = Path(observed).name
+    return f"{targets[0].upper()}:/{destination_name}"
 
 
 def _explicit_visual_derivation(
@@ -3340,7 +3362,8 @@ def _explicit_visual_derivation(
         marker in text
         for marker in ("derived file", "derived from", "screenshot of", "源自", "派生文件", "截图来自")
     )
-    if not explicit_source_derivation and not extracted_save:
+    explicit_save_rename = _declared_visual_action(observation) in {"rename", "save_as", "save_as_rename"}
+    if not explicit_source_derivation and not extracted_save and not explicit_save_rename:
         return None
     target_name = Path(normalize_path(observation.resource)).name.lower()
     if not target_name or target_name in {"unknown", "未知"}:
@@ -3361,6 +3384,15 @@ def _explicit_visual_derivation(
             )
         )
     ])
+    catalog_targets = _dedupe_paths(
+        sensitive
+        for sensitive in sensitive_files
+        if _looks_like_absolute_path(normalize_path(sensitive))
+        and Path(normalize_path(sensitive)).name.lower() == target_name
+        and any(_same_exact_file_path(sensitive, candidate) for candidate in targets)
+    )
+    if len(catalog_targets) == 1:
+        targets = catalog_targets
     if len(targets) != 1:
         return None
     target = targets[0]
@@ -3432,6 +3464,19 @@ def _is_visual_derived_candidate(file_path: str, original: str) -> bool:
     if same_file(normalized, original) or _matches_sensitive_file_reference(normalized, original):
         return False
     return True
+
+
+def _is_explicit_visual_derived_resource(observation, original: str) -> bool:
+    resource = normalize_path(observation.resource)
+    text = _observation_search_text(observation).lower()
+    return (
+        _is_visual_derived_candidate(resource, original)
+        and _mentions_exact_filename(observation.description, resource)
+        and (
+            any(marker in text for marker in _CONTENT_LINEAGE_MARKERS)
+            or any(marker in text for marker in ("derived", "encoded", "generated", "派生"))
+        )
+    )
 
 
 def _unique_cloud_sync_descendant(original: str, lineage: Lineage) -> str:

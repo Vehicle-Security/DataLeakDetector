@@ -4626,6 +4626,56 @@ def test_visual_upload_candidate_uses_sensitive_file_when_context_resource_diffe
     assert bundle["upload_candidates"][0]["current_file"] == original
 
 
+def test_visual_identity_binding_preserves_derived_file_sent_to_chat() -> None:
+    original = "C:/Users/17503/OneDrive/产品设计方案.docx"
+    derived = "260601新建文档.docx"
+    observations = [
+        {
+            "observation_id": "vlm_identity",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Word",
+            "operation_type": "external_sink_interaction",
+            "resource": "产品设计方案.docx",
+            "related_resources": ["产品设计方案.docx"],
+            "description": (
+                "direct_leak: ai_prompt_paste. sink_type=ai_chat. action_status=completed. "
+                "The content of 产品设计方案.docx was pasted into an AI assistant."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        },
+        {
+            "observation_id": "vlm_chat_send",
+            "start_ms": 60_000,
+            "end_ms": 60_000,
+            "app_name": "微信",
+            "operation_type": "external_sink_interaction",
+            "resource": derived,
+            "related_resources": [derived],
+            "description": (
+                "direct_leak: file_send. sink_type=chat_upload. action_status=completed. "
+                "User sends 260601新建文档.docx, a derived summary file, via WeChat."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        },
+    ]
+
+    bundle = EventCorrelator().run(
+        {
+            "log_events": [],
+            "frame_segments": observations,
+            "sensitive_files": [original],
+            "non_vlm_enabled": False,
+        }
+    )
+
+    upload = next(item for item in bundle["upload_candidates"] if item["app_name"] == "微信")
+    assert upload["original_file"] == original
+    assert upload["current_file"] == derived
+
+
 def test_unbound_visual_direct_leak_becomes_suspicious_behavior() -> None:
     observations = [
         {
@@ -5547,6 +5597,128 @@ def test_visual_removable_copy_keeps_destination_drive_in_leak_path() -> None:
     for fact in bundle["datalog_facts"]:
         engine.add_fact(fact["relation"], *fact["args"])
     assert engine.query_leak()[0].file_chain == (original, "F:/company_contract.docx")
+
+
+def test_visual_removable_copy_keeps_explicit_derived_archive_name() -> None:
+    original = "C:/Users/alice/Desktop/product_plan.docx"
+    observations = [
+        {
+            "observation_id": "usb_result",
+            "start_ms": 50_000,
+            "end_ms": 50_000,
+            "app_name": "Windows Explorer",
+            "operation_type": "external_sink_interaction",
+            "resource": "product_plan.zip",
+            "related_resources": ["product_plan.docx", "product_plan.zip"],
+            "description": (
+                "direct_leak: copy_to_removable_media. sink_type=removable_media. "
+                "action_status=completed. product_plan.zip was copied to USB drive E: "
+                "and appears in the destination directory."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": [], "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert bundle["upload_candidates"][0]["current_file"] == "E:/product_plan.zip"
+
+
+def test_visual_sink_keeps_explicit_derived_attachment_over_older_descendant() -> None:
+    original = "C:/Users/alice/Desktop/secret.pdf"
+    observations = [
+        {
+            "observation_id": "stego",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "Stego Tool",
+            "operation_type": "file_or_content_transfer",
+            "resource": "poster.jpg",
+            "related_resources": ["secret.pdf", "poster.jpg"],
+            "description": (
+                "hidden_transfer: steganography. sink_type=unknown. action_status=completed. "
+                "poster.jpg was derived from secret.pdf."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        },
+        {
+            "observation_id": "mail_send",
+            "start_ms": 20_000,
+            "end_ms": 20_000,
+            "app_name": "Webmail",
+            "operation_type": "external_sink_interaction",
+            "resource": "poster.bmp",
+            "related_resources": ["poster.bmp"],
+            "description": (
+                "direct_leak: email_send. sink_type=mail_attachment. action_status=completed. "
+                "poster.bmp, derived from secret.pdf, was sent as an attachment."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        },
+    ]
+
+    records = [
+        {
+            "timestamp": "1970-01-01T00:00:19",
+            "event_type": "file_upload",
+            "file_path": "C:/Users/alice/Desktop/poster.jpg",
+            "app_name": "Webmail",
+            "process_info": {"process_name": "browser.exe"},
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": observations, "sensitive_files": [original]}
+    )
+
+    assert "poster.bmp" in {item["current_file"] for item in bundle["upload_candidates"]}
+
+
+def test_visual_save_as_rename_links_target_when_both_files_are_cataloged() -> None:
+    original = "C:/Users/alice/Desktop/secret.pdf"
+    target = "C:/Users/alice/Desktop/ordinary.docx"
+    observations = [
+        {
+            "observation_id": "save_as",
+            "start_ms": 10_000,
+            "end_ms": 10_000,
+            "app_name": "WPS",
+            "operation_type": "file_or_content_transfer",
+            "resource": "ordinary.docx",
+            "related_resources": ["secret.pdf", "ordinary.docx"],
+            "description": (
+                "hidden_transfer: save_as_rename. sink_type=unknown. action_status=completed. "
+                "The content of secret.pdf was saved as ordinary.docx."
+            ),
+            "confidence": 0.95,
+            "source": "vlm",
+        }
+    ]
+    records = [
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "created",
+            "file_path": target,
+            "process_info": {"process_name": "wps.exe"},
+        },
+        {
+            "timestamp": "2026-01-01T00:00:10",
+            "event_type": "created",
+            "file_path": "D:/WPS Cloud Files/cache/ordinary.docx",
+            "process_info": {"process_name": "wps.exe"},
+        }
+    ]
+
+    bundle = EventCorrelator().run(
+        {"log_events": records, "frame_segments": observations, "sensitive_files": [original, target]}
+    )
+
+    assert bundle["file_lineage"]["direct_file_mappings"][target] == original
 
 
 def test_normalized_direct_leak_with_novel_action_name_is_not_downgraded() -> None:
