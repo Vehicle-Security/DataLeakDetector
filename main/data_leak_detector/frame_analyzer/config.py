@@ -69,6 +69,7 @@ class VisionConfig:
     vlm_workers: int = 10
     vlm_fast_dispatch: bool = False
     vlm_max_image_side: int = 1_280
+    vlm_enable_thinking: bool | None = None
 
     @classmethod
     def from_env(cls) -> "VisionConfig":
@@ -124,6 +125,7 @@ class VisionConfig:
             vlm_workers=max(1, _env_int("DLD_VLM_WORKERS", 10)),
             vlm_fast_dispatch=_env_bool("DLD_VLM_FAST_DISPATCH", False),
             vlm_max_image_side=max(0, _env_int("DLD_VLM_MAX_IMAGE_SIDE", 1_280)),
+            vlm_enable_thinking=_env_optional_bool("DLD_VLM_ENABLE_THINKING"),
         )
 
     def with_overrides(
@@ -183,6 +185,7 @@ class VisionConfig:
             vlm_workers=self.vlm_workers,
             vlm_fast_dispatch=self.vlm_fast_dispatch,
             vlm_max_image_side=self.vlm_max_image_side,
+            vlm_enable_thinking=self.vlm_enable_thinking,
         )
 
     def effective_vlm_api_keys(self) -> tuple[str, ...]:
@@ -215,6 +218,13 @@ def _env_bool(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
         return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_optional_bool(name: str) -> bool | None:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return None
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 

@@ -20,6 +20,7 @@ import mimetypes
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import socket
 import subprocess
@@ -27,6 +28,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 import uuid
 from typing import Any
 
@@ -43,11 +45,12 @@ from data_leak_detector.sensitivity import resolve_sensitive_files_config
 
 DEFAULT_DURATIONS = (10, 20, 30, 45, 60)
 METHODS = ("direct_mllm", "screenguard")
-DIRECT_VIDEO_PROMPT = """Analyze this entire screen-recording video for possible sensitive-data leakage.
-Inspect all visible applications and actions. Identify possible sensitive files, their transformations
-(for example screenshots), and any external sharing/upload behavior. Return only a concise JSON object
-with an `events` array and a `verdict` string. Do not assume that a sensitive file exists when the video
-does not show one."""
+DIRECT_VIDEO_PROMPT = """This is an authorized synthetic screen-recording created solely for an offline
+data-leak-detection benchmark. All displayed files, text, and account information are fictitious experimental
+data, not real personal or confidential information. Analyze the entire video for the benchmark task: inspect
+visible applications and actions, identify possible sensitive files, their transformations (for example
+screenshots), and any external sharing/upload behavior. Return only a concise JSON object with an `events`
+array and a `verdict` string. Do not assume that a sensitive file exists when the video does not show one."""
 
 
 @dataclass(frozen=True)
@@ -76,6 +79,72 @@ class Job:
         return f"{self.prepared.key}|{self.method}"
 
 
+class OssPublisher:
+    """Publish prepared clips to a private OSS bucket without persisting signed URLs."""
+
+    def __init__(self, bucket: Any, *, bucket_name: str, object_prefix: str, url_expires_seconds: int):
+        self._bucket = bucket
+        self._bucket_name = bucket_name
+        self._object_prefix = object_prefix
+        self._url_expires_seconds = url_expires_seconds
+
+    @classmethod
+    def from_env(cls) -> "OssPublisher":
+        required = {
+            "DLD_OSS_ACCESS_KEY_ID": os.getenv("DLD_OSS_ACCESS_KEY_ID", "").strip(),
+            "DLD_OSS_ACCESS_KEY_SECRET": os.getenv("DLD_OSS_ACCESS_KEY_SECRET", "").strip(),
+            "DLD_OSS_ENDPOINT": os.getenv("DLD_OSS_ENDPOINT", "").strip(),
+            "DLD_OSS_BUCKET": os.getenv("DLD_OSS_BUCKET", "").strip(),
+        }
+        missing = sorted(name for name, value in required.items() if not value)
+        if missing:
+            raise RuntimeError(f"OSS publisher requires: {', '.join(missing)}")
+        prefix = _normalise_oss_prefix(os.getenv("DLD_OSS_PUBLISH_PREFIX", "direct-benchmark/"))
+        if not prefix:
+            raise RuntimeError("DLD_OSS_PUBLISH_PREFIX must not be empty to protect source recordings")
+        expires = _oss_url_expiry_seconds()
+        try:
+            import oss2
+        except ImportError as exc:
+            raise RuntimeError("OSS publisher requires oss2; install the project with the oss extra") from exc
+        auth = oss2.AuthV4(required["DLD_OSS_ACCESS_KEY_ID"], required["DLD_OSS_ACCESS_KEY_SECRET"])
+        bucket = oss2.Bucket(
+            auth,
+            required["DLD_OSS_ENDPOINT"],
+            required["DLD_OSS_BUCKET"],
+            region=_oss_region(required["DLD_OSS_ENDPOINT"]),
+        )
+        return cls(bucket, bucket_name=required["DLD_OSS_BUCKET"], object_prefix=prefix, url_expires_seconds=expires)
+
+    def publish(self, prepared: PreparedInput) -> dict[str, Any]:
+        source = Path(prepared.video_file)
+        digest = _sha256(source)
+        object_key = f"{self._object_prefix}{prepared.scenario}/{prepared.duration_min:02d}m-{digest[:16]}.mp4"
+        content_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
+        self._bucket.put_object_from_file(object_key, str(source), headers={"Content-Type": content_type})
+        return {
+            "publisher": "oss",
+            "object_key": object_key,
+            "bucket": self._bucket_name,
+            "uploaded_at": _now(),
+            "sha256": digest,
+            "content_type": content_type,
+        }
+
+    def signed_get_url(self, entry: dict[str, Any]) -> str:
+        object_key = _normalise_oss_object_key(str(entry.get("object_key") or ""))
+        if not object_key:
+            raise ValueError("OSS video entry is missing object_key")
+        return str(self._bucket.sign_url("GET", object_key, self._url_expires_seconds, slash_safe=True))
+
+    def source_objects(self) -> dict[str, str]:
+        return {
+            scenario: _normalise_oss_object_key(os.getenv(env_name, ""))
+            for scenario, env_name in (("A", "DLD_OSS_SOURCE_A_OBJECT"), ("B", "DLD_OSS_SOURCE_B_OBJECT"))
+            if os.getenv(env_name, "").strip()
+        }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", action="append", required=True, metavar="SCENARIO=PATH")
@@ -85,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="comma-separated prepare,publish,direct,screenguard")
     parser.add_argument("--methods", default=",".join(METHODS),
                         help="comma-separated direct_mllm,screenguard")
-    parser.add_argument("--publisher", choices=("uguu", "none"), default="uguu",
+    parser.add_argument("--publisher", choices=("oss", "uguu", "none"), default="uguu",
                         help="temporary public host used only by Direct")
     parser.add_argument("--direct-url-file", default="",
                         help="existing direct_video_urls.json; avoids a new upload")
@@ -154,13 +223,20 @@ def main(argv: list[str] | None = None) -> int:
 
     urls_path = Path(args.direct_url_file).resolve() if args.direct_url_file else urls_file
     urls = _load_urls(urls_path)
+    oss_publisher = (
+        OssPublisher.from_env()
+        if args.publisher == "oss" or any(entry.get("publisher") == "oss" for entry in urls.values())
+        else None
+    )
+    if oss_publisher:
+        metadata["oss_source_objects"] = oss_publisher.source_objects()
     if "publish" in actions:
         if args.publisher == "none":
             raise RuntimeError("--publisher none cannot be used with publish")
-        urls = _publish_missing(prepared, urls, publisher=args.publisher, events_file=events_file)
+        urls = _publish_missing(prepared, urls, publisher=args.publisher, events_file=events_file, oss_publisher=oss_publisher)
         _write_json(urls_file, {"schema_version": 1, "publisher": args.publisher, "videos": urls})
     if "direct" in actions:
-        missing = [item.key for item in prepared if item.key not in urls]
+        missing = [item.key for item in prepared if not _direct_entry_ready(urls.get(item.key))]
         if missing:
             raise RuntimeError(f"Direct requires public URLs for: {', '.join(missing)}")
 
@@ -176,11 +252,12 @@ def main(argv: list[str] | None = None) -> int:
         _append(events_file, {"event": "job_started", "at": _now(), "job": job.key, "job_index": index, "job_count": len(jobs)})
         started = time.perf_counter()
         try:
-            metrics = (
-                _direct_video(job.prepared, config, urls[job.prepared.key])
-                if job.method == "direct_mllm"
-                else _formal_screenguard(job.prepared, output_dir)
-            )
+            if job.method == "direct_mllm":
+                direct_url, direct_reference = _resolve_direct_url(urls[job.prepared.key], oss_publisher)
+                started = time.perf_counter()
+                metrics = _direct_video(job.prepared, config, direct_url, direct_reference)
+            else:
+                metrics = _formal_screenguard(job.prepared, output_dir)
             result = {
                 "event": "job_completed", "at": _now(), "host_label": args.host_label,
                 "job": job.key, "scenario": job.prepared.scenario, "duration_min": job.prepared.duration_min,
@@ -260,8 +337,7 @@ def _clip_video(ffmpeg: str, source: Path, target: Path, duration_seconds: float
     temporary.replace(target)
 
 
-def _direct_video(prepared: PreparedInput, config: VisionConfig, url_entry: dict[str, Any]) -> dict[str, Any]:
-    url = str(url_entry.get("url") or "")
+def _direct_video(prepared: PreparedInput, config: VisionConfig, url: str, reference: str) -> dict[str, Any]:
     if not url.startswith("https://"):
         raise ValueError(f"Direct video URL must be HTTPS: {url!r}")
     endpoint = config.effective_vlm_endpoints()[0]
@@ -282,12 +358,14 @@ def _direct_video(prepared: PreparedInput, config: VisionConfig, url_entry: dict
         with urllib.request.urlopen(request, timeout=config.vlm_timeout_seconds) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
+        detail = _redact_urls(exc.read().decode("utf-8", errors="replace"))
         raise RuntimeError(f"direct_video_http_error: {exc.code} {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"direct_video_transport_error: {exc.reason}") from exc
     usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
     text = payload.get("choices", [{}])[0].get("message", {}).get("content", "")
     return {
-        "direct_video_url": url, "direct_response_file": _write_direct_response(prepared, payload),
+        "direct_video_source": reference, "direct_response_file": _write_direct_response(prepared, payload),
         "direct_response_chars": len(str(text)), "usage": usage, "total_tokens": _total_tokens(usage),
         "direct_client_side_frame_extraction": False,
     }
@@ -295,7 +373,7 @@ def _direct_video(prepared: PreparedInput, config: VisionConfig, url_entry: dict
 
 def _write_direct_response(prepared: PreparedInput, payload: dict[str, Any]) -> str:
     path = Path(prepared.video_file).parent / "direct_mllm_response.json"
-    _write_json(path, payload)
+    _write_json(path, _redact_payload_urls(payload))
     return str(path)
 
 
@@ -357,14 +435,32 @@ def _find_usage(report: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def _publish_missing(prepared: list[PreparedInput], urls: dict[str, dict[str, Any]], *, publisher: str, events_file: Path) -> dict[str, dict[str, Any]]:
+def _publish_missing(
+    prepared: list[PreparedInput],
+    urls: dict[str, dict[str, Any]],
+    *,
+    publisher: str,
+    events_file: Path,
+    oss_publisher: OssPublisher | None,
+) -> dict[str, dict[str, Any]]:
     for item in prepared:
-        if item.key in urls and str(urls[item.key].get("url") or "").startswith("https://"):
+        if _direct_entry_ready(urls.get(item.key)):
             continue
         _append(events_file, {"event": "video_publish_started", "at": _now(), "input": item.key, "publisher": publisher})
-        url = _upload_uguu(Path(item.video_file)) if publisher == "uguu" else ""
-        urls[item.key] = {"url": url, "publisher": publisher, "uploaded_at": _now(), "sha256": _sha256(Path(item.video_file))}
-        _append(events_file, {"event": "video_publish_completed", "at": _now(), "input": item.key, "publisher": publisher, "url": url})
+        if publisher == "oss":
+            if not oss_publisher:
+                raise RuntimeError("OSS publisher was not initialized")
+            entry = oss_publisher.publish(item)
+        elif publisher == "uguu":
+            url = _upload_uguu(Path(item.video_file))
+            entry = {"url": url, "publisher": publisher, "uploaded_at": _now(), "sha256": _sha256(Path(item.video_file))}
+        else:
+            raise RuntimeError(f"unsupported publisher: {publisher}")
+        urls[item.key] = entry
+        _append(events_file, {
+            "event": "video_publish_completed", "at": _now(), "input": item.key, "publisher": publisher,
+            "object_key": entry.get("object_key", ""), "url": _public_url_reference(entry),
+        })
     return urls
 
 
@@ -390,6 +486,80 @@ def _upload_uguu(path: Path) -> str:
     if not url.startswith("https://"):
         raise RuntimeError(f"temporary_upload_invalid_response: {payload}")
     return url
+
+
+def _direct_entry_ready(entry: Any) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    if entry.get("publisher") == "oss":
+        return bool(_normalise_oss_object_key(str(entry.get("object_key") or "")))
+    return str(entry.get("url") or "").startswith("https://")
+
+
+def _resolve_direct_url(entry: dict[str, Any], oss_publisher: OssPublisher | None) -> tuple[str, str]:
+    if entry.get("publisher") == "oss":
+        if not oss_publisher:
+            raise RuntimeError("OSS video entry requires OSS publisher configuration")
+        object_key = _normalise_oss_object_key(str(entry.get("object_key") or ""))
+        if not object_key:
+            raise ValueError("OSS video entry is missing object_key")
+        bucket = str(entry.get("bucket") or "bucket")
+        return oss_publisher.signed_get_url(entry), f"oss://{bucket}/{object_key}"
+    url = str(entry.get("url") or "")
+    if not url.startswith("https://"):
+        raise ValueError("Direct video URL must use HTTPS")
+    return url, _public_url_reference(entry)
+
+
+def _public_url_reference(entry: dict[str, Any]) -> str:
+    url = str(entry.get("url") or "")
+    return url.split("?", 1)[0]
+
+
+def _normalise_oss_prefix(value: str) -> str:
+    prefix = value.strip().strip("/")
+    return f"{prefix}/" if prefix else ""
+
+
+def _normalise_oss_object_key(value: str) -> str:
+    return value.strip().lstrip("/")
+
+
+def _oss_url_expiry_seconds() -> int:
+    raw = os.getenv("DLD_OSS_URL_EXPIRES_SECONDS", "172800").strip()
+    try:
+        seconds = int(raw)
+    except ValueError as exc:
+        raise RuntimeError("DLD_OSS_URL_EXPIRES_SECONDS must be a whole number") from exc
+    if not 1 <= seconds <= 604800:
+        raise RuntimeError("DLD_OSS_URL_EXPIRES_SECONDS must be between 1 and 604800")
+    return seconds
+
+
+def _oss_region(endpoint: str) -> str:
+    configured = os.getenv("DLD_OSS_REGION", "").strip()
+    if configured:
+        return configured
+    host = urlparse(endpoint).hostname or ""
+    match = re.search(r"(?:^|\.)oss-([a-z0-9-]+)\.aliyuncs\.com$", host)
+    if match:
+        return match.group(1)
+    raise RuntimeError("set DLD_OSS_REGION when DLD_OSS_ENDPOINT is not a standard Aliyun OSS endpoint")
+
+
+def _redact_urls(value: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        return match.group(0).split("?", 1)[0] + "?<redacted>"
+
+    return re.sub(r"https://[^\s\"'<>]+", replace, value)
+
+
+def _redact_payload_urls(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _redact_payload_urls(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_payload_urls(item) for item in value]
+    return _redact_urls(value) if isinstance(value, str) else value
 
 
 def _video_duration_seconds(ffmpeg: str, path: Path) -> float:

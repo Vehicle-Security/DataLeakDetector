@@ -508,6 +508,9 @@ def _is_transient_vlm_error(exc: Exception) -> bool:
         or "throttl" in text
         or "temporar" in text
         or "connection reset" in text
+        or "remote end closed connection" in text
+        or "unexpected_eof_while_reading" in text
+        or "eof occurred in violation of protocol" in text
         or "eof occurred" in text
         or "http_error: 5" in text
         or (

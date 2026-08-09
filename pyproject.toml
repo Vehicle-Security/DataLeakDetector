@@ -16,6 +16,9 @@ vision = [
   "opencv-python>=4.10",
   "pillow>=10",
 ]
+oss = [
+  "oss2>=2.19,<3",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

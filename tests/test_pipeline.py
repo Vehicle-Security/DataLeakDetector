@@ -8205,6 +8205,11 @@ def test_vlm_invalid_data_url_400_is_retryable_but_other_400_is_not() -> None:
     assert _is_transient_vlm_error(RuntimeError("vlm_http_error: 400 invalid model")) is False
 
 
+def test_vlm_connection_closures_are_retryable() -> None:
+    assert _is_transient_vlm_error(RuntimeError("Remote end closed connection without response")) is True
+    assert _is_transient_vlm_error(RuntimeError("UNEXPECTED_EOF_WHILE_READING")) is True
+
+
 def test_vlm_batches_reuse_one_process_queue_across_cases() -> None:
     first_case = [_RetryClient("queue-coding"), _RetryClient("queue-token")]
     second_case = [_RetryClient("queue-coding"), _RetryClient("queue-token")]

@@ -58,6 +58,7 @@ class OpenAICompatibleVlmClient:
             "grid_size": self.config.vlm_grid_size,
             "grid_layout": self.config.vlm_grid_layout,
             "temperature": 0,
+            "enable_thinking": self.config.vlm_enable_thinking,
             "prompt": prompt,
             "sensitive_context": _sensitive_context(sensitive_files),
             "active_apps": active_apps,
@@ -112,11 +113,14 @@ class OpenAICompatibleVlmClient:
             image_url = f"data:image/jpeg;base64,{_image_b64(item.frame.image_path)}"
             content.append({"type": "image_url", "image_url": {"url": image_url}})
 
-        return {
+        body: dict[str, Any] = {
             "model": self.config.vlm_model,
             "messages": [{"role": "user", "content": content}],
             "temperature": 0,
         }
+        if self.config.vlm_enable_thinking is not None:
+            body["enable_thinking"] = self.config.vlm_enable_thinking
+        return body
 
 
 def choose_keyframes_for_vlm(

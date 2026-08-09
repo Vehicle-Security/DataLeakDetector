@@ -8,13 +8,17 @@ cd "$REPO_ROOT"
 
 CASE_ROOT="spec/data/nas_samples"
 RUN_DIR=""
-PRECOMPUTE_WORKERS=2
-VLM_CASE_WORKERS=20
+PRECOMPUTE_WORKERS=1
+VLM_CASE_WORKERS=2
 VLM_WORKERS=20
 VLM_GRID_LAYOUT="4x1"
+VLM_MODEL="qwen3.6-plus"
+VLM_ENABLE_THINKING=0
 VLM_TIMEOUT_SECONDS=300
-VLM_RETRY_ATTEMPTS=3
-VLM_RETRY_BACKOFF_SECONDS=2
+VLM_RETRY_ATTEMPTS=5
+VLM_RETRY_BACKOFF_SECONDS=5
+PREFLIGHT_ATTEMPTS=5
+PREFLIGHT_RETRY_BACKOFF_SECONDS=10
 CASE_LIST=""
 VISION_PRECOMPUTE_ROOT=""
 SKIP_PRECOMPUTE=0
@@ -28,13 +32,13 @@ Usage: tools/run_all.sh [options]
 Options:
   --case-root PATH                         Case root (default: spec/data/nas_samples)
   --run-dir PATH                           Output directory (default: timestamped artifacts directory)
-  --precompute-workers N                   Precompute case workers (default: 2)
-  --vlm-case-workers N                     VLM case workers (default: 20)
-  --vlm-workers N                          Shared VLM requests per API key (default: 20)
+  --precompute-workers N                   Precompute case workers (default: 1)
+  --vlm-case-workers N                     VLM case workers (default: 2)
+  --vlm-workers N                          Shared VLM requests per API key (default: 2)
   --vlm-grid-layout ROWSxCOLUMNS           VLM grid layout (default: 4x1)
   --vlm-timeout-seconds SECONDS            VLM response timeout (default: 300)
-  --vlm-retry-attempts N                   VLM retry attempts (default: 3)
-  --vlm-retry-backoff-seconds SECONDS      Initial retry backoff (default: 2)
+  --vlm-retry-attempts N                   VLM retry attempts (default: 5)
+  --vlm-retry-backoff-seconds SECONDS      Initial retry backoff (default: 5)
   --case-list PATH                         Optional UTF-8 case ID list
   --vision-precompute-root PATH            Existing precompute cache root
   --skip-precompute                        Reuse --vision-precompute-root
@@ -104,6 +108,8 @@ export DLD_VLM_RETRY_BACKOFF_SECONDS="$VLM_RETRY_BACKOFF_SECONDS"
 export DLD_VLM_TIMEOUT_SECONDS="$VLM_TIMEOUT_SECONDS"
 export DLD_VLM_WORKERS="$VLM_WORKERS"
 export DLD_VLM_GRID_LAYOUT="$VLM_GRID_LAYOUT"
+export DLD_VLM_MODEL="$VLM_MODEL"
+export DLD_VLM_ENABLE_THINKING="$VLM_ENABLE_THINKING"
 export DLD_VLM_TOKEN_BASE_URL="$VLM_TOKEN_BASE_URL"
 export DLD_VLM_USE_CODING_PLAN=0
 export PYTHONUNBUFFERED=1
@@ -117,6 +123,8 @@ VLM_LOG="$RUN_DIR/vlm.log"
 echo "Run directory: $RUN_DIR"
 echo "Case root: $CASE_ROOT"
 echo "VLM grid layout: $VLM_GRID_LAYOUT"
+echo "VLM model: $VLM_MODEL"
+echo "VLM thinking mode: disabled"
 echo "VLM timeout: ${VLM_TIMEOUT_SECONDS}s"
 echo "VLM case workers: $VLM_CASE_WORKERS"
 echo "VLM request workers per API key: $VLM_WORKERS"
@@ -124,7 +132,23 @@ echo "Case list: ${CASE_LIST:-all discovered cases}"
 echo "VLM endpoint plan: token-plan ($VLM_TOKEN_BASE_URL)"
 
 echo "Checking VLM endpoint and quota with a minimal real request..."
-if ! "$PYTHON" tools/vlm_preflight.py >"$PREFLIGHT_LOG" 2>&1; then
+: >"$PREFLIGHT_LOG"
+preflight_ok=0
+for ((preflight_attempt = 1; preflight_attempt <= PREFLIGHT_ATTEMPTS; preflight_attempt++)); do
+  if ((preflight_attempt > 1)); then
+    echo "Retrying VLM preflight ($preflight_attempt/$PREFLIGHT_ATTEMPTS)..." | tee -a "$PREFLIGHT_LOG"
+  fi
+  if "$PYTHON" tools/vlm_preflight.py >>"$PREFLIGHT_LOG" 2>&1; then
+    preflight_ok=1
+    break
+  fi
+  if ((preflight_attempt < PREFLIGHT_ATTEMPTS)); then
+    delay=$((PREFLIGHT_RETRY_BACKOFF_SECONDS * (2 ** (preflight_attempt - 1))))
+    echo "VLM preflight attempt $preflight_attempt failed; retrying in ${delay}s." | tee -a "$PREFLIGHT_LOG"
+    sleep "$delay"
+  fi
+done
+if (( ! preflight_ok )); then
   echo "VLM preflight failed. See $PREFLIGHT_LOG" >&2
   exit 1
 fi
