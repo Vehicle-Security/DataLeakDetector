@@ -9,11 +9,11 @@ cd "$REPO_ROOT"
 CASE_ROOT="spec/data/nas_samples"
 RUN_DIR=""
 PRECOMPUTE_WORKERS=1
-VLM_CASE_WORKERS=2
+VLM_CASE_WORKERS=20
 VLM_WORKERS=20
 VLM_GRID_LAYOUT="4x1"
-VLM_MODEL="qwen3.6-plus"
-VLM_ENABLE_THINKING=0
+VLM_MODEL="qwen3.7-plus"
+VLM_ENABLE_THINKING=""
 VLM_TIMEOUT_SECONDS=300
 VLM_RETRY_ATTEMPTS=5
 VLM_RETRY_BACKOFF_SECONDS=5
@@ -33,8 +33,8 @@ Options:
   --case-root PATH                         Case root (default: spec/data/nas_samples)
   --run-dir PATH                           Output directory (default: timestamped artifacts directory)
   --precompute-workers N                   Precompute case workers (default: 1)
-  --vlm-case-workers N                     VLM case workers (default: 2)
-  --vlm-workers N                          Shared VLM requests per API key (default: 2)
+  --vlm-case-workers N                     VLM case workers (default: 20)
+  --vlm-workers N                          Shared VLM requests per API key (default: 20)
   --vlm-grid-layout ROWSxCOLUMNS           VLM grid layout (default: 4x1)
   --vlm-timeout-seconds SECONDS            VLM response timeout (default: 300)
   --vlm-retry-attempts N                   VLM retry attempts (default: 5)
@@ -109,7 +109,11 @@ export DLD_VLM_TIMEOUT_SECONDS="$VLM_TIMEOUT_SECONDS"
 export DLD_VLM_WORKERS="$VLM_WORKERS"
 export DLD_VLM_GRID_LAYOUT="$VLM_GRID_LAYOUT"
 export DLD_VLM_MODEL="$VLM_MODEL"
-export DLD_VLM_ENABLE_THINKING="$VLM_ENABLE_THINKING"
+if [[ -n $VLM_ENABLE_THINKING ]]; then
+  export DLD_VLM_ENABLE_THINKING="$VLM_ENABLE_THINKING"
+else
+  unset DLD_VLM_ENABLE_THINKING
+fi
 export DLD_VLM_TOKEN_BASE_URL="$VLM_TOKEN_BASE_URL"
 export DLD_VLM_USE_CODING_PLAN=0
 export PYTHONUNBUFFERED=1
@@ -124,7 +128,7 @@ echo "Run directory: $RUN_DIR"
 echo "Case root: $CASE_ROOT"
 echo "VLM grid layout: $VLM_GRID_LAYOUT"
 echo "VLM model: $VLM_MODEL"
-echo "VLM thinking mode: disabled"
+echo "VLM thinking mode: ${VLM_ENABLE_THINKING:-model default}"
 echo "VLM timeout: ${VLM_TIMEOUT_SECONDS}s"
 echo "VLM case workers: $VLM_CASE_WORKERS"
 echo "VLM request workers per API key: $VLM_WORKERS"
