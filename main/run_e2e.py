@@ -154,7 +154,9 @@ def _release_direct_defaults(common_args: dict, args: argparse.Namespace) -> dic
     release_args = dict(common_args)
     release_args["vision_enabled"] = True
     release_args["max_vlm_frames"] = -1 if args.max_vlm_frames is None else args.max_vlm_frames
-    release_args["non_vlm_enabled"] = True
+    # Release normally combines deterministic log evidence with VLM evidence.
+    # An explicit VLM-only baseline must be able to override that default.
+    release_args["non_vlm_enabled"] = False if getattr(args, "no_non_vlm", False) else True
     release_args["vision_debug_artifacts"] = bool(args.release_debug_artifacts)
     release_args["inherit_ancestor_groundtruth"] = True
     if not args.neo4j_log_miner:

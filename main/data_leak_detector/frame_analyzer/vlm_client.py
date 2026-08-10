@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import tempfile
 import urllib.error
 import urllib.request
@@ -54,7 +55,7 @@ class OpenAICompatibleVlmClient:
             "model": self.config.vlm_model,
             "chat_url": _chat_url(self.config),
             "dry_run": self.config.vlm_dry_run,
-            "frame_source": "direct_keyframes",
+            "frame_source": "uniform_full_video" if _gui_only_enabled() else "direct_keyframes",
             "grid_size": self.config.vlm_grid_size,
             "grid_layout": self.config.vlm_grid_layout,
             "temperature": 0,
@@ -87,6 +88,8 @@ class OpenAICompatibleVlmClient:
             headers={
                 "Authorization": f"Bearer {self.config.vlm_api_key}",
                 "Content-Type": "application/json",
+                # Keep urllib's default User-Agent to match prior Token Plan requests.
+                # "User-Agent": "DataLeakDetector/1.0 (OpenAI-compatible VLM client)",
             },
             method="POST",
         )
@@ -121,6 +124,10 @@ class OpenAICompatibleVlmClient:
         if self.config.vlm_enable_thinking is not None:
             body["enable_thinking"] = self.config.vlm_enable_thinking
         return body
+
+
+def _gui_only_enabled() -> bool:
+    return os.getenv("DLD_GUI_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def choose_keyframes_for_vlm(

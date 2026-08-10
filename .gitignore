@@ -78,3 +78,5 @@ ScreenMonitor/win_monitor/recordings
 .codex/
 spec/docs/方案(只负责参考不用于展示）.md
 .venv/
+
+api.txt

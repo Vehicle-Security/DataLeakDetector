@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -20,7 +21,13 @@ from .artifacts import (
     write_vision_precompute,
 )
 from .config import VisionConfig
-from .frames import AnalysisWindow, KeyFrameSelection, augment_with_video_coverage, select_keyframes_detailed
+from .frames import (
+    AnalysisWindow,
+    KeyFrameSelection,
+    augment_with_video_coverage,
+    select_keyframes_detailed,
+    select_uniform_keyframes_detailed,
+)
 from .parser import vision_events_to_observations
 from .vlm_client import choose_keyframes_for_vlm
 from .vlm_dispatch import (
@@ -253,7 +260,7 @@ def _run_vision_pipeline(
         request_frame_count=len(request_frames),
         send_vlm_frames=send_vlm_frames,
         cache_reused=cache_reused,
-        vision_precompute_file=vision_precompute_file,
+        vision_precompute_file=vision_precompute_file if cache_reused else None,
         manifest=manifest,
         log_mining=log_mining,
         analysis_windows=analysis_windows,
@@ -277,6 +284,25 @@ def _load_or_select_keyframes(
 ) -> tuple[list[AnalysisWindow], KeyFrameSelection, float, float, bool]:
     if vision_precompute_file:
         cached = load_vision_precompute(vision_precompute_file)
+        if _gui_only_enabled():
+            target_frame_count = len(cached["selection"].keyframes)
+            selection = select_uniform_keyframes_detailed(video_path, target_frame_count)
+            end_ms = max((item.timestamp_ms for item in selection.keyframes), default=0)
+            return (
+                [
+                    AnalysisWindow(
+                        0,
+                        end_ms,
+                        "uniform_full_video",
+                        priority="medium",
+                        max_keyframes=target_frame_count,
+                    )
+                ],
+                selection,
+                0.0,
+                0.0,
+                False,
+            )
         return cached["windows"], cached["selection"], 0.0, 0.0, True
 
     windows_started = time.perf_counter()
@@ -412,7 +438,7 @@ def _vision_stats(
         "vlm_source_frames": selected_frame_count,
         "vlm_events": len(vlm_result["events"]),
         "vlm_dry_run": config.vlm_dry_run,
-        "vlm_frame_source": "direct_keyframes",
+        "vlm_frame_source": "uniform_full_video" if _gui_only_enabled() else "direct_keyframes",
         "vlm_grid_size": config.vlm_grid_size,
         "vlm_grid_layout": config.vlm_grid_layout,
         "vlm_workers": config.vlm_workers,
@@ -437,3 +463,7 @@ def _vision_stats(
         },
         "artifacts": manifest,
     }
+
+
+def _gui_only_enabled() -> bool:
+    return os.getenv("DLD_GUI_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}

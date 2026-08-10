@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import replace
 from functools import lru_cache
@@ -142,6 +143,13 @@ class EventCorrelator:
         config = self.config
         if "non_vlm_enabled" in payload:
             config = replace(config, non_vlm_enabled=bool(payload.get("non_vlm_enabled")))
+        # These switches are intentionally process-scoped: the Table-5 runner
+        # launches one fresh process per variant, so an ablation cannot leak
+        # into the following variant or a normal library caller.
+        gui_only = _env_bool("DLD_GUI_ONLY", False)
+        file_lineage_enabled = not _env_bool("DLD_DISABLE_FILE_LINEAGE", False)
+        if gui_only:
+            config = replace(config, non_vlm_enabled=False)
         session_start_ms = int(payload.get("recording_start_ms") or 0) or None
         logs = normalize_logs([item for item in payload.get("log_events") or [] if isinstance(item, dict)], session_start_ms=session_start_ms)
         visual_recording_start_ms = int(session_start_ms or 0) or next(
@@ -158,28 +166,43 @@ class EventCorrelator:
         if not config.non_vlm_enabled:
             observations = [item for item in observations if item.source == "vlm"]
         sensitive_files = self._collect_sensitive_files(payload.get("sensitive_files") or [])
-        # Log lineage is binding context for VLM evidence as well as deterministic
-        # log evidence, so it must remain available in VLM-only runs.
-        lineage = self._build_lineage(logs, sensitive_files)
-        self._add_visual_lineage(observations, sensitive_files, lineage, logs=logs)
+        # Log lineage is normally binding context for VLM evidence.  The
+        # Table-5 file-lineage ablation must remove *all* such relationships,
+        # including VLM-derived ones, instead of merely hiding them in output.
+        lineage = self._build_lineage(logs, sensitive_files) if file_lineage_enabled else Lineage()
+        if file_lineage_enabled:
+            self._add_visual_lineage(observations, sensitive_files, lineage, logs=logs)
         observations = self._fuse_visual_evidence(
-            logs,
+            [] if gui_only else logs,
             observations,
             sensitive_files,
             lineage,
             horizon_ms=config.visual_evidence_horizon_ms,
         )
-        self._add_visual_lineage(observations, sensitive_files, lineage, logs=logs)
-        self._bind_log_lineage_aliases(logs, sensitive_files, lineage)
-        correlated = self._correlate(
-            logs,
-            observations,
-            sensitive_files,
-            lineage,
-            config=config,
-            recording_start_ms=visual_recording_start_ms,
-        )
-        correlated = _add_confirmed_git_push_events(correlated, logs)
+        if file_lineage_enabled:
+            self._add_visual_lineage(observations, sensitive_files, lineage, logs=logs)
+            self._bind_log_lineage_aliases(logs, sensitive_files, lineage)
+        if gui_only:
+            # Keep only VLM observations and their direct sensitive-file
+            # bindings.  Monitor logs are not used as correlation evidence.
+            correlated = self._correlate_visual_only(
+                observations,
+                sensitive_files,
+                lineage,
+                start_index=0,
+                recording_start_ms=visual_recording_start_ms,
+                logs=[],
+            )
+        else:
+            correlated = self._correlate(
+                logs,
+                observations,
+                sensitive_files,
+                lineage,
+                config=config,
+                recording_start_ms=visual_recording_start_ms,
+            )
+            correlated = _add_confirmed_git_push_events(correlated, logs)
         correlated = _suppress_redundant_cloud_sync_source_events(correlated, lineage)
         uploads = build_upload_candidates(correlated, default_confidence=config.upload_confidence)
         case_id = str(payload.get("case_id") or "case")
@@ -205,6 +228,8 @@ class EventCorrelator:
                 "lineage_direct_mappings": len(lineage.direct),
                 "datalog_facts_output": len(facts),
                 "non_vlm_enabled": config.non_vlm_enabled,
+                "gui_only": gui_only,
+                "file_lineage_enabled": file_lineage_enabled,
             },
             "errors": [],
         }
@@ -3642,5 +3667,12 @@ def _lookup_sensitive_source(
 def _is_placeholder_sensitive_ref(value: str) -> bool:
     normalized = value.strip().strip("\"'").lower()
     return normalized in {"n/a", "na", "none", "null", "unknown", "-"} or normalized.startswith("n/a ")
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 

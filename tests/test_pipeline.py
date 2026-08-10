@@ -17,7 +17,7 @@ from data_leak_detector.event_correlator.facts import build_datalog_facts
 from data_leak_detector.event_correlator.lineage import Lineage
 from data_leak_detector.event_correlator.output import landing_locations
 from data_leak_detector.frame_analyzer import analyze_video_behavior
-from data_leak_detector.frame_analyzer.artifacts import export_vision_artifacts
+from data_leak_detector.frame_analyzer.artifacts import VISION_PRECOMPUTE_STRATEGY_VERSION, export_vision_artifacts
 from data_leak_detector.frame_analyzer.vlm_dispatch import (
     _combine_vlm_usage,
     _is_transient_vlm_error,
@@ -61,6 +61,7 @@ from data_leak_detector.frame_analyzer.frames import (
     build_video_coverage_windows,
     merge_analysis_windows,
     select_keyframes_detailed,
+    select_uniform_keyframes_detailed,
 )
 from data_leak_detector.frame_analyzer.parser import ParsedVisionEvent, parse_vlm_response, parse_vlm_response_detailed, vision_events_to_observations
 from data_leak_detector.frame_analyzer.vlm_client import VlmRequestFrame, VlmResponse, _prompt, build_vlm_frame_grids, choose_keyframes_for_vlm, prepare_vlm_frame_images
@@ -346,6 +347,19 @@ def test_release_keeps_deterministic_log_evidence_enabled() -> None:
 
     assert release_args["vision_enabled"] is True
     assert release_args["non_vlm_enabled"] is True
+
+
+def test_release_allows_explicit_vlm_only_baseline() -> None:
+    args = SimpleNamespace(
+        max_vlm_frames=None,
+        release_debug_artifacts=True,
+        neo4j_log_miner=False,
+        no_non_vlm=True,
+    )
+
+    release_args = _release_direct_defaults({}, args)
+
+    assert release_args["non_vlm_enabled"] is False
 
 
 def test_release_marks_vlm_errors_failed_and_continues_remaining_cases(
@@ -2341,6 +2355,71 @@ def test_video_coverage_fallback_produces_nonempty_keyframes(tmp_path: Path) -> 
     assert len(windows[0].anchor_ms) == 11
     assert windows[0].max_keyframes == 18
     assert selection.keyframes
+
+
+def test_uniform_keyframes_cover_whole_video_with_fixed_count(tmp_path: Path) -> None:
+    cv2 = pytest.importorskip("cv2")
+    np = pytest.importorskip("numpy")
+    video = tmp_path / "uniform.avi"
+    writer = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"MJPG"), 10.0, (160, 90))
+    assert writer.isOpened()
+    for index in range(30):
+        writer.write(np.full((90, 160, 3), index * 8, dtype=np.uint8))
+    writer.release()
+
+    selection = select_uniform_keyframes_detailed(video, 5)
+
+    assert len(selection.keyframes) == 5
+    assert [item.timestamp_ms for item in selection.keyframes] == [0, 700, 1400, 2200, 2900]
+    assert all(item.reason == "uniform_full_video" for item in selection.keyframes)
+
+
+def test_gui_only_uses_uniform_frames_matching_frozen_keyframe_count(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    cv2 = pytest.importorskip("cv2")
+    np = pytest.importorskip("numpy")
+    video = tmp_path / "gui_only.avi"
+    writer = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"MJPG"), 10.0, (160, 90))
+    assert writer.isOpened()
+    for index in range(30):
+        writer.write(np.full((90, 160, 3), index * 8, dtype=np.uint8))
+    writer.release()
+    cache = tmp_path / "vision_precompute.json"
+    cache.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "strategy_version": VISION_PRECOMPUTE_STRATEGY_VERSION,
+                "windows": [],
+                "keyframes": [
+                    {
+                        "frame_id": f"full_{index}",
+                        "timestamp_ms": index * 100,
+                        "image_path": str(tmp_path / f"full_{index}.jpg"),
+                        "score": 1.0,
+                        "reason": "full_keyframe",
+                        "window_id": "full",
+                    }
+                    for index in range(3)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DLD_GUI_ONLY", "1")
+
+    result = analyze_video_behavior(
+        video,
+        vision_enabled=True,
+        max_vlm_frames=0,
+        vision_precompute_file=cache,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    vision = result["statistics"]["vision"]
+    assert vision["vision_precompute_reused"] is False
+    assert vision["vlm_frame_source"] == "uniform_full_video"
+    assert vision["keyframes"] == 3
+    assert Path(vision["artifacts"]["vision_precompute_file"]).exists()
 
 
 def test_context_only_windows_add_video_coverage_without_replacing_existing_windows(tmp_path: Path) -> None:

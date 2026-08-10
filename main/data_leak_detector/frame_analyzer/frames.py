@@ -197,6 +197,75 @@ def select_keyframes_detailed(
     return KeyFrameSelection(keyframes, raw_keyframes, duplicates, warnings)
 
 
+def select_uniform_keyframes_detailed(
+    video_path: str | Path,
+    frame_count: int,
+) -> KeyFrameSelection:
+    """Extract exactly ``frame_count`` frames evenly over the whole recording.
+
+    This deliberately bypasses log windows, visual-change scoring, and
+    de-duplication.  It is used only by the GUI-only ablation, whose budget is
+    matched to the Full method's frozen keyframe count.
+    """
+
+    if not str(video_path or "").strip():
+        return KeyFrameSelection([], [], [], [])
+    path = Path(video_path)
+    if not path.is_file():
+        return KeyFrameSelection([], [], [], [f"video_not_found: {path}"])
+    if frame_count <= 0:
+        return KeyFrameSelection([], [], [], ["uniform_frame_count_zero"])
+    try:
+        import cv2
+    except ImportError:
+        return KeyFrameSelection([], [], [], ["opencv_not_installed: install data-leak-detector[vision]"])
+
+    capture = cv2.VideoCapture(str(path))
+    if not capture.isOpened():
+        return KeyFrameSelection([], [], [], [f"video_open_failed: {path}"])
+    fps = capture.get(cv2.CAP_PROP_FPS) or 0.0
+    available = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    if fps <= 0 or available <= 0:
+        capture.release()
+        return KeyFrameSelection([], [], [], ["video_frame_metadata_unavailable"])
+
+    target = min(frame_count, available)
+    if target == 1:
+        indices = [available // 2]
+    else:
+        indices = [round((available - 1) * index / (target - 1)) for index in range(target)]
+    temp_dir = Path(tempfile.mkdtemp(prefix="dld_uniform_frames_"))
+    keyframes: list[KeyFrame] = []
+    warnings: list[str] = []
+    try:
+        for output_index, frame_index in enumerate(indices):
+            capture.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+            ok, image = capture.read()
+            if not ok or image is None:
+                warnings.append(f"uniform_frame_read_failed:{frame_index}")
+                continue
+            timestamp_ms = int(round(frame_index * 1000.0 / fps))
+            image_path = temp_dir / f"uniform_{output_index:03d}_{timestamp_ms}ms.jpg"
+            if not cv2.imwrite(str(image_path), image):
+                warnings.append(f"uniform_frame_write_failed:{frame_index}")
+                continue
+            keyframes.append(
+                KeyFrame(
+                    frame_id=f"uniform_{output_index:03d}_{timestamp_ms}ms",
+                    timestamp_ms=timestamp_ms,
+                    image_path=str(image_path),
+                    score=0.0,
+                    reason="uniform_full_video",
+                    window_id="uniform_full_video",
+                )
+            )
+    finally:
+        capture.release()
+    if target < frame_count:
+        warnings.append(f"uniform_frame_count_clamped:{frame_count}->{target}")
+    return KeyFrameSelection(keyframes, keyframes, [], warnings)
+
+
 def build_video_coverage_windows(video_path: str | Path, config: VisionConfig) -> list[AnalysisWindow]:
     """Create sparse evidence anchors when log mining cannot locate an action."""
 

@@ -10,6 +10,7 @@ import shutil
 from typing import Any
 
 from .datasets import DataCase, DataSession, discover_data_case
+from .evidence_semantics import is_confirmed_risk_level
 from .event_correlator import EventCorrelator
 from .frame_analyzer import analyze_video_behavior
 from .frame_analyzer.config import VisionConfig
@@ -169,10 +170,18 @@ def _finalize_pipeline(
         }
     )
 
-    engine = DatalogEngine(case_id=case_id)
-    for fact in correlation_bundle["datalog_facts"]:
-        engine.add_fact(fact["relation"], *fact["args"], case_id=fact.get("case_id"))
-    leak_paths = engine.query_leak()
+    reasoner_mode = os.getenv("DLD_REASONER_MODE", "datalog").strip().lower()
+    if reasoner_mode == "direct_event_rules":
+        leak_paths = _direct_event_rule_leaks(correlation_bundle, case_id=case_id)
+        reasoner_engine = "direct_event_rules"
+    elif reasoner_mode in {"", "datalog"}:
+        engine = DatalogEngine(case_id=case_id)
+        for fact in correlation_bundle["datalog_facts"]:
+            engine.add_fact(fact["relation"], *fact["args"], case_id=fact.get("case_id"))
+        leak_paths = engine.query_leak()
+        reasoner_engine = "python_taint"
+    else:
+        raise ValueError(f"unsupported_reasoner_mode: {reasoner_mode}")
     suspicious_facts = _suspicious_datalog_facts(
         correlation_bundle,
         sensitive_files=initial_sensitive_files,
@@ -235,7 +244,7 @@ def _finalize_pipeline(
         frame_analyzer=frame_bundle,
         event_correlator=correlation_bundle,
         leak_reasoner={
-            "engine": "python_taint",
+            "engine": reasoner_engine,
             "case_id": case_id,
             "leak_paths": leak_payloads,
             "suspicious_behaviors": suspicious_facts,
@@ -270,6 +279,47 @@ def _finalize_pipeline(
     elif detail_output_dir is not None:
         _write_detail_files(payload, Path(detail_output_dir))
     return payload
+
+
+def _direct_event_rule_leaks(correlation_bundle: dict[str, Any], *, case_id: str) -> list[Any]:
+    """Table-5 baseline: confirm each direct external event independently.
+
+    This deliberately does not traverse ``TransferFile`` or
+    ``CrossProcessTransfer`` facts.  It is therefore a direct event rule
+    baseline, not a shortened invocation of the Datalog/taint engine.
+    """
+
+    from .models import LeakPath
+
+    leaks: list[LeakPath] = []
+    seen: set[tuple[str, str, str]] = set()
+    for upload in correlation_bundle.get("upload_candidates", []):
+        if not isinstance(upload, dict) or not is_confirmed_risk_level(upload.get("risk_level")):
+            continue
+        current_file = str(upload.get("current_file") or upload.get("original_file") or "")
+        original_file = str(upload.get("original_file") or current_file)
+        channel = str(upload.get("sink_type") or "unknown")
+        key = (original_file, current_file, channel)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidate_id = str(upload.get("candidate_id") or f"direct_rule_{len(leaks)}")
+        leaks.append(
+            LeakPath(
+                start_op=candidate_id,
+                end_op=candidate_id,
+                leaking_proc=str(upload.get("app_name") or "unknown"),
+                leaked_file=current_file,
+                leak_channel=channel,
+                leak_timestamp=parse_timestamp_ms(str(upload.get("timestamp") or "")),
+                full_path=f"{candidate_id}:direct_event_rule",
+                case_id=case_id,
+                source_file=original_file,
+                file_chain=(original_file,) if original_file else (),
+                flow_steps=(),
+            )
+        )
+    return leaks
 
 
 def _write_report_files(payload: dict[str, Any], target_dir: Path, report_id: str) -> dict[str, Any]:
