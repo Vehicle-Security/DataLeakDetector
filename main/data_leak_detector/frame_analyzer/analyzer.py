@@ -57,6 +57,7 @@ def analyze_video_behavior(
     analysis_windows: list[AnalysisWindow] | None = None,
     log_mining: dict[str, Any] | None = None,
     debug_artifacts: bool = True,
+    request_preparation_only: bool = False,
     **_: Any,
 ) -> dict[str, Any]:
     """Produce frame-level behavior observations for downstream correlation."""
@@ -89,6 +90,7 @@ def analyze_video_behavior(
             log_mining=log_mining,
             vision_precompute_file=vision_precompute_file,
             debug_artifacts=debug_artifacts,
+            request_preparation_only=request_preparation_only,
         )
         observations.extend(vision_observations)
         warnings.extend(vision_warnings)
@@ -205,6 +207,7 @@ def _run_vision_pipeline(
     log_mining: dict[str, Any] | None,
     vision_precompute_file: str | Path | None,
     debug_artifacts: bool,
+    request_preparation_only: bool,
 ) -> tuple[list[FrameObservation], dict[str, Any], list[str], list[str]]:
     started = time.perf_counter()
     warnings: list[str] = []
@@ -239,15 +242,23 @@ def _run_vision_pipeline(
         artifact_dir=artifact_dir,
         manifest=manifest,
     )
-    vlm_result = _run_vlm_if_needed(
-        request_frames,
-        windows=windows,
-        sensitive_files=vlm_sensitive_files,
-        config=config,
-        artifact_dir=artifact_dir,
-        manifest=manifest,
-        debug_artifacts=debug_artifacts,
-    )
+    if request_preparation_only:
+        vlm_result = _prepare_vlm_requests(
+            request_frames,
+            windows=windows,
+            sensitive_files=vlm_sensitive_files,
+            config=config,
+        )
+    else:
+        vlm_result = _run_vlm_if_needed(
+            request_frames,
+            windows=windows,
+            sensitive_files=vlm_sensitive_files,
+            config=config,
+            artifact_dir=artifact_dir,
+            manifest=manifest,
+            debug_artifacts=debug_artifacts,
+        )
 
     warnings.extend(vlm_result["warnings"])
     errors.extend(vlm_result["errors"])
@@ -405,6 +416,58 @@ def _run_vlm_if_needed(
             "seconds": time.perf_counter() - started,
             "errors": [f"vlm_failed: {type(exc).__name__}: {exc}"],
         }
+
+
+def _prepare_vlm_requests(
+    request_frames: list[Any],
+    *,
+    windows: list[AnalysisWindow],
+    sensitive_files: list[str],
+    config: VisionConfig,
+) -> dict[str, Any]:
+    """Build the exact request summaries without dispatching them to a VLM."""
+
+    empty = {
+        "events": [],
+        "errors": [],
+        "warnings": [],
+        "seconds": 0.0,
+        "parse_errors": 0,
+        "request_metrics": {},
+        "usage": {},
+        "dispatch": {"mode": "request_preparation_only"},
+        "api_key_count": 0,
+        "parallelism": config.vlm_workers,
+        "batch_count": 0,
+    }
+    if not request_frames:
+        return empty
+
+    started = time.perf_counter()
+    active_apps = sorted({app for window in windows for app in window.active_apps})
+    clients = build_vlm_clients(config)
+    parallelism = effective_vlm_parallelism(config)
+    batches = vlm_frame_batches(request_frames, parallelism)
+    summaries = [
+        vlm_batch_request_summary(
+            clients[0],
+            batch,
+            batch_index=index,
+            batch_count=len(batches),
+            workers=parallelism,
+            sensitive_files=sensitive_files,
+            active_apps=active_apps,
+        )
+        for index, batch in enumerate(batches)
+    ]
+    return {
+        **empty,
+        "seconds": time.perf_counter() - started,
+        "request_metrics": combine_vlm_request_metrics(summaries),
+        "api_key_count": len(clients),
+        "parallelism": parallelism,
+        "batch_count": len(batches),
+    }
 
 
 def _vision_stats(
