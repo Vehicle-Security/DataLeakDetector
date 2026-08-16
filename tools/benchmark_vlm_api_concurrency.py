@@ -17,7 +17,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
-from typing import Any
+from typing import Any, Callable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -83,7 +83,35 @@ def main() -> int:
             for repeat in range(1, args.repeats + 1):
                 print(f"[{_now()}] Starting API run concurrency={limit} repeat={repeat} requests={len(requests)}", flush=True)
                 run_started = time.perf_counter()
-                records = _run_once(requests, limit, endpoint.api_key, manifest["chat_url"], args.model, args.request_timeout)
+                completed_requests = 0
+                successful_requests = 0
+
+                def report_request(record: dict[str, Any]) -> None:
+                    nonlocal completed_requests, successful_requests
+                    completed_requests += 1
+                    successful_requests += int(record["success"])
+                    _write_json(output_dir / "progress.json", {
+                        "state": "running", **manifest,
+                        "completed_runs": len({(item["concurrency"], item["repeat"]) for item in all_records}),
+                        "current": {
+                            "concurrency": limit,
+                            "repeat": repeat,
+                            "completed_requests": completed_requests,
+                            "successful_requests": successful_requests,
+                            "total_requests": len(requests),
+                        },
+                    })
+                    outcome = "success" if record["success"] else record.get("error", "failed")
+                    print(
+                        f"[{_now()}] API request concurrency={limit} repeat={repeat} "
+                        f"progress={completed_requests}/{len(requests)} case={record['case_id']} "
+                        f"result={outcome} latency={record['latency_seconds']:.3f}s",
+                        flush=True,
+                    )
+
+                records = _run_once(
+                    requests, limit, endpoint.api_key, manifest["chat_url"], args.model, args.request_timeout, report_request,
+                )
                 wall_seconds = time.perf_counter() - run_started
                 for record in records:
                     record.update({"concurrency": limit, "repeat": repeat, "run_wall_seconds": round(wall_seconds, 6)})
@@ -165,12 +193,23 @@ def _resolve_image(value: str) -> Path:
     return path if path.is_absolute() else REPO_ROOT / path
 
 
-def _run_once(requests: list[dict[str, Any]], limit: int, api_key: str, chat_url: str, model: str, timeout: int) -> list[dict[str, Any]]:
+def _run_once(
+    requests: list[dict[str, Any]],
+    limit: int,
+    api_key: str,
+    chat_url: str,
+    model: str,
+    timeout: int,
+    on_result: Callable[[dict[str, Any]], None] | None = None,
+) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=min(limit, len(requests))) as pool:
         futures = [pool.submit(_send_request, item, api_key, chat_url, model, timeout) for item in requests]
         for future in as_completed(futures):
-            results.append(future.result())
+            result = future.result()
+            results.append(result)
+            if on_result is not None:
+                on_result(result)
     return results
 
 

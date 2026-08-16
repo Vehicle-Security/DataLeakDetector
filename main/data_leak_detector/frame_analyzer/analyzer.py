@@ -57,6 +57,7 @@ def analyze_video_behavior(
     analysis_windows: list[AnalysisWindow] | None = None,
     log_mining: dict[str, Any] | None = None,
     debug_artifacts: bool = True,
+    export_artifacts: bool = True,
     request_preparation_only: bool = False,
     **_: Any,
 ) -> dict[str, Any]:
@@ -90,6 +91,7 @@ def analyze_video_behavior(
             log_mining=log_mining,
             vision_precompute_file=vision_precompute_file,
             debug_artifacts=debug_artifacts,
+            export_artifacts=export_artifacts,
             request_preparation_only=request_preparation_only,
         )
         observations.extend(vision_observations)
@@ -207,6 +209,7 @@ def _run_vision_pipeline(
     log_mining: dict[str, Any] | None,
     vision_precompute_file: str | Path | None,
     debug_artifacts: bool,
+    export_artifacts: bool,
     request_preparation_only: bool,
 ) -> tuple[list[FrameObservation], dict[str, Any], list[str], list[str]]:
     started = time.perf_counter()
@@ -225,13 +228,17 @@ def _run_vision_pipeline(
 
     send_vlm_frames = config.max_vlm_frames != 0
     selected_frames = choose_keyframes_for_vlm(selection.keyframes, max_frames=config.max_vlm_frames) if send_vlm_frames else []
-    manifest = export_vision_artifacts(
-        artifact_dir=artifact_dir,
-        keyframes=selection.keyframes,
-        raw_all_keyframes=selection.raw_keyframes,
-        duplicate_keyframes=selection.duplicates,
+    manifest = (
+        export_vision_artifacts(
+            artifact_dir=artifact_dir,
+            keyframes=selection.keyframes,
+            raw_all_keyframes=selection.raw_keyframes,
+            duplicate_keyframes=selection.duplicates,
+        )
+        if export_artifacts
+        else {}
     )
-    if not cache_reused:
+    if export_artifacts and not cache_reused:
         write_vision_precompute(manifest, windows=windows, selection=selection)
 
     request_frames = prepare_vlm_request_frames(
